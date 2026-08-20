@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 
 import cluster_doctor.main as main
 
@@ -25,7 +26,7 @@ def test_application_log_message_reaches_log_file():
     assert file_handlers, "expected a FileHandler targeting app.log on the root logger"
     file_handler = file_handlers[0]
 
-    marker = "unique marker: test_application_log_message_reaches_log_file"
+    marker = f"clusterdoctor log probe {uuid.uuid4()}"
     logger = logging.getLogger("cluster_doctor.some.module")
     logger.info(marker)
     file_handler.flush()
