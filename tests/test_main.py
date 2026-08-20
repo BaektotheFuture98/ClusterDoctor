@@ -7,6 +7,8 @@ message -- which embeds the parsed ``.env`` contents -- into the response
 body of an unauthenticated endpoint.
 """
 
+import traceback
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -94,3 +96,39 @@ def test_startup_fails_loudly_when_settings_are_invalid(broken_settings):
             pass
 
     assert "gemini_api_key" in str(excinfo.value)
+
+
+def test_startup_error_names_the_missing_setting_without_leaking_its_value(broken_settings):
+    """The boot-time counterpart of the response-body leak above.
+
+    Moving settings resolution into the lifespan handler stopped the parsed
+    ``.env`` from reaching HTTP responses, but ``pydantic.ValidationError``
+    embeds ``input_value={...}`` -- the entire assembled settings dict,
+    secrets included -- in its message. Starlette hands
+    ``traceback.format_exc()`` of a lifespan failure to uvicorn, which logs
+    it verbatim to stderr; on systemd/Docker/Kubernetes that stream is
+    normally aggregated into a shared log store. So the audience narrowed
+    from "any unauthenticated caller" to "anyone reading the logs" -- it did
+    not go away.
+
+    Both halves matter: the message must still name the offending setting
+    (operators cannot fix a config error they cannot identify), and it must
+    not carry the value. The full-traceback check covers the chained
+    ``__cause__``/``__context__`` too, since that is what uvicorn formats --
+    re-raising with ``from None`` is what keeps the original, value-bearing
+    exception out of it.
+    """
+    with pytest.raises(Exception) as excinfo:
+        with TestClient(app):
+            pass
+
+    message = str(excinfo.value)
+    assert "gemini_api_key" in message, "operators must learn which setting is at fault"
+    assert SECRET not in message
+    assert "input_value" not in message
+
+    formatted = "".join(traceback.format_exception(excinfo.value))
+    assert SECRET not in formatted, (
+        "the secret must not reappear via a chained traceback -- this is the "
+        "text uvicorn writes to stderr"
+    )

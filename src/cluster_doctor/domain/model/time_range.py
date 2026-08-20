@@ -29,6 +29,18 @@ class TimeRange:
     def __post_init__(self):
         if self.start is None or self.end is None:
             raise InvalidTimeRangeError("start와 end는 None일 수 없습니다")
+        # Both the `<` comparison and the subtraction below raise TypeError
+        # when one side is timezone-aware and the other naive. TypeError is
+        # not the domain rejection, so it escaped the 400 handler and became
+        # a generic 500 -- misleading the caller and filling the error log
+        # with what is really a bad request. `utcoffset() is None` is the
+        # canonical awareness test (a tzinfo whose utcoffset returns None
+        # leaves the datetime naive). No input values are echoed.
+        if (self.start.utcoffset() is None) != (self.end.utcoffset() is None):
+            raise InvalidTimeRangeError(
+                "start와 end의 시간대 정보가 서로 달라 비교할 수 없습니다 "
+                "(한쪽은 timezone-aware, 다른 한쪽은 naive)"
+            )
         if not self.start < self.end:
             raise InvalidTimeRangeError("start는 end보다 이전이어야 합니다")
         if self.end - self.start > MAX_TIME_RANGE_DURATION:

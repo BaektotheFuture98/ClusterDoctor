@@ -97,3 +97,38 @@ def test_post_diagnosis_range_over_one_hour_returns_400(client):
     resp = client.post("/api/v1/diagnosis", json=body)
     assert resp.status_code == 400
     assert "error" in resp.json()
+
+
+def test_post_diagnosis_mixed_timezone_awareness_returns_400(client):
+    # `from` is aware, `to` is naive. Comparing them raises TypeError inside
+    # TimeRange, which is not the domain rejection -- so this used to escape
+    # as a 500, mislabelling caller-controlled input as a server fault and
+    # logging it as one.
+    body = {"from": "2026-08-20T02:00:00+00:00", "to": "2026-08-20T02:30:00"}
+    resp = client.post("/api/v1/diagnosis", json=body)
+    assert resp.status_code == 400, f"body was {resp.text!r}"
+    assert "error" in resp.json()
+
+
+def test_post_diagnosis_mixed_timezone_awareness_reversed_returns_400(client):
+    body = {"from": "2026-08-20T02:00:00", "to": "2026-08-20T02:30:00+00:00"}
+    resp = client.post("/api/v1/diagnosis", json=body)
+    assert resp.status_code == 400, f"body was {resp.text!r}"
+
+
+def test_openapi_documents_the_json_endpoint_with_the_response_model():
+    """Guards the ``response_model`` registration on the JSON endpoint.
+
+    Reverting that endpoint to ``-> dict`` plus a manual
+    ``.model_dump(by_alias=True)`` produces byte-identical responses, so
+    every behavioural test still passed and nothing guarded the *published
+    schema* -- which is what clients and codegen consume. Asserting on the
+    generated OpenAPI is the only thing that can catch that revert.
+    """
+    schema = app.openapi()
+    content = schema["paths"]["/api/v1/diagnosis"]["post"]["responses"]["200"]["content"]
+
+    assert content["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/DiagnosisResponse"
+    }, "the 200 schema must reference DiagnosisResponse, not a bare object"
+    assert "DiagnosisResponse" in schema["components"]["schemas"]
