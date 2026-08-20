@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from cluster_doctor.domain.model.log_entry import LogEntry
@@ -14,6 +15,8 @@ from cluster_doctor.domain.port.outbound.log_repository import LogRepository
 # minute) while still bounding worst-case memory and transfer size per
 # query.
 _MAX_ROWS_PER_SEGMENT_PER_SOURCE = 10_000
+
+_logger = logging.getLogger(__name__)
 
 
 class ClickHouseLogAdapter(LogRepository):
@@ -32,16 +35,49 @@ class ClickHouseLogAdapter(LogRepository):
         all_logs.sort(key=lambda x: x.timestamp, reverse=True)
         return all_logs
 
+    def _query_segment(self, sql: str, tr: TimeRange, source: str) -> list:
+        """Run one per-segment, per-source query and flag silent truncation.
+
+        The ``LIMIT`` has no ``ORDER BY`` behind it, so once the cap is hit
+        ClickHouse returns an arbitrary subset and the rows that were dropped
+        leave no trace in the result. That silence also corrupts the prompt:
+        ``_build_prompt`` derives ``총 {len(entries)}건`` from what was
+        fetched, so a truncated segment tells the model a capped number is
+        the true total. Making the count exact would need a second
+        ``count()`` round-trip per segment per source; this at least gives
+        operators a signal that it happened, and where.
+
+        The warning text is ASCII on purpose: the root ``StreamHandler``
+        writes to ``sys.stderr``, which Python encodes with the OS locale
+        (cp949 on a Korean Windows host), so Korean here would reach a
+        UTF-8 log aggregator as mojibake. ``>=`` rather than ``==`` because a
+        ``LIMIT`` can never be exceeded -- if it somehow is, that is even more
+        worth reporting.
+        """
+        result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
+        rows = result.result_rows
+        if len(rows) >= _MAX_ROWS_PER_SEGMENT_PER_SOURCE:
+            _logger.warning(
+                "source=%s hit the per-segment LIMIT %d for segment %s ~ %s; "
+                "rows were likely truncated (no ORDER BY, so the kept subset "
+                "is arbitrary) and the total reported to the LLM understates "
+                "the real count",
+                source,
+                _MAX_ROWS_PER_SEGMENT_PER_SOURCE,
+                tr.start.isoformat(),
+                tr.end.isoformat(),
+            )
+        return rows
+
     def _fetch_slowlogs(self, tr: TimeRange) -> list[LogEntry]:
         sql    = (
             f"SELECT ch_ingested_at, _source FROM {self._slowlog_table} "
             "WHERE ch_ingested_at >= %(from_)s AND ch_ingested_at < %(to)s "
             f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
-        result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
         return [
             LogEntry(timestamp=row[0], level="SLOWLOG", source="slowlog", message=row[1])
-            for row in result.result_rows
+            for row in self._query_segment(sql, tr, "slowlog")
         ]
 
     def _fetch_query_logs(self, tr: TimeRange) -> list[LogEntry]:
@@ -51,7 +87,6 @@ class ClickHouseLogAdapter(LogRepository):
             "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
             f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
-        result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
         return [
             LogEntry(
                 timestamp=row[0],
@@ -64,7 +99,7 @@ class ClickHouseLogAdapter(LogRepository):
                     f"runtime={row[2]}s keyword={row[10]}"
                 ),
             )
-            for row in result.result_rows
+            for row in self._query_segment(sql, tr, "es_query_log")
         ]
 
     def _fetch_node_metrics(self, tr: TimeRange) -> list[LogEntry]:
@@ -76,7 +111,6 @@ class ClickHouseLogAdapter(LogRepository):
             "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
             f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
-        result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
         return [
             LogEntry(
                 timestamp=row[0],
@@ -89,7 +123,7 @@ class ClickHouseLogAdapter(LogRepository):
                     f"write(active={row[10]},queue={row[11]},rejected={row[12]})"
                 ),
             )
-            for row in result.result_rows
+            for row in self._query_segment(sql, tr, "node_metric")
         ]
 
 

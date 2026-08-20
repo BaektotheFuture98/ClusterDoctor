@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -143,6 +144,59 @@ def test_fetch_logs_node_metric_query_has_limit():
     assert metric_calls
     for call in metric_calls:
         assert f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}" in call.args[0]
+
+
+def _slowlog_rows(count):
+    return [(datetime(2026, 8, 20, 2, 9, 5), '{"took":100}')] * count
+
+
+def test_warns_when_a_segment_query_returns_exactly_the_limit(caplog):
+    # The LIMIT has no ORDER BY, so hitting the cap means ClickHouse dropped
+    # an arbitrary subset with no signal in the result -- and _build_prompt
+    # then reports the capped count to the model as if it were the total.
+    client  = _make_client(slowlog_rows=_slowlog_rows(_MAX_ROWS_PER_SEGMENT_PER_SOURCE))
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+
+    with caplog.at_level(logging.WARNING):
+        adapter.fetch_logs(TR)
+
+    truncation_warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING and "LIMIT" in r.getMessage()
+    ]
+    assert len(truncation_warnings) == 1, [r.getMessage() for r in caplog.records]
+    message = truncation_warnings[0].getMessage()
+    # Operators need to know *which* source and *which* segment truncated;
+    # a bare "truncation happened" line is not actionable.
+    assert "slowlog" in message
+    assert str(_MAX_ROWS_PER_SEGMENT_PER_SOURCE) in message
+    assert TR.start.isoformat() in message
+    assert TR.end.isoformat() in message
+
+
+def test_does_not_warn_when_a_segment_query_stays_below_the_limit(caplog):
+    client  = _make_client(slowlog_rows=_slowlog_rows(_MAX_ROWS_PER_SEGMENT_PER_SOURCE - 1))
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+
+    with caplog.at_level(logging.WARNING):
+        adapter.fetch_logs(TR)
+
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+def test_warns_once_per_truncated_segment_and_source(caplog):
+    # TR_MULTI spans three one-minute segments; every slowlog segment
+    # truncates, so each must be reported separately -- one aggregate
+    # warning would hide which minute of the window is affected.
+    client  = _make_client(slowlog_rows=_slowlog_rows(_MAX_ROWS_PER_SEGMENT_PER_SOURCE))
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+
+    with caplog.at_level(logging.WARNING):
+        adapter.fetch_logs(TR_MULTI)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 3, warnings
+    assert len(set(warnings)) == 3, "each warning must name its own segment"
 
 
 def test_fetch_logs_sorted_descending():

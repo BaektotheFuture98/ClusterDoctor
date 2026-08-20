@@ -31,7 +31,20 @@ values -- never commit real keys.
 | `CLICKHOUSE_NODE_METRIC_TABLE` | no | `es_node_metric` | |
 
 Startup fails loudly (the process exits) if a required variable is missing, rather than
-surfacing the failure on the first request.
+surfacing the failure on the first request. The startup error names only *which* settings
+are missing or invalid -- never their values, so a config failure cannot write
+`CLICKHOUSE_PASSWORD` into an aggregated log store.
+
+### Fixed limits
+
+These are compile-time constants, not environment variables. Both can silently drop or
+fail work, so they are documented here for operators reading logs.
+
+| Limit | Value | Defined in | Notes |
+|---|---|---|---|
+| Query window | 1 hour | `domain/model/time_range.py` (`MAX_TIME_RANGE_DURATION`) | A longer `[from, to)` window is rejected with `400` before any query runs. See "Time window limit" below. |
+| Rows per minute-segment per source | 10,000 | `adapter/outbound/clickhouse/clickhouse_log_adapter.py` (`_MAX_ROWS_PER_SEGMENT_PER_SOURCE`) | Applied as `LIMIT` on each of the three per-source queries, for each one-minute segment of the window. There is no `ORDER BY`, so on a hit ClickHouse returns an arbitrary subset -- and the count reported to the LLM is the capped one, not the true total. A `WARNING` naming the source and the segment is logged whenever a query comes back at the cap. |
+| ClickHouse send/receive timeout | 30 seconds | `config/dependencies.py` (`_CLICKHOUSE_SEND_RECEIVE_TIMEOUT_SECONDS`) | Without it a hung ClickHouse could pin a worker thread indefinitely. A query exceeding it fails the request rather than returning partial results. |
 
 ## Install
 
