@@ -15,11 +15,11 @@ def _run_diagnosis(request: DiagnosisRequest, use_case: DiagnosisUseCase) -> Dia
     return use_case.diagnose(time_range, request.model)
 
 
-@router.post("/diagnosis")
+@router.post("/diagnosis", response_model=DiagnosisResponse)
 def diagnose(
     request: DiagnosisRequest,
     use_case: DiagnosisUseCase = Depends(get_diagnosis_use_case),
-) -> dict:
+) -> DiagnosisResponse:
     report = _run_diagnosis(request, use_case)
     return DiagnosisResponse(
         from_=report.time_range.start.isoformat(),
@@ -28,7 +28,7 @@ def diagnose(
         total_logs=report.total_logs,
         log_level_counts=report.log_level_counts,
         report=report.report,
-    ).model_dump(by_alias=True)
+    )
 
 
 @router.post("/diagnosis/text", response_class=PlainTextResponse)

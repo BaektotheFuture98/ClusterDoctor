@@ -4,6 +4,17 @@ from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.domain.port.outbound.log_repository import LogRepository
 
+# Each per-segment query already scopes to a single one-minute window for a
+# single source, but a pathological spike (a query storm, a metric-reporting
+# loop gone wrong) could still return an unbounded number of rows within
+# that minute, and results are fully buffered in memory before sorting.
+# 10,000 rows/minute/source is generous headroom over normal traffic for any
+# of the three sources here (slow-log entries, query-log entries, or
+# per-node metric samples are all naturally in the tens-to-low-thousands per
+# minute) while still bounding worst-case memory and transfer size per
+# query.
+_MAX_ROWS_PER_SEGMENT_PER_SOURCE = 10_000
+
 
 class ClickHouseLogAdapter(LogRepository):
     def __init__(self, client, slowlog_table: str, log_table: str, node_metric_table: str):
@@ -24,7 +35,8 @@ class ClickHouseLogAdapter(LogRepository):
     def _fetch_slowlogs(self, tr: TimeRange) -> list[LogEntry]:
         sql    = (
             f"SELECT ch_ingested_at, _source FROM {self._slowlog_table} "
-            "WHERE ch_ingested_at >= %(from_)s AND ch_ingested_at < %(to)s"
+            "WHERE ch_ingested_at >= %(from_)s AND ch_ingested_at < %(to)s "
+            f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
         result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
         return [
@@ -36,7 +48,8 @@ class ClickHouseLogAdapter(LogRepository):
         sql    = (
             f"SELECT reg_date, host, run_time, success, cmd, service, env, project, cluster, search_count, keyword "
             f"FROM {self._log_table} "
-            "WHERE reg_date >= %(from_)s AND reg_date < %(to)s"
+            "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
+            f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
         result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
         return [
@@ -60,7 +73,8 @@ class ClickHouseLogAdapter(LogRepository):
             "process_cpu_percent, jvm_heap_used_percent, "
             "search_active, search_queue, search_rejected, "
             f"write_active, write_queue, write_rejected FROM {self._node_metric_table} "
-            "WHERE reg_date >= %(from_)s AND reg_date < %(to)s"
+            "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
+            f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
         result = self._client.query(sql, parameters={"from_": tr.start, "to": tr.end})
         return [

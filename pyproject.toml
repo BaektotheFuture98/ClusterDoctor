@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
-    "clickhouse-connect>=0.8.0",
+    "clickhouse-connect>=1.7,<2",
     "httpx>=0.28.0",
     "python-dotenv>=1.0.0",
     "pydantic>=2.11.0",
@@ -17,7 +17,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.4.0",
-    "pytest-asyncio>=0.25.0",
 ]
 
 [build-system]
@@ -30,4 +29,3 @@ packages = ["src/cluster_doctor"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-asyncio_mode = "auto"
