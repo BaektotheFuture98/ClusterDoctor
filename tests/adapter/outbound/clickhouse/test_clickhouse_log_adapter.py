@@ -1,8 +1,6 @@
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import pytest
-
 from cluster_doctor.adapter.outbound.clickhouse.clickhouse_log_adapter import (
     ClickHouseLogAdapter,
     _split_by_minute,
@@ -99,6 +97,13 @@ def test_fetch_logs_maps_node_metric():
     assert "jvm_heap=70.0%"   in metrics[0].message
     assert "search(active=2," in metrics[0].message
     assert "write(active=1,"  in metrics[0].message
+
+
+def test_fetch_logs_queries_each_source_per_minute_segment():
+    client  = _make_client()
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter.fetch_logs(TR_MULTI)
+    assert client.query.call_count == 9
 
 
 def test_fetch_logs_sorted_descending():

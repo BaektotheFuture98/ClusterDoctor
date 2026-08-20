@@ -71,7 +71,7 @@ def test_build_prompt_limits_to_200_per_source():
     logs   = [_log("slowlog", "SLOWLOG", i) for i in range(250)]
     prompt = _build_prompt(TR, logs)
     lines  = [l for l in prompt.split("\n") if "msg" in l]
-    assert len(lines) <= 200
+    assert len(lines) == 200
 
 
 def test_build_prompt_groups_by_source():
