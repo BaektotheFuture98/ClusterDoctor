@@ -7,11 +7,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from cluster_doctor.adapter.inbound.rest.router import router
+from cluster_doctor.config.dependencies import close_clickhouse_client
 from cluster_doctor.config.settings import get_settings
 from cluster_doctor.domain.model.time_range import InvalidTimeRangeError
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _HANDLER_MARKER = "_cluster_doctor_owned_handler"
+_SERVER_PORT = 8082
 
 
 def configure_logging() -> None:
@@ -62,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     get_settings()
     yield
+    close_clickhouse_client()
 
 
 app = FastAPI(title="ClusterDoctor", version="0.1.0", lifespan=lifespan)
@@ -80,3 +83,9 @@ async def invalid_time_range_handler(request: Request, exc: InvalidTimeRangeErro
 
 
 app.include_router(router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=_SERVER_PORT)
