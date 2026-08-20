@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str
     gemini_model: str = "gemini-2.5-flash"
-    gemini_base_url: str = "https://generativelanguage.googleapis.com"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     clickhouse_url: str
     clickhouse_user: str = "default"
