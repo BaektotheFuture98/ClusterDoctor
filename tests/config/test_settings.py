@@ -18,6 +18,15 @@ def test_defaults_applied(monkeypatch):
     assert s.clickhouse_node_metric_table == "es_node_metric"
 
 
+def test_gemini_base_url_default_includes_api_version(monkeypatch):
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    s = Settings(_env_file=None)
+    # Google's documented endpoint is /v1beta/models/{model}:generateContent.
+    # Without the version segment every generateContent call 404s.
+    assert s.gemini_base_url == "https://generativelanguage.googleapis.com/v1beta"
+
+
 def test_env_overrides_defaults(monkeypatch):
     for k, v in REQUIRED.items():
         monkeypatch.setenv(k, v)

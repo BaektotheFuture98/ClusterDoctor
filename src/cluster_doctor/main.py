@@ -1,10 +1,14 @@
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from cluster_doctor.adapter.inbound.rest.router import router
+from cluster_doctor.config.settings import get_settings
+from cluster_doctor.domain.model.time_range import InvalidTimeRangeError
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _HANDLER_MARKER = "_cluster_doctor_owned_handler"
@@ -44,11 +48,34 @@ def configure_logging() -> None:
 
 configure_logging()
 
-app = FastAPI(title="ClusterDoctor", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Resolve configuration once, at startup.
+
+    Settings used to be built lazily inside the request path, so a
+    misconfigured deployment surfaced as a per-request validation error
+    instead of a failed boot. Validating here makes a bad ``.env`` crash the
+    process before it ever serves traffic. This runs only when the app is
+    actually started (uvicorn, or ``with TestClient(app)``) -- importing the
+    module does not trigger it.
+    """
+    get_settings()
+    yield
 
 
-@app.exception_handler(ValueError)
-async def value_error_handler(request: Request, exc: ValueError):
+app = FastAPI(title="ClusterDoctor", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(InvalidTimeRangeError)
+async def invalid_time_range_handler(request: Request, exc: InvalidTimeRangeError):
+    """Map only the domain's invalid-range rejection to 400.
+
+    Deliberately narrow: handling bare ``ValueError`` here also caught
+    ``pydantic.ValidationError`` (which embeds the parsed ``.env``) and
+    ``json.JSONDecodeError``, leaking internals to unauthenticated callers.
+    Everything else propagates and becomes a detail-free 500.
+    """
     return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
