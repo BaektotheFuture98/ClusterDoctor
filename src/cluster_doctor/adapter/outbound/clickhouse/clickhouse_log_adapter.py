@@ -34,7 +34,7 @@ class ClickHouseLogAdapter(LogRepository):
 
     def _fetch_query_logs(self, tr: TimeRange) -> list[LogEntry]:
         sql    = (
-            f"SELECT reg_date, host, run_time, success, cmd, service, env, project, cluster, hit_count, keyword "
+            f"SELECT reg_date, host, run_time, success, cmd, service, env, project, cluster, search_count, keyword "
             f"FROM {self._log_table} "
             "WHERE reg_date >= %(from_)s AND reg_date < %(to)s"
         )
