@@ -1,12 +1,33 @@
 [project]
 name = "clusterdoctor"
 version = "0.1.0"
-description = "Add your description here"
+description = "ES 클러스터 진단 서비스"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "langchain>=1.3.15",
-    "langchain-nvidia-ai-endpoints>=1.4.3",
-    "langgraph>=1.2.11",
-    "openai>=3.3.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "clickhouse-connect>=0.8.0",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.9.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=0.25.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cluster_doctor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
