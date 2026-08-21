@@ -39,32 +39,36 @@ def test_invalid_time_range_error_remains_a_value_error_subclass():
     assert issubclass(InvalidTimeRangeError, ValueError)
 
 
-def test_cap_is_exactly_one_hour():
+def test_cap_is_exactly_ten_minutes():
     # The boundary tests below derive their inputs *from* the constant, so
     # they hold for any cap value. This is the one place the cap's actual
     # size is pinned -- it is documented in the README and rendered into the
     # 400 body callers see, so a change here is a contract change.
-    assert MAX_TIME_RANGE_DURATION == timedelta(hours=1)
+    #
+    # Was 1 hour until the graph analysis mode landed: that mode issues one
+    # LLM call per non-empty minute, so the window now bounds LLM cost and
+    # request duration too.
+    assert MAX_TIME_RANGE_DURATION == timedelta(minutes=10)
 
 
-def test_accepts_range_exactly_at_the_one_hour_limit():
+def test_accepts_range_exactly_at_the_limit():
     # The cap is inclusive. Constructing without raising *is* the assertion:
     # the previous `tr.end - tr.start == MAX_TIME_RANGE_DURATION` was a fact
     # about datetime arithmetic, true for any cap, and could not fail.
     TimeRange(start=FROM, end=FROM + MAX_TIME_RANGE_DURATION)
 
 
-def test_rejects_range_longer_than_one_hour():
+def test_rejects_range_longer_than_the_limit():
     # Pins the rendered cap in the message, not just "contains a 1" -- the
     # previous match="1" would have accepted almost any rejection message,
     # including one from a different check entirely.
-    with pytest.raises(InvalidTimeRangeError, match="최대 1:00:00를 초과"):
+    with pytest.raises(InvalidTimeRangeError, match="최대 0:10:00를 초과"):
         TimeRange(start=FROM, end=FROM + MAX_TIME_RANGE_DURATION + timedelta(seconds=1))
 
 
 def test_internal_one_minute_segments_are_never_rejected_by_the_cap():
     # TimeRange also represents the one-minute segments the ClickHouse
-    # adapter builds internally -- those must never trip the 1-hour cap.
+    # adapter builds internally -- those must never trip the cap.
     # Not raising is the whole check.
     TimeRange(start=FROM, end=FROM + timedelta(minutes=1))
 

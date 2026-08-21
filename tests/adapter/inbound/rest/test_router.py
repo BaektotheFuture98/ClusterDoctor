@@ -24,7 +24,7 @@ REQUEST_FROM = datetime(2026, 8, 20, 2, 9, 0)
 REQUEST_TO   = datetime(2026, 8, 20, 2, 14, 0)
 REQUEST_TR   = TimeRange(start=REQUEST_FROM, end=REQUEST_TO)
 
-REPORT_TR = TimeRange(start=datetime(2026, 8, 20, 5, 30, 0), end=datetime(2026, 8, 20, 5, 45, 0))
+REPORT_TR = TimeRange(start=datetime(2026, 8, 20, 5, 35, 0), end=datetime(2026, 8, 20, 5, 45, 0))
 REPORT = DiagnosisReport(
     time_range=REPORT_TR,
     analyzed_at=datetime(2026, 8, 20, 5, 45, 5),
@@ -61,7 +61,7 @@ def test_post_diagnosis_returns_json(client):
     # These must come from REPORT_TR (the mock's report), not from BODY (the
     # request) -- the two are deliberately different so this proves which
     # one the handler echoes.
-    assert data["from"]       == "2026-08-20T05:30:00"
+    assert data["from"]       == "2026-08-20T05:35:00"
     assert data["to"]         == "2026-08-20T05:45:00"
     assert data["analyzedAt"] == "2026-08-20T05:45:05"
 
@@ -92,8 +92,8 @@ def test_post_diagnosis_invalid_range_returns_400(client):
     assert "error" in resp.json()
 
 
-def test_post_diagnosis_range_over_one_hour_returns_400(client):
-    body = {"from": "2026-08-20T02:00:00", "to": "2026-08-20T03:00:01"}
+def test_post_diagnosis_range_over_the_cap_returns_400(client):
+    body = {"from": "2026-08-20T02:00:00", "to": "2026-08-20T02:10:01"}
     resp = client.post("/api/v1/diagnosis", json=body)
     assert resp.status_code == 400
     assert "error" in resp.json()

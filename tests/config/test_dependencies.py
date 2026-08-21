@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+from cluster_doctor.adapter.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
 from cluster_doctor.adapter.outbound.llm.litellm_adapter import LiteLlmAdapter
 from cluster_doctor.config import dependencies
 from cluster_doctor.config import settings as settings_module
@@ -98,3 +99,32 @@ def test_does_not_mix_credentials_across_providers():
     )
     adapter = _build_llm_analyzer(s)
     assert adapter._api_key == "n-key"
+
+
+def test_defaults_to_single_call_mode():
+    s = _settings(gemini_api_key="g-key")
+    assert s.analysis_mode == "single"
+    assert isinstance(_build_llm_analyzer(s), LiteLlmAdapter)
+
+
+def test_graph_mode_builds_the_langgraph_analyzer():
+    s = _settings(gemini_api_key="g-key", analysis_mode="graph")
+    assert isinstance(_build_llm_analyzer(s), LangGraphAnalyzer)
+
+
+def test_analysis_mode_is_orthogonal_to_provider():
+    """graph 모드도 선택된 provider의 자격증명을 그대로 쓴다.
+
+    두 축을 하나로 합치려는 시도(예: LLM_PROVIDER=langgraph)를 막는 단정이다.
+    """
+    s = _settings(
+        llm_provider="nvidia",
+        nvidia_api_key="n-key",
+        nvidia_model="meta/llama-3.3-70b-instruct",
+        analysis_mode="graph",
+    )
+    adapter = _build_llm_analyzer(s)
+    assert isinstance(adapter, LangGraphAnalyzer)
+    assert adapter._provider == "nvidia"
+    assert adapter._api_key == "n-key"
+    assert adapter._default_model == "meta/llama-3.3-70b-instruct"

@@ -4,9 +4,11 @@ from urllib.parse import urlparse
 import clickhouse_connect
 
 from cluster_doctor.adapter.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
+from cluster_doctor.adapter.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
 from cluster_doctor.adapter.outbound.llm.litellm_adapter import LiteLlmAdapter
 from cluster_doctor.config.settings import get_settings
 from cluster_doctor.domain.port.inbound.diagnosis_use_case import DiagnosisUseCase
+from cluster_doctor.domain.port.outbound.llm_analyzer import LlmAnalyzer
 from cluster_doctor.domain.service.diagnosis_service import DiagnosisService
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
@@ -55,10 +57,18 @@ _PROVIDER_CREDENTIALS: dict[str, tuple[str, str]] = {
     "nvidia": ("nvidia_api_key", "nvidia_model"),
 }
 
+# analysis_mode -> 어댑터 클래스. 둘 다 LlmAnalyzer 구현체라 생성자
+# 시그니처가 같으므로 조립부는 어느 쪽인지 신경 쓰지 않는다.
+_ANALYZERS: dict[str, type[LlmAnalyzer]] = {
+    "single": LiteLlmAdapter,
+    "graph": LangGraphAnalyzer,
+}
 
-def _build_llm_analyzer(settings) -> LiteLlmAdapter:
+
+def _build_llm_analyzer(settings) -> LlmAnalyzer:
     key_field, model_field = _PROVIDER_CREDENTIALS[settings.llm_provider]
-    return LiteLlmAdapter(
+    analyzer_cls = _ANALYZERS[settings.analysis_mode]
+    return analyzer_cls(
         provider=settings.llm_provider,
         api_key=getattr(settings, key_field),
         default_model=getattr(settings, model_field),
@@ -66,7 +76,7 @@ def _build_llm_analyzer(settings) -> LiteLlmAdapter:
 
 
 @lru_cache
-def _get_llm_analyzer() -> LiteLlmAdapter:
+def _get_llm_analyzer() -> LlmAnalyzer:
     return _build_llm_analyzer(get_settings())
 
 
