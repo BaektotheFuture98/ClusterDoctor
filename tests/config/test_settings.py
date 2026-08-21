@@ -1,12 +1,17 @@
-import pytest
-from pydantic import ValidationError
+import traceback
 
-from cluster_doctor.config.settings import Settings
+import pytest
+from pydantic import BaseModel, ValidationError
+
+from cluster_doctor.config import settings as settings_module
+from cluster_doctor.config.settings import ConfigurationError, Settings, get_settings
 
 REQUIRED = {
     "GEMINI_API_KEY":  "test-key",
     "CLICKHOUSE_URL":  "jdbc:clickhouse://localhost:8123/default",
 }
+
+CANARY = "CanaryPassword_7fQ2"
 
 
 def test_defaults_applied(monkeypatch):
@@ -93,9 +98,70 @@ def test_unknown_provider_is_rejected(monkeypatch):
 def test_provider_key_error_does_not_echo_other_secrets(monkeypatch):
     """검증 실패 메시지에 다른 비밀값이 실려서는 안 된다."""
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
-    monkeypatch.setenv("CLICKHOUSE_PASSWORD", "CanaryPassword_7fQ2")
+    monkeypatch.setenv("CLICKHOUSE_PASSWORD", CANARY)
     monkeypatch.setenv("LLM_PROVIDER", "nvidia")
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None)
-    assert "CanaryPassword_7fQ2" not in str(excinfo.value)
+    assert CANARY not in str(excinfo.value)
+
+
+class _SettingsProbe(BaseModel):
+    """``Settings``와 같은 실패 모양: 필수 필드가 없고, 비밀값 필드는 채워져 있다.
+
+    실제 ``Settings``를 쓰지 않는 이유는 ``get_settings()``가 ``.env``를
+    읽기 때문이다. 개발자의 ``.env`` 내용에 따라 결과가 달라지면 테스트가
+    아니라 환경 점검이 된다.
+    """
+
+    gemini_api_key: str
+    clickhouse_password: str = ""
+
+
+def _raise_settings_validation_error(*_args, **_kwargs):
+    _SettingsProbe(clickhouse_password=CANARY)
+    raise AssertionError("probe was expected to raise ValidationError")
+
+
+@pytest.fixture
+def broken_settings(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setattr(settings_module, "Settings", _raise_settings_validation_error)
+    yield
+    get_settings.cache_clear()
+
+
+def test_get_settings_converts_validation_failure_to_configuration_error(broken_settings):
+    """가드는 부팅 경로가 아니라 get_settings 안에 있어야 한다.
+
+    이전에는 main.py의 lifespan에만 있어서, Settings()나 get_settings()를
+    직접 부르는 스크립트·테스트 헬퍼는 그대로 raw ValidationError를 받았고
+    거기에 실린 API 키가 출력됐다(실제로 발생).
+    """
+    with pytest.raises(ConfigurationError) as excinfo:
+        get_settings()
+
+    message = str(excinfo.value)
+    assert "gemini_api_key" in message, "운영자는 어느 설정이 문제인지 알아야 한다"
+    assert CANARY not in message
+    assert "input_value" not in message
+
+
+def test_get_settings_failure_does_not_leak_the_secret_through_the_traceback(broken_settings):
+    """uvicorn이 stderr에 쓰는 것은 체인을 포함한 전체 트레이스백이다."""
+    with pytest.raises(ConfigurationError) as excinfo:
+        get_settings()
+
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__suppress_context__ is True
+    formatted = "".join(traceback.format_exception(excinfo.value))
+    assert CANARY not in formatted
+
+
+def test_get_settings_does_not_cache_a_failed_configuration(broken_settings):
+    """lru_cache는 예외를 기억하지 않는다 - 고치면 재기동 없이 반영된다."""
+    with pytest.raises(ConfigurationError):
+        get_settings()
+    with pytest.raises(ConfigurationError):
+        get_settings()
+    assert get_settings.cache_info().currsize == 0
