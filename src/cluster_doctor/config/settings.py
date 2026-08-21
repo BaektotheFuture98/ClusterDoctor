@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import ValidationInfo, field_validator
+from pydantic import ValidationError, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROVIDER_KEY_FIELDS: dict[str, str] = {
@@ -62,6 +62,57 @@ class Settings(BaseSettings):
         return v
 
 
+class ConfigurationError(RuntimeError):
+    """Startup configuration is missing or invalid.
+
+    Carries the *names* of the offending settings and nothing else.
+    ``pydantic.ValidationError`` cannot be used for this: it embeds
+    ``input_value={...}`` -- the entire assembled settings dict, secrets
+    included -- in its message, and a lifespan failure's traceback is written
+    verbatim to uvicorn's stderr.
+    """
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    """Build settings once, converting a validation failure into a value-free error.
+
+    The guard lives here rather than at the boot call site so that *every*
+    path to the settings is covered. It used to sit in ``main.py``'s
+    lifespan; anything that reached for ``Settings()`` another way -- a
+    script, a test helper, a future request-path caller -- bypassed it and
+    got the raw, secret-bearing ``ValidationError`` back. That happened for
+    real during manual verification and printed part of an API key.
+
+    ``exc.errors(include_input=False, include_url=False)`` drops the
+    ``input_value`` payload entirely; the message is then assembled from the
+    ``loc`` entries alone, so it can only ever contain field names that are
+    already declared in ``Settings``. ``msg``/``type`` are deliberately left
+    out too -- naming which setting is at fault is what an operator needs,
+    and it keeps this immune to any pydantic error variant that renders part
+    of the offending value into its own text.
+
+    ``from None`` suppresses the cause chain: without it the original,
+    value-bearing ``ValidationError`` is re-printed under "The above
+    exception was the direct cause of..." and the leak survives the fix.
+
+    The message is deliberately ASCII, unlike the Korean domain-error
+    messages. Those reach callers as UTF-8 JSON bodies; this one is printed
+    by uvicorn into a raw byte stream that Python encodes with the *OS locale*
+    (cp949 on a Korean Windows host), so Korean text here arrives as invalid
+    UTF-8 in journald/Docker/Kubernetes -- mojibake in the one message whose
+    whole job is telling an operator what to fix.
+
+    ``lru_cache`` does not memoize exceptions, so a failing configuration is
+    re-validated (and re-raised) on every call rather than being cached.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        fields = ", ".join(
+            ".".join(str(part) for part in error["loc"]) or "(root)"
+            for error in exc.errors(include_input=False, include_url=False)
+        )
+        raise ConfigurationError(
+            f"missing or invalid configuration: {fields}"
+        ) from None
