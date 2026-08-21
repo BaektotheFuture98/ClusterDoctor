@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import clickhouse_connect
 
 from cluster_doctor.adapter.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
-from cluster_doctor.adapter.outbound.llm.gemini_llm_adapter import GeminiLlmAdapter
+from cluster_doctor.adapter.outbound.llm.litellm_adapter import LiteLlmAdapter
 from cluster_doctor.config.settings import get_settings
 from cluster_doctor.domain.port.inbound.diagnosis_use_case import DiagnosisUseCase
 from cluster_doctor.domain.service.diagnosis_service import DiagnosisService
@@ -49,14 +49,25 @@ def _get_log_repository() -> ClickHouseLogAdapter:
     )
 
 
-@lru_cache
-def _get_llm_analyzer() -> GeminiLlmAdapter:
-    s = get_settings()
-    return GeminiLlmAdapter(
-        api_key=s.gemini_api_key,
-        base_url=s.gemini_base_url,
-        default_model=s.gemini_model,
+_PROVIDER_CREDENTIALS: dict[str, tuple[str, str]] = {
+    # provider -> (api_key 필드, 기본 모델 필드)
+    "gemini": ("gemini_api_key", "gemini_model"),
+    "nvidia": ("nvidia_api_key", "nvidia_model"),
+}
+
+
+def _build_llm_analyzer(settings) -> LiteLlmAdapter:
+    key_field, model_field = _PROVIDER_CREDENTIALS[settings.llm_provider]
+    return LiteLlmAdapter(
+        provider=settings.llm_provider,
+        api_key=getattr(settings, key_field),
+        default_model=getattr(settings, model_field),
     )
+
+
+@lru_cache
+def _get_llm_analyzer() -> LiteLlmAdapter:
+    return _build_llm_analyzer(get_settings())
 
 
 def get_diagnosis_use_case() -> DiagnosisUseCase:
