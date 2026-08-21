@@ -8,7 +8,7 @@ from cluster_doctor.adapter.outbound.llm.gemini_llm_adapter import (
     GeminiApiError,
     GeminiLlmAdapter,
     GeminiResponseError,
-    _build_prompt,
+    build_prompt,
 )
 from cluster_doctor.config.settings import Settings
 from cluster_doctor.domain.model.log_entry import LogEntry
@@ -144,14 +144,14 @@ def test_analyze_raises_clear_error_when_prompt_is_safety_blocked():
 
 def test_build_prompt_limits_to_200_per_source():
     logs   = [_log("slowlog", "SLOWLOG", i) for i in range(250)]
-    prompt = _build_prompt(TR, logs)
+    prompt = build_prompt(TR, logs)
     lines  = [l for l in prompt.split("\n") if "msg" in l]
     assert len(lines) == 200
 
 
 def test_build_prompt_discloses_true_total_and_sampled_count():
     logs   = [_log("slowlog", "SLOWLOG", i) for i in range(250)]
-    prompt = _build_prompt(TR, logs)
+    prompt = build_prompt(TR, logs)
     header = next(l for l in prompt.split("\n") if l.startswith("[slowlog]"))
     # The model must not be told the sampled count as if it were the total:
     # its first analysis principle asks it to judge by frequency.
@@ -162,21 +162,21 @@ def test_build_prompt_discloses_true_total_and_sampled_count():
 
 def test_build_prompt_header_matches_total_when_under_sample_cap():
     logs   = [_log("slowlog", "SLOWLOG", i) for i in range(3)]
-    prompt = _build_prompt(TR, logs)
+    prompt = build_prompt(TR, logs)
     header = next(l for l in prompt.split("\n") if l.startswith("[slowlog]"))
     assert header.endswith("총 3건 중 3건 샘플")
 
 
 def test_build_prompt_groups_by_source():
     logs   = [_log("slowlog", "SLOWLOG"), _log("es_query_log", "SUCCESS"), _log("node_metric", "METRIC")]
-    prompt = _build_prompt(TR, logs)
+    prompt = build_prompt(TR, logs)
     assert "[slowlog]"      in prompt
     assert "[es_query_log]" in prompt
     assert "[node_metric]"  in prompt
 
 
 def test_build_prompt_contains_analysis_principles():
-    prompt = _build_prompt(TR, [])
+    prompt = build_prompt(TR, [])
     assert "임계치 초과" in prompt
     assert "특이사항 없음" in prompt
     assert "FAIL" in prompt
@@ -185,7 +185,7 @@ def test_build_prompt_contains_analysis_principles():
 
 
 def test_build_prompt_contains_response_format():
-    prompt = _build_prompt(TR, [])
+    prompt = build_prompt(TR, [])
     assert "마크다운 금지" in prompt
     assert "클러스터 건강 상태" in prompt
     assert "요청 이해" in prompt
