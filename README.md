@@ -2,15 +2,20 @@
 
 ClusterDoctor is a diagnosis service for Elasticsearch/infrastructure operators. It pulls
 recent slow-log, query-log, and node-metric rows out of ClickHouse for a requested time
-window, hands them to a Gemini LLM, and returns a natural-language diagnosis of what was
+window, hands them to an LLM, and returns a natural-language diagnosis of what was
 happening in the cluster during that window.
+
+Two LLM providers are supported behind one adapter (`litellm`): **Google Gemini** and
+**NVIDIA Build**. Pick one with `LLM_PROVIDER`; only that provider's API key is required.
 
 ## Requirements
 
 - Python >= 3.13
 - [uv](https://docs.astral.sh/uv/)
 - A reachable ClickHouse instance holding the slow-log / query-log / node-metric tables
-- A Gemini API key
+- An API key for whichever provider `LLM_PROVIDER` selects (Gemini or NVIDIA Build)
+- Network access to `openaipublic.blob.core.windows.net` on the very first boot --
+  see "Deployment notes" below before deploying to an air-gapped network
 
 ## Configuration
 
@@ -18,12 +23,20 @@ Settings are read from environment variables (or a `.env` file in the project ro
 `src/cluster_doctor/config/settings.py`. Copy `.env.example` to `.env` and fill in real
 values -- never commit real keys.
 
+Exactly one provider is active at a time, and **only the selected provider's key is
+required**. Setting `LLM_PROVIDER=nvidia` with no `GEMINI_API_KEY` at all boots fine, and
+vice versa. Selecting a provider whose key is empty fails the boot.
+
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `GEMINI_API_KEY` | yes | -- | Sent as a header, never in the URL. |
 | `CLICKHOUSE_URL` | yes | -- | e.g. `jdbc:clickhouse://host:8123/default`. The `jdbc:` prefix is optional. |
+| `LLM_PROVIDER` | no | `gemini` | `gemini` or `nvidia`. Any other value fails validation. |
+| `GEMINI_API_KEY` | if selected | -- | Passed to litellm as a parameter, never in a URL. |
 | `GEMINI_MODEL` | no | `gemini-2.5-flash` | |
-| `GEMINI_BASE_URL` | no | `https://generativelanguage.googleapis.com/v1beta` | |
+| `NVIDIA_API_KEY` | if selected | -- | NVIDIA Build key. Same handling as above. |
+| `NVIDIA_MODEL` | no | `meta/llama-3.3-70b-instruct` | |
+| `GEMINI_BASE_URL` | no | `https://generativelanguage.googleapis.com/v1beta` | **Currently unused** -- litellm builds the endpoint itself. Kept for backward compatibility. |
+| `LITELLM_LOCAL_MODEL_COST_MAP` | no | `True` | Set by the adapter module at import time. Stops litellm fetching cost data from GitHub on import. |
 | `CLICKHOUSE_USER` | no | `default` | |
 | `CLICKHOUSE_PASSWORD` | no | `` (empty) | |
 | `CLICKHOUSE_SLOWLOG_TABLE` | no | `slowlog_v2` | |
@@ -70,6 +83,46 @@ Equivalently, once dependencies are installed, `uv run uvicorn cluster_doctor.ma
 uv run pytest -v
 ```
 
+## Deployment notes
+
+Both items below were measured against a real install, not inferred from documentation.
+
+### First boot on an air-gapped network
+
+`import litellm` fetches the tiktoken `cl100k_base` encoding from
+`openaipublic.blob.core.windows.net`. **That request has no exception handling.** With a
+cold cache and no route to that host, the import stalls for roughly 19.5 seconds and then
+dies with an uncaught `ProxyError` -- so the app does not start at all, and the failure
+looks nothing like a configuration problem.
+
+If you build a container image, warm the cache at build time:
+
+    RUN python -c "import litellm"
+
+If you deploy without an image, the first boot must have access to that host. The cache
+persists on disk, so later boots do not need the network.
+
+`LITELLM_LOCAL_MODEL_COST_MAP=True` removes a *separate* call to GitHub for cost data. It
+does not help with the tiktoken fetch above.
+
+### Trimming image size (optional)
+
+litellm ships roughly 39MB this service never touches. These can be deleted at container
+build time; Gemini and NVIDIA calls were confirmed still working afterwards:
+
+    RUN rm -rf /path/to/site-packages/litellm/proxy/_experimental/out \
+               /path/to/site-packages/litellm/proxy/swagger \
+               /path/to/site-packages/litellm/rust_bridge/_native.pyd || true
+
+The `|| true` is deliberate: if litellm reorganises its directory layout, this step should
+quietly become a no-op and leave the image at full size rather than **breaking the build**.
+
+Do not delete the rest of `litellm/proxy/`. It looks like admin-only tooling, but real
+`completion()` calls route through it.
+
+This saves disk only -- startup time is unchanged, since those files are not on the import
+path.
+
 ## Time window limit
 
 A diagnosis request's `[from, to)` window may not exceed **1 hour**. A longer window is
@@ -87,11 +140,12 @@ POST /api/v1/diagnosis
 ## Endpoints
 
 Both endpoints accept the same request body: `from` and `to` are ISO-8601 timestamps
-(the window must be <= 1 hour), and `model` optionally overrides `GEMINI_MODEL` for that
+(the window must be <= 1 hour), and `model` optionally overrides the selected provider's
+default model (`GEMINI_MODEL` / `NVIDIA_MODEL`) for that
 one request. The examples below use `curl` against a running instance (see "Run" above);
 the request/response shapes shown were captured by exercising the app in-process (the
 same way the test suite does) with a mocked use case, since this sandbox has no reachable
-ClickHouse/Gemini backend to run a fully live end-to-end request against.
+ClickHouse/LLM backend to run a fully live end-to-end request against.
 
 ### `POST /api/v1/diagnosis`
 
