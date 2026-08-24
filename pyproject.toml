@@ -14,6 +14,8 @@ dependencies = [
     "pydantic-settings>=2.9.0",
     "litellm>=1.97.0",
     "langgraph>=1.2.11",
+    "grandalf>=0.8",
+    "playwright>=1.62.0",
 ]
 
 [dependency-groups]
