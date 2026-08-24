@@ -19,7 +19,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm  # noqa: E402
 import openai  # noqa: E402
 
-from cluster_doctor.domain.port.outbound.llm_analyzer import (  # noqa: E402
+from cluster_doctor.application.port.outbound.llm_analyzer import (  # noqa: E402
     LlmApiError,
     LlmResponseError,
 )
@@ -75,6 +75,7 @@ def complete(
     model: str,
     api_key: str,
     max_tokens: int = _MAX_OUTPUT_TOKENS,
+    response_format=None,
 ) -> str:
     """LLM에 한 번 물어보고 텍스트를 받는다.
 
@@ -86,14 +87,18 @@ def complete(
     prefix = _PROVIDER_PREFIX[provider]
 
     try:
-        response = litellm.completion(
-            model=f"{prefix}/{model}",
-            messages=messages,
-            api_key=api_key,
-            temperature=_TEMPERATURE,
-            max_tokens=max_tokens,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
+        kwargs: dict = {
+            "model": f"{prefix}/{model}",
+            "messages": messages,
+            "api_key": api_key,
+            "temperature": _TEMPERATURE,
+            "max_tokens": max_tokens,
+            "timeout": _REQUEST_TIMEOUT_SECONDS,
+            "num_retries": 3,
+        }
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        response = litellm.completion(**kwargs)
     except openai.APIError as exc:
         # openai.APIError를 잡는 것이 맞다. litellm.exceptions.APIError는
         # RateLimitError/AuthenticationError/BadRequestError/

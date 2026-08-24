@@ -23,17 +23,9 @@ class Settings(BaseSettings):
 
     llm_provider: Literal["gemini", "nvidia"] = "gemini"
 
-    # llm_provider와 직교한다. provider는 "누구에게 묻는가", 이쪽은 "어떻게
-    # 묻는가"다. graph 모드도 내부적으로 같은 provider를 쓴다.
-    #   single -- 로그 전체를 한 프롬프트에 담아 1회 호출. 빠르지만 소스당
-    #             200건 샘플링에서 잘리고, 최신순 정렬이라 오래된 구간이 통째로 빠진다.
-    #   graph  -- 1분 구간마다 분석 후 종합. 구간당 로그가 상한 아래라 누락이
-    #             없지만 호출 수가 구간 수만큼 늘어난다.
-    analysis_mode: Literal["single", "graph"] = "single"
 
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
-    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     nvidia_api_key: str = ""
     nvidia_model: str = "meta/llama-3.3-70b-instruct"

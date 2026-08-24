@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.domain.port.outbound.log_repository import LogRepository
+from cluster_doctor.application.port.outbound.log_repository import LogRepository
 
 # Each per-segment query already scopes to a single one-minute window for a
 # single source, but a pathological spike (a query storm, a metric-reporting

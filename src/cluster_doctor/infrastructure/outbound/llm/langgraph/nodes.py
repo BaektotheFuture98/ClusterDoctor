@@ -1,26 +1,28 @@
-"""그래프 노드. 각 노드는 상태 일부를 받아 상태 일부를 돌려준다.
+﻿"""그래프 노드. 각 노드는 상태 일부를 받아 상태 일부를 돌려준다.
 
 노드는 LLM 호출 방법을 모른다. ``LlmCaller``(부분 적용된 ``complete``)를
 받아 쓴다. 덕분에 테스트가 litellm을 몽키패치하지 않고 노드 로직만 검증할 수
 있고, provider 선택은 조립 시점에 한 번만 결정된다.
 """
 
+import json
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from cluster_doctor.adapter.outbound.llm.langgraph.prompts import (
-    EVIDENCE_LINE_LIMIT,
+from pydantic import BaseModel
+
+from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
     build_minute_prompt,
     build_synthesis_prompt,
 )
-from cluster_doctor.adapter.outbound.llm.langgraph.state import (
+from cluster_doctor.infrastructure.outbound.llm.langgraph.state import (
     GraphState,
     MinuteBucket,
     MinuteFinding,
 )
 from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.port.outbound.llm_analyzer import (
+from cluster_doctor.application.port.outbound.llm_analyzer import (
     LlmApiError,
     LlmResponseError,
 )
@@ -36,6 +38,11 @@ _SYNTHESIS_MAX_TOKENS = 8192
 # ``complete``에서 provider/model/api_key를 미리 묶어 둔 형태.
 # 노드는 누구에게 묻는지 모르고, 얼마나 길게 답할지만 정한다.
 LlmCaller = Callable[[list[dict], int], str]
+
+
+class MinuteOutput(BaseModel):
+    summary: str
+    evidence: list[str]
 
 _MINUTE_FORMAT = "%Y-%m-%d %H:%M"
 
@@ -65,13 +72,16 @@ def split_by_minute(state: GraphState) -> dict:
     return {"buckets": buckets}
 
 
-def make_analyze_minute(call_llm: LlmCaller):
+def make_analyze_minute(call_llm: LlmCaller, structured: bool = False):
     """한 구간을 분석하는 노드를 만든다.
 
     팬아웃된 각 인스턴스는 ``Send``로 받은 ``MinuteBucket`` 하나만 본다.
     실패해도 예외를 올리지 않고 ``failed=True`` finding을 돌려준다. 구간
     하나가 rate limit에 걸렸다고 나머지 9분의 분석까지 버리는 것은 과하다.
     전부 실패한 경우의 판단은 ``synthesize``가 한다.
+
+    structured=True면 call_llm이 JSON 문자열을 돌려준다고 가정하고
+    MinuteOutput 스키마로 파싱한다.
     """
 
     def analyze_minute(bucket: MinuteBucket) -> dict:
@@ -82,7 +92,6 @@ def make_analyze_minute(call_llm: LlmCaller):
                 [{"role": "user", "content": prompt}], _MINUTE_MAX_TOKENS
             )
         except (LlmApiError, LlmResponseError) as exc:
-            # 메시지에는 상태 코드나 사유만 들어 있다(litellm_client가 보장).
             _logger.warning("minute %s analysis failed: %s", label, exc)
             return {
                 "findings": [
@@ -94,7 +103,17 @@ def make_analyze_minute(call_llm: LlmCaller):
                 ]
             }
 
-        summary, evidence = _parse_minute_response(text)
+        if structured:
+            try:
+                data = json.loads(text)
+                summary = (data.get("summary") or "").strip()
+                evidence = data.get("evidence") or []
+            except (json.JSONDecodeError, AttributeError):
+                summary, evidence = _parse_minute_response(text)
+        else:
+            summary, evidence = _parse_minute_response(text)
+
+        _logger.info("minute %s analysis done: %s", label, summary)
         return {
             "findings": [
                 MinuteFinding(
@@ -121,7 +140,7 @@ def _parse_minute_response(text: str) -> tuple[str, list[str]]:
         return text.strip(), []
 
     evidence = [line.strip() for line in tail.splitlines() if line.strip()]
-    return summary or text.strip(), evidence[:EVIDENCE_LINE_LIMIT]
+    return summary or text.strip(), evidence
 
 
 def make_synthesize(call_llm: LlmCaller):

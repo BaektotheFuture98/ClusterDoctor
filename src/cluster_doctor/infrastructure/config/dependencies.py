@@ -1,15 +1,14 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 from urllib.parse import urlparse
 
 import clickhouse_connect
 
-from cluster_doctor.adapter.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
-from cluster_doctor.adapter.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
-from cluster_doctor.adapter.outbound.llm.litellm_adapter import LiteLlmAdapter
-from cluster_doctor.config.settings import get_settings
-from cluster_doctor.domain.port.inbound.diagnosis_use_case import DiagnosisUseCase
-from cluster_doctor.domain.port.outbound.llm_analyzer import LlmAnalyzer
-from cluster_doctor.domain.service.diagnosis_service import DiagnosisService
+from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
+from cluster_doctor.infrastructure.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
+from cluster_doctor.infrastructure.config.settings import get_settings
+from cluster_doctor.application.port.inbound.diagnosis_use_case import DiagnosisUseCase
+from cluster_doctor.application.port.outbound.llm_analyzer import LlmAnalyzer
+from cluster_doctor.application.service.diagnosis_service import DiagnosisService
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE        = "default"
@@ -52,38 +51,27 @@ def _get_log_repository() -> ClickHouseLogAdapter:
 
 
 _PROVIDER_CREDENTIALS: dict[str, tuple[str, str]] = {
-    # provider -> (api_key 필드, 기본 모델 필드)
     "gemini": ("gemini_api_key", "gemini_model"),
     "nvidia": ("nvidia_api_key", "nvidia_model"),
 }
 
-# analysis_mode -> 어댑터 클래스. 둘 다 LlmAnalyzer 구현체라 생성자
-# 시그니처가 같으므로 조립부는 어느 쪽인지 신경 쓰지 않는다.
-_ANALYZERS: dict[str, type[LlmAnalyzer]] = {
-    "single": LiteLlmAdapter,
-    "graph": LangGraphAnalyzer,
-}
 
-
-def _build_llm_analyzer(settings) -> LlmAnalyzer:
-    key_field, model_field = _PROVIDER_CREDENTIALS[settings.llm_provider]
-    analyzer_cls = _ANALYZERS[settings.analysis_mode]
-    return analyzer_cls(
-        provider=settings.llm_provider,
+@lru_cache
+def _get_llm_analyzer(provider: str) -> LlmAnalyzer:
+    settings = get_settings()
+    key_field, model_field = _PROVIDER_CREDENTIALS[provider]
+    return LangGraphAnalyzer(
+        provider=provider,
         api_key=getattr(settings, key_field),
         default_model=getattr(settings, model_field),
     )
 
 
-@lru_cache
-def _get_llm_analyzer() -> LlmAnalyzer:
-    return _build_llm_analyzer(get_settings())
-
-
-def get_diagnosis_use_case() -> DiagnosisUseCase:
+def get_diagnosis_use_case(provider: str | None = None) -> DiagnosisUseCase:
+    effective_provider = provider or get_settings().llm_provider
     return DiagnosisService(
         log_repository=_get_log_repository(),
-        llm_analyzer=_get_llm_analyzer(),
+        llm_analyzer=_get_llm_analyzer(effective_provider),
     )
 
 

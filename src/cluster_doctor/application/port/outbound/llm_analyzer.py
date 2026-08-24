@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
-
 class LlmApiError(RuntimeError):
     """LLM provider가 비-2xx 응답을 반환했다.
 

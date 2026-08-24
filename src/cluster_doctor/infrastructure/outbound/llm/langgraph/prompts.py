@@ -12,11 +12,6 @@
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
-# 분별 노드가 뽑아 올릴 근거 로그 줄 수. 종합 단계로 넘어가는 원문의 총량이
-# 이 값 x 구간 수(최대 10)로 묶인다. 너무 크면 종합 프롬프트가 다시 비대해져
-# 단발 모드의 문제로 되돌아간다.
-EVIDENCE_LINE_LIMIT = 5
-
 _SOURCE_DESC = {
     "slowlog":      "ES 슬로우 쿼리 로그. JSON 형태의 원본 데이터 포함.",
     "es_query_log": "packetbeat가 수집한 ES 실시간 쿼리 실행 기록.",
@@ -60,6 +55,10 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
 • 노드명·수치·쿼리 내용을 구체적으로 인용한다. "부하가 높다"가 아니라
   "es-data-02가 cpu=94%, search queue=920"처럼 쓴다.
 
+=== 출력 규칙 ===
+• 반드시 한국어로만 답한다.
+• 사고 과정·추론·설명을 출력하지 않는다. 아래 형식의 최종 답변만 출력한다.
+
 === 응답 형식 ===
 마크다운 금지. 아래 두 부분만 이 순서로 출력한다.
 
@@ -67,7 +66,7 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
 (3줄 이내. 이 구간에서 무슨 일이 있었는지.)
 
 근거:
-(위 요약의 근거가 된 로그를 원문 그대로 최대 {EVIDENCE_LINE_LIMIT}줄. 한 줄에 하나씩.
+(위 요약의 근거가 된 로그를 원문 그대로. 한 줄에 하나씩.
  특이사항이 없으면 이 항목은 비워 둔다.)"""
 
 
@@ -104,6 +103,10 @@ def build_synthesis_prompt(
 === 알려진 문제 패턴 ===
 1. 토큰 분석 이슈: 미분석 토큰 대상 검색이 부하 유발. wildcard/term 쿼리가 analyzed 필드에 사용된 징후.
 2. 광범위 범위 검색: 날짜/범위 필터 없는 full scan성 쿼리.
+
+=== 출력 규칙 ===
+• 반드시 한국어로만 답한다.
+• 사고 과정·추론·설명을 출력하지 않는다. 아래 형식의 최종 답변만 출력한다.
 
 === 응답 형식 ===
 마크다운 금지. 아래 형식 준수:
