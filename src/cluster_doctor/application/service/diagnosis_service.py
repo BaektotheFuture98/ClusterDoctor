@@ -1,8 +1,8 @@
 from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.domain.port.inbound.diagnosis_use_case import DiagnosisUseCase
-from cluster_doctor.domain.port.outbound.llm_analyzer import LlmAnalyzer
-from cluster_doctor.domain.port.outbound.log_repository import LogRepository
+from cluster_doctor.application.port.inbound.diagnosis_use_case import DiagnosisUseCase
+from cluster_doctor.application.port.outbound.llm_analyzer import LlmAnalyzer
+from cluster_doctor.application.port.outbound.log_repository import LogRepository
 
 
 class DiagnosisService(DiagnosisUseCase):

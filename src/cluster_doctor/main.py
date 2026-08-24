@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from cluster_doctor.adapter.inbound.rest.router import router
-from cluster_doctor.config.dependencies import close_clickhouse_client
-from cluster_doctor.config.settings import get_settings
+from cluster_doctor.infrastructure.inbound.rest.router import router
+from cluster_doctor.infrastructure.config.dependencies import close_clickhouse_client
+from cluster_doctor.infrastructure.config.settings import get_settings
 from cluster_doctor.domain.model.time_range import InvalidTimeRangeError
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"

@@ -1,4 +1,4 @@
-"""분 단위 map-reduce 어댑터. ``LlmAnalyzer`` 포트의 두 번째 구현체다.
+﻿"""분 단위 map-reduce 어댑터. ``LlmAnalyzer`` 포트의 두 번째 구현체다.
 
 단발 어댑터와 같은 포트 뒤에 서므로 ``DiagnosisService``는 어느 쪽이
 끼워졌는지 모른다. 고르는 곳은 ``config/dependencies.py`` 한 곳이다.
@@ -6,14 +6,15 @@
 
 from functools import partial
 
-from cluster_doctor.adapter.outbound.llm.langgraph.graph import build_graph
-from cluster_doctor.adapter.outbound.llm.litellm_client import (
+from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
+from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import MinuteOutput
+from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
     complete,
     require_supported_provider,
 )
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.domain.port.outbound.llm_analyzer import LlmAnalyzer
+from cluster_doctor.application.port.outbound.llm_analyzer import LlmAnalyzer
 
 
 class LangGraphAnalyzer(LlmAnalyzer):
@@ -42,7 +43,14 @@ class LangGraphAnalyzer(LlmAnalyzer):
             model=effective_model,
             api_key=self._api_key,
         )
-        final_state = build_graph(call_llm).invoke(
+        call_llm_minute = partial(
+            _call,
+            provider=self._provider,
+            model=effective_model,
+            api_key=self._api_key,
+            response_format=MinuteOutput,
+        )
+        final_state = build_graph(call_llm, call_llm_minute=call_llm_minute).invoke(
             {
                 "time_range": time_range,
                 "logs": logs,
@@ -50,13 +58,14 @@ class LangGraphAnalyzer(LlmAnalyzer):
                 "buckets": [],
                 "findings": [],
                 "report": "",
-            }
+            },
+            config={"max_concurrency": 1},
         )
         return final_state["report"]
 
 
 def _call(
-    messages: list[dict], max_tokens: int, *, provider: str, model: str, api_key: str
+    messages: list[dict], max_tokens: int, *, provider: str, model: str, api_key: str, response_format=None
 ) -> str:
     """``LlmCaller`` 모양(messages, max_tokens)으로 ``complete``를 감싼다."""
     return complete(
@@ -65,4 +74,5 @@ def _call(
         model=model,
         api_key=api_key,
         max_tokens=max_tokens,
+        response_format=response_format,
     )
