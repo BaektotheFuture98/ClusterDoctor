@@ -7,7 +7,12 @@ from datetime import datetime, timedelta
 # so the limit holds for every caller, present and future. One-minute
 # segments built internally by the adapter are always well under this, so
 # they are never rejected by it.
-MAX_TIME_RANGE_DURATION = timedelta(hours=1)
+#
+# Tightened from 1 hour to 10 minutes when the graph analysis mode landed.
+# That mode issues one LLM call per non-empty minute, so the window size is
+# now also a bound on LLM cost and on how long a single request can run --
+# not just on ClickHouse fan-out.
+MAX_TIME_RANGE_DURATION = timedelta(minutes=10)
 
 
 class InvalidTimeRangeError(ValueError):
