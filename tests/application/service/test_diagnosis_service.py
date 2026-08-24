@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.domain.service.diagnosis_service import DiagnosisService
+from cluster_doctor.application.service.diagnosis_service import DiagnosisService
 
 TR   = TimeRange(start=datetime(2026, 8, 20, 2, 9), end=datetime(2026, 8, 20, 2, 10))
 LOGS = [LogEntry(timestamp=datetime(2026, 8, 20, 2, 9, 30), level="SUCCESS", source="es_query_log", message="msg")]

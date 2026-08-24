@@ -1,14 +1,14 @@
-"""LangGraphAnalyzer가 포트를 지키고 자격증명을 올바르게 묶는지."""
+﻿"""LangGraphAnalyzer가 포트를 지키고 자격증명을 올바르게 묶는지."""
 
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cluster_doctor.adapter.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
+from cluster_doctor.infrastructure.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.domain.port.outbound.llm_analyzer import LlmAnalyzer
+from cluster_doctor.application.port.outbound.llm_analyzer import LlmAnalyzer
 
 TR = TimeRange(start=datetime(2026, 8, 20, 2, 9), end=datetime(2026, 8, 20, 2, 11))
 CANARY_KEY = "sk-CANARY-DO-NOT-LOG-12345"

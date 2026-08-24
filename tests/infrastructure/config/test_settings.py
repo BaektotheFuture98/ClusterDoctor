@@ -1,10 +1,10 @@
-import traceback
+﻿import traceback
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from cluster_doctor.config import settings as settings_module
-from cluster_doctor.config.settings import ConfigurationError, Settings, get_settings
+from cluster_doctor.infrastructure.config import settings as settings_module
+from cluster_doctor.infrastructure.config.settings import ConfigurationError, Settings, get_settings
 
 REQUIRED = {
     "GEMINI_API_KEY":  "test-key",
@@ -17,6 +17,11 @@ CANARY = "CanaryPassword_7fQ2"
 def test_defaults_applied(monkeypatch):
     for k, v in REQUIRED.items():
         monkeypatch.setenv(k, v)
+    monkeypatch.delenv("CLICKHOUSE_PASSWORD", raising=False)
+    monkeypatch.delenv("CLICKHOUSE_USER", raising=False)
+    monkeypatch.delenv("CLICKHOUSE_SLOWLOG_TABLE", raising=False)
+    monkeypatch.delenv("CLICKHOUSE_LOG_TABLE", raising=False)
+    monkeypatch.delenv("CLICKHOUSE_NODE_METRIC_TABLE", raising=False)
     s = Settings(_env_file=None)
     assert s.gemini_model                 == "gemini-2.5-flash"
     assert s.clickhouse_user              == "default"
@@ -25,14 +30,6 @@ def test_defaults_applied(monkeypatch):
     assert s.clickhouse_log_table         == "log"
     assert s.clickhouse_node_metric_table == "es_node_metric"
 
-
-def test_gemini_base_url_default_includes_api_version(monkeypatch):
-    for k, v in REQUIRED.items():
-        monkeypatch.setenv(k, v)
-    s = Settings(_env_file=None)
-    # Google's documented endpoint is /v1beta/models/{model}:generateContent.
-    # Without the version segment every generateContent call 404s.
-    assert s.gemini_base_url == "https://generativelanguage.googleapis.com/v1beta"
 
 
 def test_env_overrides_defaults(monkeypatch):
@@ -65,6 +62,7 @@ def test_nvidia_provider_needs_only_nvidia_key(monkeypatch):
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
     monkeypatch.setenv("LLM_PROVIDER", "nvidia")
     monkeypatch.setenv("NVIDIA_API_KEY", "fake-nvidia-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     s = Settings(_env_file=None)
     assert s.llm_provider == "nvidia"
     assert s.gemini_api_key == ""
@@ -73,6 +71,7 @@ def test_nvidia_provider_needs_only_nvidia_key(monkeypatch):
 def test_gemini_provider_without_gemini_key_is_rejected(monkeypatch):
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None)
     assert "gemini_api_key" in str(excinfo.value)

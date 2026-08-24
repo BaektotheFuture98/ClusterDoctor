@@ -1,8 +1,8 @@
-import logging
+﻿import logging
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from cluster_doctor.adapter.outbound.clickhouse.clickhouse_log_adapter import (
+from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import (
     _MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     ClickHouseLogAdapter,
     _split_by_minute,

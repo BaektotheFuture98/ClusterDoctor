@@ -1,10 +1,9 @@
-from datetime import datetime
-from unittest.mock import MagicMock
+﻿from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from cluster_doctor.config.dependencies import get_diagnosis_use_case
 from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.main import app
@@ -44,9 +43,11 @@ def mock_uc():
 
 @pytest.fixture
 def client(mock_uc):
-    app.dependency_overrides[get_diagnosis_use_case] = lambda: mock_uc
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+    with patch(
+        "cluster_doctor.infrastructure.inbound.rest.router.get_diagnosis_use_case",
+        return_value=mock_uc,
+    ):
+        yield TestClient(app)
 
 
 def test_post_diagnosis_returns_json(client):
