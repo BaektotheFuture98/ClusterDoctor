@@ -1,15 +1,14 @@
-import logging
+﻿import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
-from cluster_doctor.adapter.inbound.rest.router import router
-from cluster_doctor.config.dependencies import close_clickhouse_client
-from cluster_doctor.config.settings import get_settings
+from cluster_doctor.infrastructure.inbound.rest.router import router
+from cluster_doctor.infrastructure.config.dependencies import close_clickhouse_client
+from cluster_doctor.infrastructure.config.settings import get_settings
 from cluster_doctor.domain.model.time_range import InvalidTimeRangeError
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -52,51 +51,6 @@ def configure_logging() -> None:
 configure_logging()
 
 
-class ConfigurationError(RuntimeError):
-    """Startup configuration is missing or invalid.
-
-    Carries the *names* of the offending settings and nothing else.
-    ``pydantic.ValidationError`` cannot be used for this: it embeds
-    ``input_value={...}`` -- the entire assembled settings dict, secrets
-    included -- in its message, and a lifespan failure's traceback is written
-    verbatim to uvicorn's stderr.
-    """
-
-
-def _resolve_settings_or_fail() -> None:
-    """Build settings, converting a validation failure into a value-free error.
-
-    ``exc.errors(include_input=False, include_url=False)`` drops the
-    ``input_value`` payload entirely; the message is then assembled from the
-    ``loc`` entries alone, so it can only ever contain field names that are
-    already declared in ``Settings``. ``msg``/``type`` are deliberately left
-    out too -- naming which setting is at fault is what an operator needs,
-    and it keeps this immune to any pydantic error variant that renders part
-    of the offending value into its own text.
-
-    ``from None`` suppresses the cause chain: without it the original,
-    value-bearing ``ValidationError`` is re-printed under "The above
-    exception was the direct cause of..." and the leak survives the fix.
-
-    The message is deliberately ASCII, unlike the Korean domain-error
-    messages. Those reach callers as UTF-8 JSON bodies; this one is printed
-    by uvicorn into a raw byte stream that Python encodes with the *OS locale*
-    (cp949 on a Korean Windows host), so Korean text here arrives as invalid
-    UTF-8 in journald/Docker/Kubernetes -- mojibake in the one message whose
-    whole job is telling an operator what to fix.
-    """
-    try:
-        get_settings()
-    except ValidationError as exc:
-        fields = ", ".join(
-            ".".join(str(part) for part in error["loc"]) or "(root)"
-            for error in exc.errors(include_input=False, include_url=False)
-        )
-        raise ConfigurationError(
-            f"missing or invalid configuration: {fields}"
-        ) from None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Resolve configuration once, at startup.
@@ -107,8 +61,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     process before it ever serves traffic. This runs only when the app is
     actually started (uvicorn, or ``with TestClient(app)``) -- importing the
     module does not trigger it.
+
+    The secret-scrubbing guard itself lives in ``get_settings`` rather than
+    here, so callers that never go through this lifespan are protected too.
     """
-    _resolve_settings_or_fail()
+    get_settings()
     yield
     close_clickhouse_client()
 

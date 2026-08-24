@@ -1,4 +1,4 @@
-"""Tests for the ASGI app wiring in ``cluster_doctor.main``.
+﻿"""Tests for the ASGI app wiring in ``cluster_doctor.main``.
 
 The security-relevant case: ``pydantic.ValidationError`` is a subclass of
 ``ValueError``, and settings used to be resolved lazily inside the request
@@ -13,8 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from cluster_doctor.config import dependencies
-from cluster_doctor.config import settings as settings_module
+from cluster_doctor.infrastructure.config import dependencies
+from cluster_doctor.infrastructure.config import settings as settings_module
 from cluster_doctor.main import app
 
 SECRET = "hunter2"
