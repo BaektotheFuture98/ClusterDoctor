@@ -1,4 +1,4 @@
-"""그래프 전체 동작. LLM은 가짜 호출자로 대체한다.
+﻿"""그래프 전체 동작. LLM은 가짜 호출자로 대체한다.
 
 노드가 ``LlmCaller``를 주입받는 덕분에 litellm을 몽키패치할 필요가 없다.
 """
@@ -9,10 +9,10 @@ from datetime import datetime
 
 import pytest
 
-from cluster_doctor.adapter.outbound.llm.langgraph.graph import build_graph
+from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.domain.port.outbound.llm_analyzer import LlmApiError
+from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
 
 TR = TimeRange(start=datetime(2026, 8, 20, 2, 9), end=datetime(2026, 8, 20, 2, 14))
 
