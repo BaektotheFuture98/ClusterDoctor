@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     clickhouse_log_table: str = "log"
     clickhouse_node_metric_table: str = "es_node_metric"
 
+    es_host: str = ""
+    es_port: int = 9200
+    es_user: str = ""
+    es_password: str = ""
+
     @field_validator("gemini_api_key", "nvidia_api_key")
     @classmethod
     def _require_selected_provider_key(cls, v: str, info: ValidationInfo) -> str:
