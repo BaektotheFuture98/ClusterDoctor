@@ -2,11 +2,14 @@
 from urllib.parse import urlparse
 
 import clickhouse_connect
+from elasticsearch import Elasticsearch
 
 from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
+from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import ElasticsearchClusterAdapter
 from cluster_doctor.infrastructure.outbound.llm.langgraph.analyzer import LangGraphAnalyzer
 from cluster_doctor.infrastructure.config.settings import get_settings
 from cluster_doctor.application.port.inbound.diagnosis_use_case import DiagnosisUseCase
+from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
 from cluster_doctor.application.port.outbound.llm_analyzer import LlmAnalyzer
 from cluster_doctor.application.service.diagnosis_service import DiagnosisService
 
@@ -65,6 +68,28 @@ def _get_llm_analyzer(provider: str) -> LlmAnalyzer:
         api_key=getattr(settings, key_field),
         default_model=getattr(settings, model_field),
     )
+
+
+@lru_cache
+def _get_es_client() -> Elasticsearch:
+    s = get_settings()
+    return Elasticsearch(
+        f"http://{s.es_host}:{s.es_port}",
+        basic_auth=(s.es_user, s.es_password),
+    )
+
+
+@lru_cache
+def _get_cluster_repository() -> ElasticsearchClusterAdapter:
+    return ElasticsearchClusterAdapter(client=_get_es_client())
+
+
+def get_cluster_repository() -> ClusterRepository:
+    return _get_cluster_repository()
+
+
+def get_log_repository() -> ClickHouseLogAdapter:
+    return _get_log_repository()
 
 
 def get_diagnosis_use_case(provider: str | None = None) -> DiagnosisUseCase:
