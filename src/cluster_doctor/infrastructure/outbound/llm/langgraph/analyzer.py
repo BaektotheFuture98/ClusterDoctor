@@ -54,7 +54,6 @@ class LangGraphAnalyzer(LlmAnalyzer):
             {
                 "time_range": time_range,
                 "logs": logs,
-                "model": effective_model,
                 "buckets": [],
                 "findings": [],
                 "report": "",

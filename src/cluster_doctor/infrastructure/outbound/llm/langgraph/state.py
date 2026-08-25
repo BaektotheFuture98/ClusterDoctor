@@ -52,7 +52,6 @@ class GraphState(TypedDict):
 
     time_range: TimeRange
     logs: list[LogEntry]
-    model: str
     buckets: list[MinuteBucket]
     findings: Annotated[list[MinuteFinding], operator.add]
     report: str
