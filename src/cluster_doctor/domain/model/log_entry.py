@@ -10,3 +10,5 @@ class LogEntry:
     message: str
     component: str | None = None
     node: str | None = None
+    company: str | None = None
+    user: str | None = None
