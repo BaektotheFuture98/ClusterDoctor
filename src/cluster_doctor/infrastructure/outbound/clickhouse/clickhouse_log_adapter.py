@@ -82,11 +82,14 @@ class ClickHouseLogAdapter(LogRepository):
 
     def _fetch_query_logs(self, tr: TimeRange) -> list[LogEntry]:
         sql    = (
-            f"SELECT reg_date, host, run_time, success, cmd, service, env, project, cluster, search_count, keyword "
+            f"SELECT reg_date, host, run_time, success, cmd, service, env, project, cluster, keyword, company, user "
             f"FROM {self._log_table} "
             "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
             f"LIMIT {_MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
         )
+        # row 인덱스: 0=reg_date, 1=host, 2=run_time, 3=success, 4=cmd,
+        #             5=service, 6=env, 7=project, 8=cluster,
+        #             9=keyword, 10=company, 11=user
         return [
             LogEntry(
                 timestamp=row[0],
@@ -96,8 +99,10 @@ class ClickHouseLogAdapter(LogRepository):
                 node=row[1],
                 message=(
                     f"[{row[4]}] project={row[7]} env={row[6]} cluster={row[8]} "
-                    f"runtime={row[2]}s keyword={row[10]}"
+                    f"runtime={row[2]}s keyword={row[9]}"
                 ),
+                company=row[10] or None,
+                user=row[11] or None,
             )
             for row in self._query_segment(sql, tr, "es_query_log")
         ]

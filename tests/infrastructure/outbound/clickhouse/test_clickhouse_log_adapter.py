@@ -64,7 +64,7 @@ def test_fetch_logs_maps_slowlog():
 
 
 def test_fetch_logs_maps_query_log_success():
-    row    = (datetime(2026, 8, 20, 2, 9, 10), "host1", 0.5, "Y", "GET", "svc", "prod", "proj", "cls1", 10, "kwd")
+    row    = (datetime(2026, 8, 20, 2, 9, 10), "host1", 0.5, "Y", "GET", "svc", "prod", "proj", "cls1", "kwd", "acme", "alice")
     client = _make_client(query_rows=[row])
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
     logs    = adapter.fetch_logs(TR)
@@ -80,7 +80,7 @@ def test_fetch_logs_maps_query_log_success():
 
 
 def test_fetch_logs_maps_query_log_fail():
-    row    = (datetime(2026, 8, 20, 2, 9, 10), "host1", 1.2, "N", "POST", "svc", "prod", "proj", "cls1", 0, "")
+    row    = (datetime(2026, 8, 20, 2, 9, 10), "host1", 1.2, "N", "POST", "svc", "prod", "proj", "cls1", "", "acme", "bob")
     client = _make_client(query_rows=[row])
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
     logs    = adapter.fetch_logs(TR)
@@ -204,7 +204,7 @@ def test_fetch_logs_sorted_descending():
     t2     = datetime(2026, 8, 20, 2, 9, 30)
     client = _make_client(
         slowlog_rows=[(t1, "slow")],
-        query_rows=[(t2, "h", 0.1, "Y", "GET", "s", "e", "p", "c", 1, "k")],
+        query_rows=[(t2, "h", 0.1, "Y", "GET", "s", "e", "p", "c", "k", None, None)],
     )
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
     logs    = adapter.fetch_logs(TR)

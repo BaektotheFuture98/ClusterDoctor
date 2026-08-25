@@ -1,10 +1,5 @@
 """그래프 노드별 프롬프트.
 
-단발 모드의 ``prompt_builder.build_prompt``와 나란히 있는 별개의 것이다.
-합치지 않은 이유는 목적이 다르기 때문이다. 단발 프롬프트는 한 번에 최종
-리포트를 받아내야 하고, 여기 둘은 "한 구간을 압축"과 "압축본들을 합성"으로
-역할이 쪼개져 있다.
-
 여기 있는 한국어 문자열이 이 서비스의 산출물 품질을 결정한다. 최종 리포트의
 7개 섹션 구성은 스펙에서 온 것이므로 바꾸기 전에 스펙을 먼저 확인할 것.
 """
@@ -20,11 +15,13 @@ _SOURCE_DESC = {
 
 
 def format_log_line(entry: LogEntry) -> str:
-    """로그 한 줄. 단발 모드의 표기와 같은 모양을 유지한다."""
-    return (
+    line = (
         f"  {entry.timestamp} [{entry.level}] node={entry.node or '-'} "
         f"comp={entry.component or '-'} {entry.message}"
     )
+    if entry.company or entry.user:
+        line += f" company={entry.company or '-'} user={entry.user or '-'}"
+    return line
 
 
 def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
@@ -63,7 +60,7 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
 마크다운 금지. 아래 두 부분만 이 순서로 출력한다.
 
 요약:
-(3줄 이내. 이 구간에서 무슨 일이 있었는지.)
+(이 구간에서 무슨 일이 있었는지.)
 
 근거:
 (위 요약의 근거가 된 로그를 원문 그대로. 한 줄에 하나씩.
@@ -119,6 +116,6 @@ def build_synthesis_prompt(
 2. 발견된 문제점 (Critical/Warning/Info 분류)
 3. 근본 원인
 4. 소스 간 상관관계
-5. 문제 쿼리 후보
+5. 문제 쿼리 후보 (+ 사용자 정보 파악(user, company))
 6. 권장 조치
 7. 클러스터 건강 상태"""
