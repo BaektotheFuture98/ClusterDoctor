@@ -4,12 +4,15 @@ micro_batch_seconds 동안 slowlog를 모은 뒤 agent를 한 번 실행한다.
   - 첫 slowlog 수신 → 타이머 시작, pending 큐에 적재
   - 타이머 만료 → agent 실행 (pending 큐의 로그는 agent가 check_new_slowlogs()로 꺼냄)
   - agent 실행 중 도착한 slowlog → pending 큐에 적재 (agent가 직접 확인)
-  - agent 종료 후 큐에 잔여 항목 → 재트리거
+  - agent가 성공으로 끝났고 큐에 잔여 항목이 남아 있으면 재트리거.
+    단 micro_batch_seconds만큼 쉰 뒤에 걸고, 연속 3회를 넘기지 않는다.
+    실패한 실행은 재트리거하지 않는다 (다음 slowlog 도착 시 자연히 재개된다).
 """
 
 import asyncio
 import logging
 import queue as stdlib_queue
+from collections.abc import Coroutine
 from datetime import datetime, timezone
 
 from cluster_doctor.application.port.outbound.llm_analyzer import (
@@ -67,15 +70,33 @@ class SlowlogTriggerService:
         self._consecutive_retriggers = 0
         self._spawn_agent(self._first_log_time, self._first_kafka_receive_time)
 
-    def _spawn_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
-        """agent 태스크를 띄우고 핸들을 보관한다.
+    def _spawn(self, coro: Coroutine) -> None:
+        """태스크를 띄우고 핸들을 보관한다.
 
         asyncio는 실행 중인 태스크에 약한 참조만 유지한다. create_task의
         반환값을 버리면 실행 도중 GC되어 진단이 아무 흔적 없이 사라질 수 있다.
         """
-        self._agent_task = asyncio.create_task(
-            self._run_agent(log_time, kafka_receive_time)
-        )
+        self._agent_task = asyncio.create_task(coro)
+
+    def _spawn_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
+        """agent를 즉시 실행한다. 첫 실행 경로 — _wait_and_trigger가 이미 기다렸다."""
+        self._spawn(self._run_agent(log_time, kafka_receive_time))
+
+    def _spawn_delayed_agent(
+        self, log_time: datetime, kafka_receive_time: datetime
+    ) -> None:
+        """재실행을 건다. _maybe_retrigger는 동기 함수라 직접 await할 수 없다."""
+        self._spawn(self._delayed_agent(log_time, kafka_receive_time))
+
+    async def _delayed_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
+        """재실행 전에 배치 창만큼 쉰다.
+
+        첫 실행은 _wait_and_trigger가 이미 기다렸으므로 이 경로를 타지 않는다.
+        재실행에 지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아, 상한에
+        걸릴 때까지 할당량을 그대로 태운다.
+        """
+        await asyncio.sleep(self._micro_batch_seconds)
+        await self._run_agent(log_time, kafka_receive_time)
 
     async def _run_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
         _logger.info(
@@ -135,4 +156,4 @@ class SlowlogTriggerService:
         self._consecutive_retriggers += 1
         self._running = True
         now = datetime.now(timezone.utc)
-        self._spawn_agent(now, now)
+        self._spawn_delayed_agent(now, now)

@@ -40,7 +40,7 @@ def test_result_is_always_timezone_aware():
         assert _parse_kst(iso).utcoffset() == timedelta(hours=9), iso
 
 
-def _tools(fetch_logs=None, drain_pending=None, cluster=None):
+def _tools(fetch_logs=None, drain_pending=None, cluster=None, run_state=None):
     """이름 → tool 매핑. make_tools 호출마다 클로저 상태가 새로 만들어진다."""
     from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
 
@@ -50,6 +50,7 @@ def _tools(fetch_logs=None, drain_pending=None, cluster=None):
         drain_pending=drain_pending or (lambda: []),
         call_llm=MagicMock(return_value="report"),
         call_llm_minute=MagicMock(return_value='{"summary": "s", "evidence": []}'),
+        run_state=run_state if run_state is not None else {"degraded": False},
     )
     return {t.name: t for t in built}
 
@@ -74,6 +75,86 @@ def test_analyze_logs_rejects_an_unparsable_time_without_raising():
     tool = _analyze_logs_tool(MagicMock(return_value=[]))
     result = tool.invoke({"start_iso": "not-a-time", "end_iso": "2026-08-27T18:35:00"})
     assert "파싱 오류" in result
+
+
+# --------------------------------------------------------------------------
+# analyze_logs — 실패 표식
+#
+# tool은 실패해도 예외를 올리지 않고 문자열을 돌려준다(예외는 agent 실행
+# 전체를 죽인다). 그것만으로는 호출자가 분석 실패를 알 수 없어, agent가 쓴
+# "분석하지 못했다" 리포트가 성공으로 취급된다. run_state에 남겨 알린다.
+# --------------------------------------------------------------------------
+
+def test_a_failed_analysis_marks_the_run_degraded():
+    run_state = {"degraded": False}
+    fetch_logs = MagicMock(side_effect=RuntimeError("ClickHouse 접속 불가"))
+    tool = _tools(fetch_logs=fetch_logs, run_state=run_state)["analyze_logs"]
+
+    result = tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
+
+    assert "오류" in result
+    assert run_state["degraded"] is True
+
+
+def test_an_empty_window_is_not_a_degraded_run():
+    # 로그가 없는 구간은 유효한 관찰 결과지 실패가 아니다. 이것을 실패로
+    # 표시하면 한산한 시간대의 정상 진단이 통째로 실패로 승격된다.
+    run_state = {"degraded": False}
+    tool = _tools(fetch_logs=MagicMock(return_value=[]), run_state=run_state)["analyze_logs"]
+
+    result = tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
+
+    assert "로그 없음" in result
+    assert run_state["degraded"] is False
+
+
+# --------------------------------------------------------------------------
+# analyze_logs — 호출 예산
+#
+# 호출 하나가 구간의 분 수만큼 LLM을 부르므로 가장 비싼 도구다. sleep과 같은
+# 이유로 tool이 직접 막는다 — 프롬프트가 재시도를 제한해도 모델은 그것을
+# 어길 수 있고, recursion_limit은 9,999라 프레임워크도 막아 주지 않는다.
+# --------------------------------------------------------------------------
+
+_WINDOW = {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
+
+
+def test_analyze_logs_refuses_past_the_call_cap():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+        _MAX_ANALYZE_CALLS,
+    )
+
+    fetch_logs = MagicMock(return_value=[])
+    tool = _analyze_logs_tool(fetch_logs)
+
+    for _ in range(_MAX_ANALYZE_CALLS):
+        interim = tool.invoke(_WINDOW)
+        assert "상한" not in interim, interim
+
+    fetch_logs.reset_mock()
+    result = tool.invoke(_WINDOW)
+
+    assert "상한" in result
+    # 상한을 넘긴 호출은 조회조차 하지 않아야 한다. 조회 후에 막으면
+    # 상한이 비용을 줄이지 못한다.
+    fetch_logs.assert_not_called()
+
+
+def test_analyze_call_budget_starts_fresh_for_each_agent_run():
+    # make_tools는 analyze() 호출마다 새로 불린다. 이전 실행이 쓴 예산이
+    # 남아 있으면 다음 사고에서 분석을 아예 못 한다.
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+        _MAX_ANALYZE_CALLS,
+    )
+
+    first = _analyze_logs_tool(MagicMock(return_value=[]))
+    for _ in range(_MAX_ANALYZE_CALLS + 1):
+        first.invoke(_WINDOW)
+
+    second = _analyze_logs_tool(MagicMock(return_value=[]))
+    result = second.invoke(_WINDOW)
+
+    assert "상한" not in result, result
 
 
 # --------------------------------------------------------------------------

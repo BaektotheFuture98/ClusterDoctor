@@ -1,10 +1,11 @@
 """DeepAgent tool 정의.
 
-make_tools(cluster, fetch_logs, drain_pending, call_llm, call_llm_minute) 팩토리로
-의존성을 클로저에 포획한다. ES 조회는 ClusterRepository 포트를 거친다 —
-tool은 elasticsearch 클라이언트를 모른다.
+make_tools(cluster, fetch_logs, drain_pending, call_llm, call_llm_minute, run_state=...)
+팩토리로 의존성을 클로저에 포획한다. ES 조회는 ClusterRepository 포트를 거친다 —
+tool은 elasticsearch 클라이언트를 모른다. run_state는 호출자가 소유하는 dict로,
+tool이 실패를 문자열로 삼킬 때 그 사실을 호출자에게 남기는 통로다.
 
-- analyze_logs(start_iso, end_iso): agent가 ISO 시각으로 구간 지정 → ClickHouse 조회 → LangGraph 분석 (최대 10분)
+- analyze_logs(start_iso, end_iso): agent가 ISO 시각으로 구간 지정 → ClickHouse 조회 → LangGraph 분석 (구간 최대 10분, 진단당 최대 6회)
 - check_new_slowlogs(): agent 실행 중 큐에 새로 쌓인 slowlog 확인
 - cluster_health / explain_unassigned_shards / get_index_summary: ES 직접 호출
 - sleep: 대기
@@ -57,6 +58,14 @@ def _parse_kst(iso: str) -> datetime:
 _MAX_SLEEP_SECONDS = 60
 _MAX_WAIT_SECONDS = 300
 
+# 한 번의 진단에서 analyze_logs를 부를 수 있는 횟수. 호출 하나가 구간의
+# 분 수만큼 LLM을 부르므로(5분 창 실측 513,122 토큰) 가장 비싼 도구다.
+# sleep과 같은 이유로 tool이 직접 막는다 — 프롬프트가 재시도를 한 번으로
+# 제한해도 모델은 그것을 어길 수 있고, recursion_limit은 9,999라
+# 프레임워크도 막아 주지 않는다. 10분 창을 10분 이하로 쪼개 부르는 경우와
+# 허용된 재시도 1회를 합쳐도 6회면 넉넉하다.
+_MAX_ANALYZE_CALLS = 6
+
 
 def _cap_notice() -> str:
     return (
@@ -71,7 +80,16 @@ def make_tools(
     drain_pending: Callable[[], list[LogEntry]],
     call_llm: LlmCaller,
     call_llm_minute: LlmCaller,
+    *,
+    run_state: dict,
 ) -> list:
+    """tool 묶음을 만든다.
+
+    ``run_state``는 호출자(DeepAgentAnalyzer.analyze)가 소유하고 tool이
+    갱신하는 실행 결과 표식이다. tool은 실패를 예외가 아니라 문자열로
+    돌려주므로(예외는 agent 실행 전체를 죽인다) 그것만으로는 호출자가
+    분석 실패를 알 길이 없다. 여기에 남겨 호출자가 읽는다.
+    """
     _graph = build_graph(call_llm, call_llm_minute=call_llm_minute)
 
     _MAX_WINDOW_MINUTES = 10
@@ -80,18 +98,28 @@ def make_tools(
     # 새로 부르므로 사고 하나가 끝나면 저절로 0에서 다시 시작한다. 모듈 전역에
     # 두면 첫 사고가 예산을 다 쓰고 이후 사고는 대기를 아예 못 하게 된다.
     wait_state = {"slept": 0.0}
+    analyze_state = {"calls": 0}
 
     @tool
     def analyze_logs(start_iso: str, end_iso: str) -> str:
         """지정 구간의 로그를 ClickHouse에서 조회해 분 단위로 분석한다.
 
         최대 분석 윈도우는 10분이다. 초과 시 오류를 반환한다.
+        한 번의 진단에서 최대 6회까지만 호출할 수 있다.
 
         Args:
             start_iso: 구간 시작 시각. ISO 8601 형식. 예) "2026-08-26T02:04:05"
             end_iso: 구간 종료 시각. ISO 8601 형식. 예) "2026-08-26T02:14:05"
         """
         _logger.info("[tool] analyze_logs(%s ~ %s)", start_iso, end_iso)
+        if analyze_state["calls"] >= _MAX_ANALYZE_CALLS:
+            _logger.warning("[tool] analyze_logs 요청 무시 — 호출 상한 도달")
+            return (
+                f"분석 호출 상한({_MAX_ANALYZE_CALLS}회)에 도달했다. "
+                "지금까지의 결과로 리포트를 작성하라."
+            )
+        analyze_state["calls"] += 1
+
         try:
             start_dt = _parse_kst(start_iso)
             end_dt = _parse_kst(end_iso)
@@ -128,9 +156,14 @@ def make_tools(
             )
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[tool] analyze_logs 분석 실패: %s", exc)
+            # 실패는 문자열로 돌려주지만, 그 사실은 호출자에게 남긴다.
+            # 남기지 않으면 agent가 "분석하지 못했다"는 리포트를 정상 종료로
+            # 써 내고 트리거 서비스가 그것을 성공으로 취급한다.
+            run_state["degraded"] = True
             return f"분석 실패({start_iso} ~ {end_iso}): {exc}"
         except Exception as exc:
             _logger.exception("[tool] analyze_logs 조회/분석 오류")
+            run_state["degraded"] = True
             return f"조회/분석 오류({start_iso} ~ {end_iso}): {exc}"
 
         report = state["report"]
