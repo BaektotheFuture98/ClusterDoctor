@@ -9,6 +9,7 @@ check_new_slowlogs 뿐이다. 그래서 analyze가 실패하면 큐가 손대지
 import asyncio
 import queue as stdlib_queue
 import threading
+import time
 from datetime import datetime, timezone
 
 from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
@@ -99,19 +100,6 @@ async def test_unexpected_failure_also_does_not_retrigger():
     assert analyzer.calls == 1
 
 
-async def test_successful_run_retriggers_when_the_queue_still_has_items():
-    # agent가 큐를 비우지 않고 끝났고 잔여가 있으면 이어서 한 번 더 돈다.
-    pending = stdlib_queue.Queue()
-    pending.put(SlowlogEntry(timestamp=TS))
-    analyzer = _Analyzer()
-    service = _service(analyzer, pending)
-
-    await service._run_agent(TS, TS)
-    await _settle(service)
-
-    assert analyzer.calls > 1
-
-
 async def test_consecutive_retriggers_are_capped():
     # agent가 끝내 큐를 비우지 않으면 성공 경로에서도 무한히 돈다.
     pending = stdlib_queue.Queue()
@@ -123,6 +111,39 @@ async def test_consecutive_retriggers_are_capped():
     await _settle(service)
 
     assert analyzer.calls == 1 + _MAX_CONSECUTIVE_RETRIGGERS
+
+
+async def test_retriggers_wait_the_batch_window_before_running_again():
+    # 재실행에 지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아, 상한에
+    # 걸릴 때까지 할당량을 그대로 태운다. 첫 실행은 _wait_and_trigger가 이미
+    # 기다렸으므로 지연 대상은 재실행뿐이다.
+    pending = stdlib_queue.Queue()
+    pending.put(SlowlogEntry(timestamp=TS))
+    delay = 0.05
+
+    class _Timed:
+        def __init__(self):
+            self.starts = []
+
+        def analyze(self, log_time, kafka_receive_time) -> str:
+            self.starts.append(time.perf_counter())
+            return "리포트"
+
+    analyzer = _Timed()
+    service = SlowlogTriggerService(
+        llm_analyzer=analyzer,
+        notifier=_Notifier(),
+        pending=pending,
+        micro_batch_seconds=delay,
+    )
+
+    await service._run_agent(TS, TS)
+    await _settle(service)
+
+    assert len(analyzer.starts) == 1 + _MAX_CONSECUTIVE_RETRIGGERS
+    gaps = [b - a for a, b in zip(analyzer.starts, analyzer.starts[1:])]
+    # 스케줄러 오차를 감안해 약간 느슨하게 본다. 지연이 없으면 0에 가깝다.
+    assert all(gap >= delay * 0.9 for gap in gaps), gaps
 
 
 async def test_no_retrigger_when_the_agent_drained_the_queue():
@@ -164,7 +185,11 @@ async def test_agent_task_handle_is_kept_while_running():
         await asyncio.sleep(0.01)
     assert started.is_set(), "agent가 시작되지 않았다"
 
-    assert service._agent_task is not None, "실행 중인 태스크 핸들이 보관되지 않았다"
+    handle = service._agent_task
+    assert handle is not None, "실행 중인 태스크 핸들이 보관되지 않았다"
 
+    # _run_agent의 finally가 _agent_task를 None으로 되돌린다. 핸들을 지역
+    # 변수에 잡아두지 않으면 release.set()과 await 사이에 await이 하나만
+    # 끼어들어도 None을 await하게 된다.
     release.set()
-    await service._agent_task
+    await handle

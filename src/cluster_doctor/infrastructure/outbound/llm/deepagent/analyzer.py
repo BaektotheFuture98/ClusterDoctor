@@ -16,7 +16,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from deepagents import create_deep_agent, FilesystemPermission
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
-from cluster_doctor.application.port.outbound.llm_analyzer import LlmAnalyzer, LlmResponseError
+from cluster_doctor.application.port.outbound.llm_analyzer import (
+    LlmAnalyzer,
+    LlmApiError,
+    LlmResponseError,
+)
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
@@ -80,12 +84,16 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             max_retries=1,
         )
 
+        # tool은 실패를 예외가 아니라 문자열로 돌려준다(예외는 agent 실행
+        # 전체를 죽인다). 그 사실을 여기로 실어 나르는 통로다.
+        run_state = {"degraded": False}
         tools = make_tools(
             cluster=self._cluster,
             fetch_logs=self._fetch_logs,
             drain_pending=self._drain_pending,
             call_llm=call_llm,
             call_llm_minute=call_llm_minute,
+            run_state=run_state,
         )
 
         agent = create_deep_agent(
@@ -117,6 +125,12 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             )
         if not content:
             raise LlmResponseError("agent가 빈 응답을 반환했습니다.")
+        if run_state["degraded"]:
+            # 분석이 실패한 채로 리포트가 작성됐다. agent는 정상 종료했지만
+            # 진단은 이뤄지지 않았다. 이것을 성공으로 돌려주면 트리거 서비스가
+            # 큐에 남은 항목을 보고 곧바로 같은 실행을 다시 건다 — 429로
+            # 실패한 실행을 지연 없이 3번 더 반복하며 할당량만 태운다.
+            raise LlmApiError(f"분석이 실패한 채 리포트가 작성되었습니다: {content[:200]}")
         return content
 
 
