@@ -127,3 +127,19 @@ def test_get_settings_does_not_cache_a_failed_configuration(broken_settings):
     with pytest.raises(ConfigurationError):
         get_settings()
     assert get_settings.cache_info().currsize == 0
+
+
+def test_micro_batch_seconds_defaults_to_ten(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    assert Settings(_env_file=None).micro_batch_seconds == 10.0
+
+
+def test_micro_batch_seconds_is_configurable(monkeypatch):
+    # .env에 적어둔 값이 실제로 동작에 반영돼야 한다. 예전에는
+    # FLUSH_INTERVAL_SECONDS가 문서에만 있고 코드에는 없어, 설정해도
+    # 하드코딩된 10초로 동작하면서 아무 경고가 없었다.
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    monkeypatch.setenv("MICRO_BATCH_SECONDS", "30")
+    assert Settings(_env_file=None).micro_batch_seconds == 30.0
