@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 
-from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.model.time_range import TimeRange
 
 class LlmApiError(RuntimeError):
     """LLM provider가 비-2xx 응답을 반환했다.
@@ -22,5 +21,6 @@ class LlmResponseError(RuntimeError):
 
 class LlmAnalyzer(ABC):
     @abstractmethod
-    def analyze(self, time_range: TimeRange, logs: list[LogEntry], model: str | None) -> str:
+    def analyze(self, log_time: datetime, kafka_receive_time: datetime) -> str:
+        """slowlog 자체 timestamp와 Kafka 수신 시각을 받아 클러스터를 진단하고 리포트를 반환한다."""
         ...
