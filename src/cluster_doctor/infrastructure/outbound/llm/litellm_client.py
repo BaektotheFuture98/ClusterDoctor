@@ -26,15 +26,11 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (  # noqa: E40
 
 litellm.suppress_debug_info = True
 
-_TEMPERATURE = 0.2
 _MAX_OUTPUT_TOKENS = 8192
 _REQUEST_TIMEOUT_SECONDS = 120.0
 
-# 실측 확인된 litellm provider 식별자. nvidia_nim의 기본 api_base는
-# https://integrate.api.nvidia.com/v1 로 litellm 내부에 하드코딩돼 있다.
 _PROVIDER_PREFIX: dict[str, str] = {
     "gemini": "gemini",
-    "nvidia": "nvidia_nim",
 }
 
 # 응답에 텍스트가 없을 때의 안내. litellm은 provider의 원본 사유 문자열을
@@ -91,7 +87,9 @@ def complete(
             "model": f"{prefix}/{model}",
             "messages": messages,
             "api_key": api_key,
-            "temperature": _TEMPERATURE,
+            # temperature를 비롯한 샘플링 인자는 보내지 않는다. 명시하지 않으면
+            # provider 기본값이 적용되고, 모델을 바꿀 때 그 모델에 맞는 기본값을
+            # 그대로 따라간다.
             "max_tokens": max_tokens,
             "timeout": _REQUEST_TIMEOUT_SECONDS,
             "num_retries": 3,
