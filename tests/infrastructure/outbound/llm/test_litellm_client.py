@@ -57,7 +57,14 @@ def test_request_still_carries_the_parameters_that_must_survive():
     assert sent["api_key"] == "test-key"
     assert sent["max_tokens"] == 8192
     assert sent["timeout"] == 120.0
-    assert sent["num_retries"] == 3
+    assert sent["num_retries"] == 0
+
+
+def test_retries_are_disabled():
+    # 429는 분당 입력 토큰 한도 초과로 난다. 같은 프롬프트를 다시 보내면
+    # 실패가 보장된 채 소비만 배로 늘어난다(실측 4배). litellm은
+    # completion()에 오류 종류별 재시도 정책을 받지 않으므로 전부 끈다.
+    assert _call()["num_retries"] == 0
 
 
 def test_api_key_is_never_folded_into_the_model_string():

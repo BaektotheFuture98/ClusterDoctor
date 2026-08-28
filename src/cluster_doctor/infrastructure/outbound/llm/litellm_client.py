@@ -92,7 +92,14 @@ def complete(
             # 그대로 따라간다.
             "max_tokens": max_tokens,
             "timeout": _REQUEST_TIMEOUT_SECONDS,
-            "num_retries": 3,
+            # 재시도하지 않는다. 이 경로의 실패는 대부분 429이고, 그것은
+            # 분당 입력 토큰 한도 초과가 원인이다. 같은 프롬프트를 다시
+            # 보내면 실패가 보장된 채 소비만 배로 늘어난다(실측: 513,122
+            # 토큰 → 재시도 포함 2,052,488 토큰, 한도 250,000의 821%).
+            # litellm.completion()은 오류 종류별 재시도 정책을 받지 않으므로
+            # 일시적 오류까지 함께 포기한다 — 구간 하나가 실패해도 분석
+            # 전체는 살아남게 되어 있어(analyze_minute의 failed=True) 감당된다.
+            "num_retries": 0,
         }
         if response_format is not None:
             kwargs["response_format"] = response_format

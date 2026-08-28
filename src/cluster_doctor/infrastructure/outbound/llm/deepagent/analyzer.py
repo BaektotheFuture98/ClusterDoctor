@@ -69,6 +69,10 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         llm = ChatGoogleGenerativeAI(
             model=self._default_model,
             google_api_key=self._api_key,
+            # 기본값은 6이다. 429일 때 서버는 retryDelay로 40초를 지시하는데
+            # SDK는 1.4초·2.3초·4.7초·8.4초로 재시도해 그 창을 넘기지 못하고,
+            # 그동안 요청을 더 밀어 넣어 한도를 더 태운다.
+            max_retries=0,
         )
 
         tools = make_tools(
