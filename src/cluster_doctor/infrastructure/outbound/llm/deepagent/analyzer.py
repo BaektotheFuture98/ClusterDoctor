@@ -72,7 +72,12 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             # 기본값은 6이다. 429일 때 서버는 retryDelay로 40초를 지시하는데
             # SDK는 1.4초·2.3초·4.7초·8.4초로 재시도해 그 창을 넘기지 못하고,
             # 그동안 요청을 더 밀어 넣어 한도를 더 태운다.
-            max_retries=0,
+            #
+            # 0이 아니라 1이다. langchain_google_genai/_common.py가 명시한다 —
+            # max_retries=0은 "Google SDK 기본값을 쓰라"(5회)로 해석되고,
+            # 재시도를 끄려면 1을 줘야 한다. attempts=max_retries가
+            # HttpRetryOptions로 그대로 전달되기 때문이다(chat_models.py:3420).
+            max_retries=1,
         )
 
         tools = make_tools(
