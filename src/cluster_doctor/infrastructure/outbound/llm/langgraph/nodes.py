@@ -72,7 +72,7 @@ def split_by_minute(state: GraphState) -> dict:
     return {"buckets": buckets}
 
 
-def make_analyze_minute(call_llm: LlmCaller, structured: bool = False):
+def make_analyze_minute(call_llm: LlmCaller):
     """한 구간을 분석하는 노드를 만든다.
 
     팬아웃된 각 인스턴스는 ``Send``로 받은 ``MinuteBucket`` 하나만 본다.
@@ -80,8 +80,10 @@ def make_analyze_minute(call_llm: LlmCaller, structured: bool = False):
     하나가 rate limit에 걸렸다고 나머지 9분의 분석까지 버리는 것은 과하다.
     전부 실패한 경우의 판단은 ``synthesize``가 한다.
 
-    structured=True면 call_llm이 JSON 문자열을 돌려준다고 가정하고
-    MinuteOutput 스키마로 파싱한다.
+    ``call_llm``은 ``response_format``이 걸려 ``MinuteOutput`` JSON을 돌려준다.
+    그래도 파싱은 방어적으로 한다 — provider가 바뀌거나 structured output이
+    조용히 무시될 수 있고, 그때 구간을 통째로 잃는 것보다 텍스트로라도 파는
+    편이 낫다.
     """
 
     def analyze_minute(bucket: MinuteBucket) -> dict:
@@ -103,17 +105,19 @@ def make_analyze_minute(call_llm: LlmCaller, structured: bool = False):
                 ]
             }
 
-        if structured:
-            try:
-                data = json.loads(text)
-                summary = (data.get("summary") or "").strip()
-                evidence = data.get("evidence") or []
-            except (json.JSONDecodeError, AttributeError):
-                summary, evidence = _parse_minute_response(text)
-        else:
+        try:
+            data = json.loads(text)
+            summary = (data.get("summary") or "").strip()
+            evidence = data.get("evidence") or []
+        except (json.JSONDecodeError, AttributeError):
+            # JSONDecodeError: 아예 JSON이 아니다.
+            # AttributeError: json.loads는 성공했지만 dict가 아니다
+            #                 (숫자·문자열 리터럴도 유효한 JSON이다).
             summary, evidence = _parse_minute_response(text)
 
         _logger.info("minute %s analysis done: %s", label, summary)
+        if evidence:
+            _logger.info("minute %s evidence:\n%s", label, "\n".join(evidence))
         return {
             "findings": [
                 MinuteFinding(
@@ -143,8 +147,15 @@ def _parse_minute_response(text: str) -> tuple[str, list[str]]:
     return summary or text.strip(), evidence
 
 
-def make_synthesize(call_llm: LlmCaller):
-    """구간별 결과를 최종 리포트로 합성하는 노드를 만든다."""
+def make_synthesize(
+    call_llm: LlmCaller,
+    prompt_builder: Callable = build_synthesis_prompt,
+):
+    """구간별 결과를 최종 리포트로 합성하는 노드를 만든다.
+
+    prompt_builder를 교체하면 출력 형식을 바꿀 수 있다.
+    기본값은 7섹션 진단 리포트.
+    """
 
     def synthesize(state: GraphState) -> dict:
         findings = sorted(state["findings"], key=lambda f: f.minute)
@@ -158,7 +169,7 @@ def make_synthesize(call_llm: LlmCaller):
                 f"만들 수 없습니다."
             )
 
-        prompt = build_synthesis_prompt(
+        prompt = prompt_builder(
             time_range=state["time_range"],
             minute_sections=_format_findings(findings),
             analyzed=len(findings) - len(failed),

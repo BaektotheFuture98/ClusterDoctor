@@ -4,7 +4,14 @@
 7개 섹션 구성은 스펙에서 온 것이므로 바꾸기 전에 스펙을 먼저 확인할 것.
 """
 
-from cluster_doctor.domain.model.log_entry import LogEntry
+from functools import singledispatch
+
+from cluster_doctor.domain.model.log_entry import (
+    LogEntry,
+    NodeMetricEntry,
+    QueryLogEntry,
+    SlowlogEntry,
+)
 from cluster_doctor.domain.model.time_range import TimeRange
 
 _SOURCE_DESC = {
@@ -13,15 +20,74 @@ _SOURCE_DESC = {
     "node_metric":  "ES 노드 리소스 메트릭.",
 }
 
+# 한 쿼리가 키워드 200개 넘게 싣고 오는 경우가 있다. 그대로 그리면 한 줄이
+# 2,000자를 넘고(실측 2,029자), 같은 유저가 agg와 count로 같은 목록을 두 번
+# 보내면 4,000자가 연달아 들어간다. 분당 입력 토큰 한도를 넘긴 주범이었다.
+#
+# 진단에 필요한 것은 "이 유저가 어떤 주제를 검색했나"이지 전량이 아니다.
+# 앞 몇 개면 주제가 드러나고, 전체 개수는 따로 알려 주면 "키워드 215개짜리
+# 쿼리"라는 사실도 근거로 쓸 수 있다.
+_MAX_KEYWORDS_SHOWN = 5
 
-def format_log_line(entry: LogEntry) -> str:
+
+def _format_keywords(keywords: tuple[str, ...]) -> str:
+    if len(keywords) <= _MAX_KEYWORDS_SHOWN:
+        return f"keyword={list(keywords)}"
+    shown = list(keywords[:_MAX_KEYWORDS_SHOWN])
+    return f"keyword={shown} 외 {len(keywords) - _MAX_KEYWORDS_SHOWN}개"
+
+
+@singledispatch
+def format_log_line(entry) -> str:
+    """한 항목을 프롬프트 한 줄로 그린다. 소스마다 그리는 법이 다르다.
+
+    표현을 도메인 모델이 아니라 여기 두는 이유: 어떤 값을 어떻게 보여줄지는
+    프롬프트의 관심사다. 모델은 값을 값인 채로 들고 있기만 하면 된다.
+
+    등록되지 않은 타입은 조용히 넘기지 않고 터뜨린다 — 새 소스를 추가하며
+    렌더러를 잊으면 프롬프트에 빈 줄이 들어가고, 그 사실이 아무 데도 남지
+    않는다.
+    """
+    raise TypeError(f"프롬프트 줄로 그릴 수 없는 항목입니다: {type(entry).__name__}")
+
+
+@format_log_line.register
+def _format_slowlog(entry: SlowlogEntry) -> str:
+    return (
+        f"  {entry.timestamp} [SLOWLOG] node={entry.node or '-'} "
+        f"comp={entry.index_name or '-'} "
+        f"took={entry.took}, {entry.total_hits}, shards={entry.total_shards}, "
+        f"id={entry.opaque_id}, query={entry.query}"
+    )
+
+
+@format_log_line.register
+def _format_query_log(entry: QueryLogEntry) -> str:
     line = (
-        f"  {entry.timestamp} [{entry.level}] node={entry.node or '-'} "
-        f"comp={entry.component or '-'} {entry.message}"
+        f"  {entry.timestamp} [{'SUCCESS' if entry.success else 'FAIL'}] "
+        f"node={entry.host or '-'} comp={entry.service or '-'} "
+        f"[{entry.cmd}] project={entry.project} env={entry.env} "
+        f"cluster={entry.cluster} runtime={entry.run_time}s "
+        f"{_format_keywords(entry.keywords)}"
     )
     if entry.company or entry.user:
         line += f" company={entry.company or '-'} user={entry.user or '-'}"
     return line
+
+
+@format_log_line.register
+def _format_node_metric(entry: NodeMetricEntry) -> str:
+    return (
+        f"  {entry.timestamp} [METRIC] "
+        f"node={entry.node_name} ({entry.node_ip}) comp=- "
+        f"cpu={entry.os_cpu_percent}% mem={entry.os_mem_used_percent}% "
+        f"proc_cpu={entry.process_cpu_percent}% "
+        f"jvm_heap={entry.jvm_heap_used_percent}% "
+        f"search(active={entry.search_active},queue={entry.search_queue},"
+        f"rejected={entry.search_rejected}) "
+        f"write(active={entry.write_active},queue={entry.write_queue},"
+        f"rejected={entry.write_rejected})"
+    )
 
 
 def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
@@ -29,6 +95,12 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
 
     로그를 소스별로 묶되 **샘플링하지 않는다**. 1분치 전량을 보여주는 것이
     이 그래프의 존재 이유다.
+
+    응답 *형식*은 지시하지 않는다. 이 호출에는 ``response_format=MinuteOutput``이
+    걸려 있어 스키마가 형식을 강제하기 때문이다. 예전에는 여기서 "요약:/근거:
+    형식으로 답하라"고 시켰는데, 모순된 형식 계약 두 개가 동시에 전달되는
+    상태였다 — 스키마 쪽이 이기므로 그 지시는 효과 없이 구간마다 토큰만
+    축냈다. 형식 대신 각 필드가 무엇을 담아야 하는지만 말한다.
     """
     grouped: dict[str, list[LogEntry]] = {}
     for log in minute_logs:
@@ -51,20 +123,14 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
 • 이상 징후가 없으면 "특이사항 없음"이라고 명확히 쓴다. 억지로 문제를 만들지 않는다.
 • 노드명·수치·쿼리 내용을 구체적으로 인용한다. "부하가 높다"가 아니라
   "es-data-02가 cpu=94%, search queue=920"처럼 쓴다.
+• 반드시 한국어로 쓴다.
+• 사고 과정·추론 설명은 담지 않는다. 결론만 담는다.
 
-=== 출력 규칙 ===
-• 반드시 한국어로만 답한다.
-• 사고 과정·추론·설명을 출력하지 않는다. 아래 형식의 최종 답변만 출력한다.
-
-=== 응답 형식 ===
-마크다운 금지. 아래 두 부분만 이 순서로 출력한다.
-
-요약:
-(이 구간에서 무슨 일이 있었는지.)
-
-근거:
-(위 요약의 근거가 된 로그를 원문 그대로. 한 줄에 하나씩.
- 특이사항이 없으면 이 항목은 비워 둔다.)"""
+=== 각 필드에 담을 것 ===
+summary  이 구간에서 무슨 일이 있었는지. 한두 문장.
+evidence 위 요약의 근거가 된 로그를 원문 그대로, 한 줄에 하나씩.
+         종합 단계가 이것을 인용해 최종 리포트를 쓰므로, 요약으로 바꿔
+         쓰지 말고 원문을 그대로 옮긴다. 특이사항이 없으면 비워 둔다."""
 
 
 def build_synthesis_prompt(
