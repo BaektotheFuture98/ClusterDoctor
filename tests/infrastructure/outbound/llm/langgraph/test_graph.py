@@ -1,8 +1,14 @@
 ﻿"""그래프 전체 동작. LLM은 가짜 호출자로 대체한다.
 
 노드가 ``LlmCaller``를 주입받는 덕분에 litellm을 몽키패치할 필요가 없다.
+
+분별 분석은 structured output(JSON)으로만 동작한다. 조립부가 분별 호출자에
+``response_format=MinuteOutput``을 걸어 두므로 모델은 스키마 밖으로 나올 수
+없다. 그래서 여기 가짜 LLM도 JSON을 돌려준다 — 텍스트를 돌려주면 프로덕션이
+결코 받지 않는 응답을 검증하게 된다.
 """
 
+import json
 import threading
 import time
 from datetime import datetime
@@ -10,23 +16,27 @@ from datetime import datetime
 import pytest
 
 from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
-from cluster_doctor.domain.model.log_entry import LogEntry
+from cluster_doctor.domain.model.log_entry import SlowlogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
 
 TR = TimeRange(start=datetime(2026, 8, 20, 2, 9), end=datetime(2026, 8, 20, 2, 14))
 
 MINUTE_MAX_TOKENS = 1024
-MINUTE_REPLY = "요약:\n특이사항 없음\n근거:\n  근거A\n  근거B"
+MINUTE_REPLY = json.dumps(
+    {"summary": "특이사항 없음", "evidence": ["근거A", "근거B"]}, ensure_ascii=False
+)
 FINAL_REPLY = "최종 리포트"
 
 
-def _log(minute: int, second: int, source: str = "slowlog") -> LogEntry:
-    return LogEntry(
+def _log(minute: int, second: int, marker: str | None = None) -> SlowlogEntry:
+    """구간 격리를 확인하려면 항목이 어느 분에서 왔는지 프롬프트에서 보여야 한다.
+
+    ``query``에 표식을 넣는다 — 프롬프트 줄에 그대로 실리는 필드다.
+    """
+    return SlowlogEntry(
         timestamp=datetime(2026, 8, 20, 2, minute, second),
-        level="SLOWLOG",
-        source=source,
-        message=f"log-{minute:02d}:{second:02d}",
+        query=marker or f"log-{minute:02d}:{second:02d}",
     )
 
 
@@ -79,7 +89,9 @@ class _Recorder:
 
 
 def _run(llm, logs, time_range=TR):
-    return build_graph(llm).invoke(
+    # 같은 recorder를 두 자리에 넘긴다. 분별 호출과 종합 호출은 max_tokens로
+    # 구분되므로 하나로 충분하다.
+    return build_graph(llm, llm).invoke(
         {
             "time_range": time_range,
             "logs": logs,
@@ -89,6 +101,18 @@ def _run(llm, logs, time_range=TR):
             "report": "",
         }
     )
+
+
+def test_build_graph_requires_a_structured_minute_caller():
+    """텍스트 전용 모드는 없다.
+
+    예전에는 call_llm_minute을 생략하면 분별 호출에 response_format이 걸리지
+    않은 호출자가 쓰였고, 응답을 텍스트로만 파싱했다. 프로덕션은 그 경로를
+    쓴 적이 없는데 테스트만 그쪽을 검증하고 있었다. 생략을 막아 두 갈래가
+    다시 갈라지지 않게 한다.
+    """
+    with pytest.raises(TypeError):
+        build_graph(_Recorder())
 
 
 def test_one_llm_call_per_non_empty_minute_plus_one_synthesis():
@@ -133,9 +157,7 @@ def test_minute_logs_are_not_sampled():
     이 단정이 깨지면 그래프 모드가 단발 모드의 결함을 그대로 물려받은
     것이므로, 분할 자체가 무의미해진다.
     """
-    logs = [_log(9, 0) for _ in range(250)]
-    for i, log in enumerate(logs):
-        object.__setattr__(log, "message", f"line-{i}")
+    logs = [_log(9, 0, marker=f"line-{i}") for i in range(250)]
     llm = _Recorder()
 
     _run(llm, logs)
@@ -168,13 +190,40 @@ def test_evidence_lines_reach_the_synthesis_prompt():
     assert "근거B" in llm.synthesis_prompt
 
 
-def test_unparseable_minute_reply_keeps_the_text_as_summary():
+def test_non_json_reply_falls_back_to_text_parsing():
+    """스키마가 강제돼도 응답이 JSON이 아닐 수 있다.
+
+    provider가 바뀌거나 structured output이 조용히 무시되는 경우가 있다.
+    그때 구간을 통째로 잃는 대신 텍스트로 파 본다.
+    """
+    llm = _Recorder(minute_reply="요약:\n디스크 포화\n근거:\n  node-1 disk=98%")
+
+    _run(llm, [_log(9, 5)])
+
+    assert "디스크 포화" in llm.synthesis_prompt
+    assert "node-1 disk=98%" in llm.synthesis_prompt
+
+
+def test_free_form_reply_is_kept_whole_rather_than_dropped():
     """형식을 어긴 응답 때문에 구간을 통째로 잃지 않는다."""
     llm = _Recorder(minute_reply="형식을 무시한 자유 서술")
 
     _run(llm, [_log(9, 5)])
 
     assert "형식을 무시한 자유 서술" in llm.synthesis_prompt
+
+
+def test_json_scalar_reply_does_not_crash_the_minute():
+    """json.loads가 성공해도 dict가 아닐 수 있다 (숫자·문자열 리터럴).
+
+    .get 호출이 AttributeError로 터지면 그 구간이 통째로 날아간다.
+    """
+    llm = _Recorder(minute_reply='"특이사항 없음"')
+
+    state = _run(llm, [_log(9, 5)])
+
+    assert state["report"] == FINAL_REPLY
+    assert sum(1 for f in state["findings"] if f.failed) == 0
 
 
 def test_one_failed_minute_does_not_sink_the_whole_diagnosis():
@@ -223,11 +272,14 @@ def test_empty_log_set_still_produces_a_report():
     assert "로그가 없습니다" in llm.synthesis_prompt
 
 
-def test_minute_analyses_run_concurrently():
-    """10분 창이면 호출 10회다. 순차 실행이면 요청 하나가 10배 오래 걸린다.
+def test_minute_analyses_can_run_concurrently():
+    """LangGraph의 동기 invoke가 팬아웃 분기를 스레드로 병렬 실행한다.
 
-    LangGraph의 동기 invoke가 팬아웃 분기를 스레드로 병렬 실행한다는 사실에
-    의존한다. 그 동작이 바뀌면 여기서 잡힌다.
+    주의: 이것은 그래프의 능력이지 프로덕션의 동작이 아니다. 조립부는
+    ``config={"max_concurrency": 1}``을 걸어(tools.py) 의도적으로 순차
+    실행시킨다 — Gemini 무료 티어의 분당 입력 토큰 한도에 걸리기 때문이다.
+    여기서는 config 없이 불러 그래프 자체의 팬아웃을 확인한다. 이 단정이
+    깨지면 max_concurrency를 풀어도 병렬이 되지 않는다는 뜻이다.
     """
     llm = _Recorder(delay=0.2)
 

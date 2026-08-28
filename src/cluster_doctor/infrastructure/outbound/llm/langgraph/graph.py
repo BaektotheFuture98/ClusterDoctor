@@ -28,7 +28,7 @@ _SPLIT = "split_by_minute"
 _SYNTHESIZE = "synthesize"
 
 
-def _fan_out(state: GraphState) -> list:
+def _dispatch_minute_buckets(state: GraphState) -> list:
     """구간마다 analyze_minute 인스턴스를 하나씩 띄운다.
 
     ``Send``는 노드에 상태 전체가 아니라 지정한 값만 넘긴다. 각 인스턴스가
@@ -44,25 +44,26 @@ def _fan_out(state: GraphState) -> list:
     return [Send(_ANALYZE_MINUTE, bucket) for bucket in state["buckets"]]
 
 
-def build_graph(call_llm: LlmCaller, call_llm_minute: LlmCaller | None = None):
+def build_graph(call_llm: LlmCaller, call_llm_minute: LlmCaller):
     """컴파일된 그래프를 돌려준다.
 
     ``call_llm``은 provider/model/api_key가 이미 묶인 호출자다. 그래프는
     누구에게 묻는지 모른다 — 그 결정은 조립 시점(``analyzer.py``)에 끝난다.
 
-    ``call_llm_minute``이 주어지면 분 단위 분석에 structured output(JSON)을
-    사용한다. 없으면 ``call_llm``으로 텍스트 파싱 방식으로 동작한다.
+    ``call_llm_minute``은 분 단위 분석용으로, ``response_format``이 걸려
+    structured output(JSON)을 돌려주는 호출자다. 필수 인자다 — 예전에는
+    생략하면 텍스트 파싱 모드로 갈라졌는데, 프로덕션은 그 갈래를 쓴 적이
+    없으면서 테스트만 그쪽을 검증하고 있었다. 응답이 JSON이 아닐 때의 대비는
+    ``analyze_minute`` 안의 폴백이 담당한다.
     """
-    minute_caller = call_llm_minute if call_llm_minute is not None else call_llm
-    structured = call_llm_minute is not None
     builder = StateGraph(GraphState)
     builder.add_node(_SPLIT, split_by_minute)
-    builder.add_node(_ANALYZE_MINUTE, make_analyze_minute(minute_caller, structured=structured))
+    builder.add_node(_ANALYZE_MINUTE, make_analyze_minute(call_llm_minute))
     builder.add_node(_SYNTHESIZE, make_synthesize(call_llm))
 
     builder.add_edge(START, _SPLIT)
     builder.add_conditional_edges(
-        _SPLIT, _fan_out, [_ANALYZE_MINUTE, _SYNTHESIZE]
+        _SPLIT, _dispatch_minute_buckets, [_ANALYZE_MINUTE, _SYNTHESIZE]
     )
     builder.add_edge(_ANALYZE_MINUTE, _SYNTHESIZE)
     builder.add_edge(_SYNTHESIZE, END)
