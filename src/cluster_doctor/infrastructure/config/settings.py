@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     kafka_topic: str = "slowlog"
     kafka_group_id: str = "clusterdoctor"
 
+    # 첫 slowlog 수신 후 agent를 띄우기까지 모으는 시간. slowlog는 몰려서
+    # 오므로 한 건마다 진단하면 같은 사고를 수십 번 분석하게 된다.
+    micro_batch_seconds: float = 10.0
+
     @field_validator("gemini_api_key")
     @classmethod
     def _require_gemini_key(cls, v: str) -> str:

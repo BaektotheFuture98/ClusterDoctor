@@ -97,7 +97,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
         llm_analyzer=analyzer,
         notifier=StdoutNotifier(),
         pending=pending,
-        micro_batch_seconds=10.0,
+        micro_batch_seconds=s.micro_batch_seconds,
     )
 
 
