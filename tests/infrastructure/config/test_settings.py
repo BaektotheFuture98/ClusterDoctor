@@ -145,6 +145,10 @@ def test_env_example_documents_only_settings_the_code_reads():
     # 버려졌다. 운영자가 값을 넣어도 하드코딩된 기본값으로 돌았고 경고도 없었다.
     # 문서와 코드가 다시 갈라지면 여기서 걸린다.
     env_example = Path(__file__).resolve().parents[3] / ".env.example"
+    # dotenv_values는 없는 경로에 대해 예외 없이 빈 dict을 돌려준다. 경로
+    # 계산이 깨지면 undeclared가 공집합이 되어, 아무것도 검사하지 않은 채
+    # 이 가드가 통과한다 — 이 테스트가 막으려던 바로 그 조용한 실패다.
+    assert env_example.exists(), f".env.example를 찾지 못했다: {env_example}"
     declared = {name.upper() for name in Settings.model_fields}
     documented = {key.upper() for key in dotenv_values(env_example)}
 

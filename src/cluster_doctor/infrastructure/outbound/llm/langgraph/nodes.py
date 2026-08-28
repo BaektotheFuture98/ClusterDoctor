@@ -118,6 +118,12 @@ def make_analyze_minute(call_llm: LlmCaller):
         # evidence는 모델이 준 JSON에서 온다. 스키마가 list[str]을 강제하지만
         # 그것이 우회되면 dict나 숫자가 섞여 들어올 수 있고, 아래 로깅의
         # "\n".join(...)은 try 밖이라 그대로 터져 구간이 통째로 날아간다.
+        #
+        # 리스트가 아닌 값은 감싸서 항목 하나로 만든다. 문자열이 오면 아래
+        # 컴프리헨션이 그것을 순회해 글자 수만큼의 항목을 만들고, 그 쓰레기
+        # 줄들이 종합 프롬프트에 그대로 실린다.
+        if not isinstance(evidence, list):
+            evidence = [evidence]
         evidence = [str(item) for item in evidence]
 
         _logger.info("minute %s analysis done: %s", label, summary)

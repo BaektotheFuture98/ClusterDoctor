@@ -239,6 +239,20 @@ def test_non_string_evidence_does_not_kill_the_minute():
     assert sum(1 for f in state["findings"] if f.failed) == 0
 
 
+def test_string_evidence_stays_one_line_instead_of_exploding_into_characters():
+    # 스키마는 list[str]을 강제하지만 그것이 우회되면 문자열 하나가 올 수 있다.
+    # [str(item) for item in evidence]는 문자열을 순회해 글자 수만큼의 항목을
+    # 만들고, 그 쓰레기 줄들이 종합 프롬프트에 그대로 실린다.
+    llm = _Recorder(minute_reply=json.dumps(
+        {"summary": "느린 쿼리", "evidence": "쿼리 X가 느림"}, ensure_ascii=False
+    ))
+
+    state = _run(llm, [_log(9, 5)])
+
+    assert state["findings"][0].evidence == ["쿼리 X가 느림"]
+    assert "쿼리 X가 느림" in llm.synthesis_prompt
+
+
 def test_one_failed_minute_does_not_sink_the_whole_diagnosis():
     """구간 하나가 rate limit에 걸렸다고 나머지 분석까지 버리지 않는다."""
 
