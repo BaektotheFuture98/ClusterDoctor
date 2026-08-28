@@ -50,56 +50,19 @@ def test_required_fields_loaded(monkeypatch):
     assert s.clickhouse_url == "jdbc:clickhouse://localhost:8123/default"
 
 
-def test_defaults_to_gemini_provider(monkeypatch):
-    for k, v in REQUIRED.items():
-        monkeypatch.setenv(k, v)
-    s = Settings(_env_file=None)
-    assert s.llm_provider == "gemini"
-    assert s.nvidia_model == "meta/llama-3.3-70b-instruct"
-
-
-def test_nvidia_provider_needs_only_nvidia_key(monkeypatch):
+def test_missing_gemini_key_is_rejected(monkeypatch):
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
-    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
-    monkeypatch.setenv("NVIDIA_API_KEY", "fake-nvidia-key")
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    s = Settings(_env_file=None)
-    assert s.llm_provider == "nvidia"
-    assert s.gemini_api_key == ""
-
-
-def test_gemini_provider_without_gemini_key_is_rejected(monkeypatch):
-    monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
-    monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None)
     assert "gemini_api_key" in str(excinfo.value)
 
 
-def test_nvidia_provider_without_nvidia_key_is_rejected(monkeypatch):
-    monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
-    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
-    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
-    with pytest.raises(ValidationError) as excinfo:
-        Settings(_env_file=None)
-    assert "nvidia_api_key" in str(excinfo.value)
-
-
-def test_unknown_provider_is_rejected(monkeypatch):
-    for k, v in REQUIRED.items():
-        monkeypatch.setenv(k, v)
-    monkeypatch.setenv("LLM_PROVIDER", "openai")
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
-
-
-def test_provider_key_error_does_not_echo_other_secrets(monkeypatch):
+def test_key_error_does_not_echo_other_secrets(monkeypatch):
     """검증 실패 메시지에 다른 비밀값이 실려서는 안 된다."""
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
     monkeypatch.setenv("CLICKHOUSE_PASSWORD", CANARY)
-    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
-    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None)
     assert CANARY not in str(excinfo.value)

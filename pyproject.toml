@@ -5,8 +5,7 @@ description = "ES 클러스터 진단 서비스"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
+    "aiokafka>=0.10.0",
     "clickhouse-connect>=1.7,<2",
     "httpx>=0.28.0",
     "python-dotenv>=1.0.0",

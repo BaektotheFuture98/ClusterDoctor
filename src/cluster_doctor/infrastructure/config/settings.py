@@ -1,13 +1,7 @@
 from functools import lru_cache
-from typing import Literal
 
-from pydantic import ValidationError, ValidationInfo, field_validator
+from pydantic import ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-_PROVIDER_KEY_FIELDS: dict[str, str] = {
-    "gemini": "gemini_api_key",
-    "nvidia": "nvidia_api_key",
-}
 
 
 class Settings(BaseSettings):
@@ -15,20 +9,14 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
-        # gemini_api_key/nvidia_api_key default to "" -- without this, pydantic
-        # skips validating a field that was never supplied, so an unset key
-        # would never reach _require_selected_provider_key below.
+        # validate_default=True: gemini_api_key 기본값("")도 검증을 거치게 한다.
+        # 이 값이 없으면 pydantic이 기본값 필드를 건너뛰어
+        # _require_gemini_key가 빈 키를 허용하게 된다.
         validate_default=True,
     )
 
-    llm_provider: Literal["gemini", "nvidia"] = "gemini"
-
-
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
-
-    nvidia_api_key: str = ""
-    nvidia_model: str = "meta/llama-3.3-70b-instruct"
 
     clickhouse_url: str
     clickhouse_user: str = "default"
@@ -42,28 +30,22 @@ class Settings(BaseSettings):
     es_user: str = ""
     es_password: str = ""
 
-    @field_validator("gemini_api_key", "nvidia_api_key")
-    @classmethod
-    def _require_selected_provider_key(cls, v: str, info: ValidationInfo) -> str:
-        """선택된 provider의 키가 비어 있으면 거부한다.
+    kafka_bootstrap_servers: str = "localhost:9092"
+    kafka_topic: str = "slowlog"
+    kafka_group_id: str = "clusterdoctor"
 
-        의도적으로 필드 단위(field_validator) 검증이다: 모델 단위
-        (model_validator(mode="after"))로 짰을 때는 값이 아니라 필드
-        이름만 언급해도 pydantic이 ValidationError.__str__ 안에
-        input_value=<모델 전체 dict>를 그대로 붙여 다른 비밀값까지
-        새어나갔다(직접 확인함). 필드 단위 검증기는 실패한 그 필드
-        자신의 스칼라 값(빈 문자열)만 input_value로 싣기 때문에 다른
-        필드의 비밀값이 메시지에 실리지 않는다.
+    @field_validator("gemini_api_key")
+    @classmethod
+    def _require_gemini_key(cls, v: str) -> str:
+        """gemini_api_key가 비어 있으면 거부한다.
+
+        필드 단위 검증기를 쓰는 이유: model_validator(mode="after")는
+        ValidationError.__str__ 안에 input_value=<모델 전체 dict>를 담아
+        다른 비밀값(clickhouse_password 등)이 에러 메시지에 노출된다.
+        필드 단위 검증기는 실패한 필드 자신의 값만 싣는다.
         """
-        provider = info.data.get("llm_provider")
-        if (
-            provider is not None
-            and _PROVIDER_KEY_FIELDS.get(provider) == info.field_name
-            and not v
-        ):
-            raise ValueError(
-                f"{info.field_name} is required when llm_provider={provider!r}"
-            )
+        if not v:
+            raise ValueError("gemini_api_key is required")
         return v
 
 
