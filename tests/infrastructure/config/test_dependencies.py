@@ -84,6 +84,7 @@ def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
     """
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    monkeypatch.setenv("MICRO_BATCH_SECONDS", "2.5")
     settings_module.get_settings.cache_clear()
     monkeypatch.setattr(dependencies, "_get_es_client", lambda: MagicMock())
     monkeypatch.setattr(dependencies, "_get_log_repository", lambda: MagicMock())
@@ -107,6 +108,12 @@ def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
         entry = SlowlogEntry(timestamp=datetime.now(timezone.utc))
         service._pending.put(entry)
         assert analyzer._drain_pending() == [entry]
+
+        # MICRO_BATCH_SECONDS를 승격한 목적 자체가 "문서화된 설정값이 실제로는
+        # 무시된다"는 사고를 막는 것이었다. dependencies.py가 하드코딩된 값으로
+        # 되돌아가도 이 조립 함수를 통해 실행 중인 서비스까지 값이 전달되는지
+        # 검증하는 테스트가 없으면 같은 사고가 조용히 재발한다.
+        assert service._micro_batch_seconds == 2.5
     finally:
         dependencies._get_cluster_repository.cache_clear()
         settings_module.get_settings.cache_clear()
