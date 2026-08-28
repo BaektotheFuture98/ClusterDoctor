@@ -1,6 +1,8 @@
 ﻿import traceback
+from pathlib import Path
 
 import pytest
+from dotenv import dotenv_values
 from pydantic import BaseModel, ValidationError
 
 from cluster_doctor.infrastructure.config import settings as settings_module
@@ -133,6 +135,21 @@ def test_micro_batch_seconds_defaults_to_ten(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
     assert Settings(_env_file=None).micro_batch_seconds == 10.0
+
+
+def test_env_example_documents_only_settings_the_code_reads():
+    # 이 프로젝트에서 실제로 났던 사고다. .env.example이 FLUSH_INTERVAL_SECONDS
+    # 등 네 개를 문서화했지만 Settings에는 없었고, extra="ignore" 때문에 조용히
+    # 버려졌다. 운영자가 값을 넣어도 하드코딩된 기본값으로 돌았고 경고도 없었다.
+    # 문서와 코드가 다시 갈라지면 여기서 걸린다.
+    env_example = Path(__file__).resolve().parents[3] / ".env.example"
+    declared = {name.upper() for name in Settings.model_fields}
+    documented = {key.upper() for key in dotenv_values(env_example)}
+
+    # litellm이 import 시점에 os.environ에서 직접 읽는 값이라 Settings 필드가
+    # 없는 것이 정상이다.
+    undeclared = documented - declared - {"LITELLM_LOCAL_MODEL_COST_MAP"}
+    assert undeclared == set(), f".env.example에만 있고 코드가 읽지 않는 설정: {sorted(undeclared)}"
 
 
 def test_micro_batch_seconds_is_configurable(monkeypatch):
