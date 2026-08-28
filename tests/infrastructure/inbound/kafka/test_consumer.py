@@ -19,12 +19,21 @@ NAIVE_ISO = "2026-08-28T10:20:15.123000"
 
 @pytest.mark.parametrize(
     "raw",
-    [KST_ISO, UTC_ISO, NAIVE_ISO, 1788000015123, 1788000015123.0, None, "말이 안 되는 값"],
-    ids=["kst", "utc-z", "naive", "epoch-int", "epoch-float", "없음", "쓰레기"],
+    [KST_ISO, UTC_ISO, NAIVE_ISO, 1788000015123, 1788000015123.0, None],
+    ids=["kst", "utc-z", "naive", "epoch-int", "epoch-float", "없음"],
 )
 def test_timestamp_is_always_aware(raw):
     entry = _parse_message({"_source": {"@timestamp": raw}})
     assert entry.timestamp.utcoffset() is not None, f"naive가 새어 나왔다: {raw!r}"
+
+
+def test_malformed_timestamp_raises_so_the_caller_can_warn():
+    # 여기서 삼키면 안 된다. run()이 이미 파싱 실패를 잡아
+    # "partition=... 파싱 실패, 수신 시각으로 폴백" 경고를 남기고 aware 시각으로
+    # 대체한다(consumer.py의 run()). _parse_message가 조용히 폴백하면 그 경고가
+    # 영영 뜨지 않아, 형식이 깨진 메시지가 계속 들어와도 알 수 없게 된다.
+    with pytest.raises(ValueError):
+        _parse_message({"_source": {"@timestamp": "말이 안 되는 값"}})
 
 
 def test_offset_bearing_input_keeps_its_instant():

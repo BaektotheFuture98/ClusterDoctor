@@ -84,15 +84,11 @@ def _parse_message(data: dict) -> SlowlogEntry:
     src = data.get("_source", data)
 
     raw_ts = src.get("@timestamp") or src.get("timestamp") or src.get("time")
-    try:
-        if isinstance(raw_ts, str):
-            timestamp = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-        elif isinstance(raw_ts, (int, float)):
-            timestamp = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
-        else:
-            timestamp = datetime.now(timezone.utc)
-    except (ValueError, OSError, OverflowError):
-        # 형식이 어긋나거나 범위 밖이면 현재 시각으로 폴백한다.
+    if isinstance(raw_ts, str):
+        timestamp = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+    elif isinstance(raw_ts, (int, float)):
+        timestamp = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
+    else:
         timestamp = datetime.now(timezone.utc)
 
     if timestamp.utcoffset() is None:
