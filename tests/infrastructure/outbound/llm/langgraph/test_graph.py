@@ -226,6 +226,19 @@ def test_json_scalar_reply_does_not_crash_the_minute():
     assert sum(1 for f in state["findings"] if f.failed) == 0
 
 
+def test_non_string_evidence_does_not_kill_the_minute():
+    # structured output이 우회되면 evidence에 dict가 들어올 수 있다.
+    # "\n".join(...)이 try 밖에 있어 그대로 터지면 구간이 통째로 날아간다.
+    llm = _Recorder(minute_reply=json.dumps(
+        {"summary": "느린 쿼리", "evidence": [{"log": "line-1"}, 42]}, ensure_ascii=False
+    ))
+
+    state = _run(llm, [_log(9, 5)])
+
+    assert state["report"] == FINAL_REPLY
+    assert sum(1 for f in state["findings"] if f.failed) == 0
+
+
 def test_one_failed_minute_does_not_sink_the_whole_diagnosis():
     """구간 하나가 rate limit에 걸렸다고 나머지 분석까지 버리지 않는다."""
 

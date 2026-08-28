@@ -115,6 +115,11 @@ def make_analyze_minute(call_llm: LlmCaller):
             #                 (숫자·문자열 리터럴도 유효한 JSON이다).
             summary, evidence = _parse_minute_response(text)
 
+        # evidence는 모델이 준 JSON에서 온다. 스키마가 list[str]을 강제하지만
+        # 그것이 우회되면 dict나 숫자가 섞여 들어올 수 있고, 아래 로깅의
+        # "\n".join(...)은 try 밖이라 그대로 터져 구간이 통째로 날아간다.
+        evidence = [str(item) for item in evidence]
+
         _logger.info("minute %s analysis done: %s", label, summary)
         if evidence:
             _logger.info("minute %s evidence:\n%s", label, "\n".join(evidence))

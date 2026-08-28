@@ -286,7 +286,7 @@ def test_fetch_logs_sorted_descending():
     t2     = datetime(2026, 8, 20, 2, 9, 30)
     client = _make_client(
         slowlog_rows=[SLOWLOG_ROW],
-        query_rows=[(t2, "h", 0.1, "Y", "GET", "s", "e", "p", "c", "k", None, None)],
+        query_rows=[(t2, "h", Decimal("0.1"), "Y", "GET", "s", "e", "p", "c", ["k"], None, None)],
     )
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
     logs    = adapter.fetch_logs(TR)

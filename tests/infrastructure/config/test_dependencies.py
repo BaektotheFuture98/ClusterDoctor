@@ -15,10 +15,12 @@ from cluster_doctor.infrastructure.config.settings import Settings
 REQUIRED_ENV = {
     "GEMINI_API_KEY": "test-key",
     "CLICKHOUSE_URL": "jdbc:clickhouse://localhost:8123/default",
+    "ES_HOST": "es.example.com",
 }
 
 BASE_ENV = {
     "clickhouse_url": "jdbc:clickhouse://localhost:8123/default",
+    "es_host": "es.example.com",
 }
 
 
@@ -84,6 +86,7 @@ def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
     """
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    monkeypatch.setenv("ES_HOST", "es.example.com")
     monkeypatch.setenv("MICRO_BATCH_SECONDS", "2.5")
     settings_module.get_settings.cache_clear()
     monkeypatch.setattr(dependencies, "_get_es_client", lambda: MagicMock())
