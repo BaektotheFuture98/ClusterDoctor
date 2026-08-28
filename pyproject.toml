@@ -23,6 +23,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.4.0",
+    "pytest-asyncio>=0.24.0",
 ]
 
 [build-system]
@@ -35,3 +36,5 @@ packages = ["src/cluster_doctor"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# auto 모드면 async def 테스트에 데코레이터를 붙이지 않아도 된다.
+asyncio_mode = "auto"

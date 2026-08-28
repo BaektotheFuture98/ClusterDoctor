@@ -22,6 +22,11 @@ from cluster_doctor.domain.model.log_entry import LogEntry
 
 _logger = logging.getLogger(__name__)
 
+# agent가 큐를 비우지 않은 채 계속 성공하면 재트리거가 끝나지 않는다
+# (큐를 비우는 것은 agent의 check_new_slowlogs 뿐이다). 상한을 둬서
+# 프롬프트를 어긴 실행이 무한 루프가 되지 않게 한다.
+_MAX_CONSECUTIVE_RETRIGGERS = 3
+
 
 class SlowlogTriggerService:
     def __init__(
@@ -37,6 +42,8 @@ class SlowlogTriggerService:
         self._micro_batch_seconds = micro_batch_seconds
         self._running = False
         self._trigger_task: asyncio.Task | None = None
+        self._agent_task: asyncio.Task | None = None
+        self._consecutive_retriggers = 0
         self._first_log_time: datetime | None = None
         self._first_kafka_receive_time: datetime | None = None
 
@@ -57,7 +64,18 @@ class SlowlogTriggerService:
         await asyncio.sleep(self._micro_batch_seconds)
         self._trigger_task = None
         self._running = True
-        asyncio.create_task(self._run_agent(self._first_log_time, self._first_kafka_receive_time))
+        self._consecutive_retriggers = 0
+        self._spawn_agent(self._first_log_time, self._first_kafka_receive_time)
+
+    def _spawn_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
+        """agent 태스크를 띄우고 핸들을 보관한다.
+
+        asyncio는 실행 중인 태스크에 약한 참조만 유지한다. create_task의
+        반환값을 버리면 실행 도중 GC되어 진단이 아무 흔적 없이 사라질 수 있다.
+        """
+        self._agent_task = asyncio.create_task(
+            self._run_agent(log_time, kafka_receive_time)
+        )
 
     async def _run_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
         _logger.info(
@@ -65,22 +83,56 @@ class SlowlogTriggerService:
             log_time.strftime("%Y-%m-%d %H:%M:%S"),
             kafka_receive_time.strftime("%Y-%m-%d %H:%M:%S"),
         )
+        succeeded = False
         try:
             report = await asyncio.to_thread(
                 self._llm_analyzer.analyze, log_time, kafka_receive_time
             )
             _logger.info("agent 완료 — 리포트 전송")
             await self._notifier.notify(report)
+            succeeded = True
         except (LlmApiError, LlmResponseError) as exc:
             # 두 예외는 상속 관계가 없는 형제다(둘 다 RuntimeError 직속).
             # LlmApiError만 잡으면 빈 응답(LlmResponseError)이 아래
             # generic 핸들러로 빠져 '예상치 못한 오류'로 잘못 분류된다.
             _logger.error("LLM 분석 실패: %s", exc)
-        except Exception as exc:
-            _logger.error("agent 실행 중 예상치 못한 오류: %s", exc)
+        except Exception:
+            # exc_info를 남긴다. 이 갈래는 원인을 모르는 실패이므로
+            # 스택 없이는 진단할 수 없다.
+            _logger.exception("agent 실행 중 예상치 못한 오류")
         finally:
             self._running = False
-            if not self._pending.empty():
-                self._running = True
-                now = datetime.now(timezone.utc)
-                asyncio.create_task(self._run_agent(now, now))
+            self._agent_task = None
+            self._maybe_retrigger(succeeded)
+
+    def _maybe_retrigger(self, succeeded: bool) -> None:
+        """다음 실행을 이어서 걸지 결정한다.
+
+        실패한 실행은 절대 이어 걸지 않는다. _run_agent은 큐를 비우지 않으므로
+        (비우는 것은 agent의 check_new_slowlogs 뿐이다) 실패하면 큐가 그대로
+        남고, 바로 다시 걸면 같은 실패를 백오프 없이 무한 반복하며 API
+        할당량을 태운다. 다음 slowlog가 도착하면 on_slowlog가 새 타이머를
+        걸어 자연히 재개되므로 잃는 것은 없다.
+        """
+        if not succeeded:
+            self._consecutive_retriggers = 0
+            return
+
+        if self._pending.empty():
+            self._consecutive_retriggers = 0
+            return
+
+        if self._consecutive_retriggers >= _MAX_CONSECUTIVE_RETRIGGERS:
+            _logger.warning(
+                "연속 재트리거 %d회에 도달해 중단한다. agent가 큐를 비우지 "
+                "않고 있다(check_new_slowlogs 미호출 가능성). 다음 slowlog "
+                "도착 시 재개된다.",
+                self._consecutive_retriggers,
+            )
+            self._consecutive_retriggers = 0
+            return
+
+        self._consecutive_retriggers += 1
+        self._running = True
+        now = datetime.now(timezone.utc)
+        self._spawn_agent(now, now)
