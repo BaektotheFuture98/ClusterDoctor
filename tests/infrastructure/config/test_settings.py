@@ -11,6 +11,7 @@ from cluster_doctor.infrastructure.config.settings import ConfigurationError, Se
 REQUIRED = {
     "GEMINI_API_KEY":  "test-key",
     "CLICKHOUSE_URL":  "jdbc:clickhouse://localhost:8123/default",
+    "ES_HOST":         "es.example.com",
 }
 
 CANARY = "CanaryPassword_7fQ2"
@@ -134,6 +135,7 @@ def test_get_settings_does_not_cache_a_failed_configuration(broken_settings):
 def test_micro_batch_seconds_defaults_to_ten(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    monkeypatch.setenv("ES_HOST", "es.example.com")
     assert Settings(_env_file=None).micro_batch_seconds == 10.0
 
 
@@ -158,5 +160,21 @@ def test_micro_batch_seconds_is_configurable(monkeypatch):
     # 하드코딩된 10초로 동작하면서 아무 경고가 없었다.
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    monkeypatch.setenv("ES_HOST", "es.example.com")
     monkeypatch.setenv("MICRO_BATCH_SECONDS", "30")
     assert Settings(_env_file=None).micro_batch_seconds == 30.0
+
+
+def test_missing_es_host_is_rejected_at_startup(monkeypatch):
+    # agent의 첫 단계가 cluster_health()라 ES는 이제 필수다. 비어 있으면
+    # Elasticsearch(hosts=[])가 조립 시점에 ValueError를 던지는데, 그것은
+    # 어떤 설정이 문제인지 알려주지 않는다.
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    monkeypatch.setenv("ES_HOST", "")
+    settings_module.get_settings.cache_clear()
+    try:
+        with pytest.raises(ConfigurationError, match="es_host"):
+            settings_module.get_settings()
+    finally:
+        settings_module.get_settings.cache_clear()

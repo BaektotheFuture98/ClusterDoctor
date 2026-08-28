@@ -52,6 +52,20 @@ class Settings(BaseSettings):
             raise ValueError("gemini_api_key is required")
         return v
 
+    @field_validator("es_host")
+    @classmethod
+    def _require_es_host(cls, v: str) -> str:
+        """es_host가 비어 있으면 거부한다.
+
+        agent의 첫 진단 단계가 cluster_health()이므로 ES는 필수다. 비워 두면
+        _get_es_client가 hosts=[]로 Elasticsearch를 만들다 ValueError를 던지는데,
+        그 메시지는 어떤 설정이 문제인지 알려주지 않는다. 필드 단위 검증기로
+        올려 ConfigurationError가 이름을 짚어 주게 한다.
+        """
+        if not v.strip():
+            raise ValueError("es_host is required")
+        return v
+
 
 class ConfigurationError(RuntimeError):
     """Startup configuration is missing or invalid.
