@@ -1,12 +1,20 @@
-"""테스트용 slowlog 메시지를 Kafka 토픽에 전송한다."""
+"""테스트용 slowlog 메시지를 Kafka 토픽에 전송한다.
+
+브로커 주소와 토픽은 .env에서 읽는다. 여기에 하드코딩하면 운영 인프라
+주소가 커밋되어 저장소를 보는 누구에게나 노출된다.
+"""
 import asyncio
 import json
+import os
 import sys
 
 from aiokafka import AIOKafkaProducer
+from dotenv import load_dotenv
 
-BOOTSTRAP_SERVERS = "61.110.21.49:19092,61.110.21.48:19092,61.110.21.47:19092"
-TOPIC = "slowlog-dlq"
+load_dotenv()
+
+BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+TOPIC = os.environ.get("KAFKA_TOPIC", "slowlog")
 
 TEST_MESSAGE = {
     "_index": ".ds-logs-elasticsearch.slowlog-default-2026.08.27-000001",

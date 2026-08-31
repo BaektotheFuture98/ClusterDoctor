@@ -19,21 +19,24 @@ from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
     format_log_line,
 )
 
+# 픽스처는 전부 합성 값이다. 실제 인덱스명·노드명·고객사명·사용자 주소를
+# 쓰지 않는다 — 테스트 파일은 커밋되고 공유되므로 운영 식별자나 제3자
+# 개인정보가 들어가서는 안 된다. 형식만 실제와 같으면 계약 검증에 충분하다.
 SLOWLOG = SlowlogEntry(
     timestamp=datetime(2026, 8, 27, 14, 0, 2),
-    index_name="lucy_main_v1", node="RC17-10", took="32.4s",
+    index_name="app_index_v1", node="node-a01", took="32.4s",
     total_hits="68 hits", total_shards=902,
-    opaque_id="service=web,company=50,user=579", query='{"size":0}',
+    opaque_id="service=web,company=1,user=2", query='{"size":0}',
 )
 QUERYLOG = QueryLogEntry(
     timestamp=datetime(2026, 8, 27, 14, 0, 3),
-    host="172.16.74.30", run_time=Decimal("2.12"), success=True, cmd="agg",
-    service="web", env="prod", project="quettai", cluster="quetta",
-    keywords=("퓨레",), company="CJ제일제당", user="cjcj0005@cj.net",
+    host="10.0.0.11", run_time=Decimal("2.12"), success=True, cmd="agg",
+    service="web", env="prod", project="search_app", cluster="main",
+    keywords=("검색어A",), company="acme", user="user01@example.com",
 )
 METRIC = NodeMetricEntry(
     timestamp=datetime(2026, 8, 27, 14, 0, 2),
-    node_name="RC10-02", node_ip="192.168.0.226",
+    node_name="node-b02", node_ip="10.0.0.12",
     os_cpu_percent=1, os_mem_used_percent=99, process_cpu_percent=0,
     jvm_heap_used_percent=59, search_active=0, search_queue=0, search_rejected=0,
     write_active=0, write_queue=0, write_rejected=0,
@@ -45,9 +48,9 @@ LOGS = [SLOWLOG]
 # 이 단계는 순수 리팩터링이고, keyword 절단 같은 실제 변경은 그다음이다.
 def test_slowlog_line_is_unchanged():
     assert format_log_line(SLOWLOG) == (
-        "  2026-08-27 14:00:02 [SLOWLOG] node=RC17-10 comp=lucy_main_v1 "
+        "  2026-08-27 14:00:02 [SLOWLOG] node=node-a01 comp=app_index_v1 "
         "took=32.4s, 68 hits, shards=902, "
-        "id=service=web,company=50,user=579, query={\"size\":0}"
+        "id=service=web,company=1,user=2, query={\"size\":0}"
     )
 
 
@@ -64,8 +67,8 @@ def _with_keywords(*kw) -> QueryLogEntry:
 
 
 def test_short_keyword_list_is_shown_whole():
-    line = format_log_line(_with_keywords("퓨레", "익시오"))
-    assert "keyword=['퓨레', '익시오']" in line
+    line = format_log_line(_with_keywords("검색어A", "검색어B"))
+    assert "keyword=['검색어A', '검색어B']" in line
     assert "외" not in line
 
 
@@ -95,15 +98,15 @@ def test_truncation_is_presentation_only():
 
 def test_long_keyword_list_shrinks_the_line_dramatically():
     long_entry = _with_keywords(*[f"키워드{i}" for i in range(215)])
-    short_entry = _with_keywords("퓨레")
+    short_entry = _with_keywords("검색어A")
     assert len(format_log_line(long_entry)) < len(format_log_line(short_entry)) + 120
 
 
 def test_query_log_line_is_unchanged():
     assert format_log_line(QUERYLOG) == (
-        "  2026-08-27 14:00:03 [SUCCESS] node=172.16.74.30 comp=web "
-        "[agg] project=quettai env=prod cluster=quetta runtime=2.12s "
-        "keyword=['퓨레'] company=CJ제일제당 user=cjcj0005@cj.net"
+        "  2026-08-27 14:00:03 [SUCCESS] node=10.0.0.11 comp=web "
+        "[agg] project=search_app env=prod cluster=main runtime=2.12s "
+        "keyword=['검색어A'] company=acme user=user01@example.com"
     )
 
 
@@ -114,7 +117,7 @@ def test_failed_query_renders_as_FAIL():
 
 def test_node_metric_line_is_unchanged():
     assert format_log_line(METRIC) == (
-        "  2026-08-27 14:00:02 [METRIC] node=RC10-02 (192.168.0.226) comp=- "
+        "  2026-08-27 14:00:02 [METRIC] node=node-b02 (10.0.0.12) comp=- "
         "cpu=1% mem=99% proc_cpu=0% jvm_heap=59% "
         "search(active=0,queue=0,rejected=0) write(active=0,queue=0,rejected=0)"
     )
@@ -150,7 +153,7 @@ def test_describes_what_each_output_field_must_carry():
 def test_still_carries_the_logs_and_the_minute_label():
     prompt = _prompt()
     assert "2026-08-27 14:00" in prompt
-    assert "RC17-10" in prompt
+    assert "node-a01" in prompt
     assert "took=32.4s" in prompt
     assert "1건 (전량)" in prompt
 

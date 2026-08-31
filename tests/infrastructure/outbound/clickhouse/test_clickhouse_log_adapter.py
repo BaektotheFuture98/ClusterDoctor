@@ -24,12 +24,12 @@ TR_MULTI = TimeRange(start=datetime(2026, 8, 20, 2, 9, 30), end=datetime(2026, 8
 #   4=total_hits, 5=total_shards(int), 6=x-opaque-id, 7=쿼리 원문
 SLOWLOG_ROW = (
     datetime(2026, 8, 20, 2, 9, 5),
-    "lucy_main_v1_20250721",
-    "RC17-10",
+    "app_index_v1_20250721",
+    "node-a01",
     "32.4s",
     "68 hits",
     902,
-    "service=web,project=quettai,env=prod,company=50,user=579,action=count",
+    "service=web,project=search_app,env=prod,company=1,user=2,action=count",
     '{"size":0,"query":{"query_string":{"query":"생선"}}}',
 )
 
@@ -81,12 +81,12 @@ def test_fetch_logs_maps_slowlog():
     e = sl[0]
     assert isinstance(e, SlowlogEntry)
     assert e.timestamp    == datetime(2026, 8, 20, 2, 9, 5)
-    assert e.index_name   == "lucy_main_v1_20250721"
-    assert e.node         == "RC17-10"
+    assert e.index_name   == "app_index_v1_20250721"
+    assert e.node         == "node-a01"
     assert e.took         == "32.4s"       # 느린 정도
     assert e.total_hits   == "68 hits"     # 결과량
     assert e.total_shards == 902           # 조회된 샤드 수 — int로 남는다
-    assert "company=50"   in e.opaque_id   # company/user 귀속
+    assert "company=1"    in e.opaque_id   # company/user 귀속
     assert "생선"          in e.query       # 쿼리 원문
 
 

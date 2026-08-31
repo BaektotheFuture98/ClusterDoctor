@@ -27,24 +27,24 @@ TS = datetime(2026, 8, 27, 18, 33, 2)
 
 def _slowlog(**kw) -> SlowlogEntry:
     return SlowlogEntry(
-        timestamp=TS, index_name="lucy_main_v1", node="RC17-10", took="32.4s",
+        timestamp=TS, index_name="app_index_v1", node="node-a01", took="32.4s",
         total_hits="68 hits", total_shards=902,
-        opaque_id="service=web,company=50,user=579", query='{"size":0}', **kw
+        opaque_id="service=web,company=1,user=2", query='{"size":0}', **kw
     )
 
 
 def _querylog(**kw) -> QueryLogEntry:
     base = dict(
-        timestamp=TS, host="172.16.74.30", run_time=Decimal("2.12"), success=True,
-        cmd="agg", service="web", env="prod", project="quettai", cluster="quetta",
-        keywords=("퓨레", "익시오"), company="CJ제일제당", user="cjcj0005@cj.net",
+        timestamp=TS, host="10.0.0.11", run_time=Decimal("2.12"), success=True,
+        cmd="agg", service="web", env="prod", project="search_app", cluster="main",
+        keywords=("검색어A", "검색어B"), company="acme", user="user01@example.com",
     )
     return QueryLogEntry(**{**base, **kw})
 
 
 def _metric(**kw) -> NodeMetricEntry:
     base = dict(
-        timestamp=TS, node_name="RC10-02", node_ip="192.168.0.226",
+        timestamp=TS, node_name="node-b02", node_ip="10.0.0.12",
         os_cpu_percent=1, os_mem_used_percent=99, process_cpu_percent=0,
         jvm_heap_used_percent=59, search_active=0, search_queue=0, search_rejected=0,
         write_active=0, write_queue=0, write_rejected=0,
@@ -73,7 +73,7 @@ def test_values_stay_typed_instead_of_becoming_text():
     q = _querylog()
     assert q.run_time == Decimal("2.12")
     assert q.success is True
-    assert q.keywords == ("퓨레", "익시오")
+    assert q.keywords == ("검색어A", "검색어B")
 
     m = _metric(os_cpu_percent=94, search_queue=920)
     assert m.os_cpu_percent == 94
