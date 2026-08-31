@@ -236,9 +236,14 @@ Saves disk only — startup time is unchanged, since those files are not on the 
   runtime.
 - **A partly-failed analysis is treated as a success.** The degraded flag is set only when
   *every* minute bucket fails. Since the quota resets each minute, partial failure is the
-  common shape, and those runs still retrigger. See
-  `docs/superpowers/plans/2026-08-28-quota-resilience.md` for the full list of deferred
-  risks and why the obvious fix ("degrade on any failure") is wrong.
+  common shape, and those runs still retrigger. The obvious fix — degrade on *any* failure —
+  is wrong: degrading both suppresses the retrigger *and* discards the report, so a
+  nine-of-ten-good diagnosis would be thrown away. Doing it properly means separating
+  "produced nothing" from "produced something partial", which the `str` return type of
+  `LlmAnalyzer.analyze` cannot express today.
+- **Hitting the `analyze_logs` call cap is also treated as a success.** Same asymmetry, a
+  different cause: the refusal string does not set the degraded flag, so a report written
+  from partial coverage looks identical to a complete one.
 - **`check_new_slowlogs` drains the queue before analysis starts.** If a run then dies hard,
   the drained entries are gone and no retrigger fires; the incident waits for the next
   slow-log.
