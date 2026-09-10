@@ -36,3 +36,27 @@ class ElasticsearchClusterAdapter(ClusterRepository):
             format="json",
         )
         return [dict(row) for row in rows]
+
+    def node_info(self, node_id: str) -> dict:
+        # filter_path에 node_id를 리터럴로 넣으면 id에 포함된 '-' 등이
+        # dot notation과 충돌할 수 있다. node_id는 nodes.info()의
+        # 경로 파라미터로 이미 특정 노드를 지정하므로 응답은 단일 항목이며,
+        # filter_path는 와일드카드 nodes.*로 두는 것이 안전하다.
+        resp = self._client.nodes.info(
+            node_id=node_id,
+            filter_path=[
+                "nodes.*.ip",
+                "nodes.*.settings.path.logs",
+                "nodes.*.settings.cluster.name",
+            ],
+        )
+        nodes = dict(resp).get("nodes", {})
+        data = next(iter(nodes.values()), {})
+        if not data:
+            return {}
+        settings = data.get("settings") or {}
+        return {
+            "ip":           data.get("ip", ""),
+            "log_path":     settings.get("path", {}).get("logs", ""),
+            "cluster_name": settings.get("cluster", {}).get("name", ""),
+        }

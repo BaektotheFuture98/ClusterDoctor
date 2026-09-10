@@ -48,6 +48,10 @@ class GraphState(TypedDict):
     ``findings``에 ``operator.add``를 붙인 이유: 분별 분석 노드는 팬아웃으로
     동시에 여러 개가 돌고, 각자 자기 결과 하나만 담은 리스트를 돌려준다.
     reducer가 없으면 마지막에 끝난 노드가 나머지를 덮어쓴다.
+
+    ``master_logs``는 analyze_logs tool이 SSH로 수집한 마스터 노드 ES 로그다.
+    분별 fan-out에는 쓰지 않고 synthesize 노드에서만 쓴다.
+    추후 ClickHouse에 마스터 로그 테이블이 생기면 fetch 로직만 바꾸면 된다.
     """
 
     time_range: TimeRange
@@ -55,3 +59,4 @@ class GraphState(TypedDict):
     buckets: list[MinuteBucket]
     findings: Annotated[list[MinuteFinding], operator.add]
     report: str
+    master_logs: str

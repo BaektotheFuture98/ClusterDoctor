@@ -86,13 +86,40 @@ analyze_logs()는 10분을 넘는 구간을 거부한다.
 - 3단계에서 정한 구간마다 analyze_logs(start_iso, end_iso)를 시간순으로 호출한다.
 - 결과가 비어 있으면 구간을 앞뒤로 1~2분 옮겨 한 번만 재시도한다.
   그래도 비어 있으면 커넥터 적재 지연 가능성을 리포트에 명시하고 계속 진행한다.
+- 모든 analyze_logs 호출이 끝나면 cluster_health()를 한 번 호출해 현재 상태를 기록한다.
+  status가 green이고 미할당 샤드가 없으면 5단계를 건너뛰고 6단계로 직행한다.
 
 ### 5단계: 보조 조사
 
-- slowlog에 반복 등장하는 인덱스는 get_index_summary()로 상태를 확인한다.
-- 클러스터가 한 번이라도 yellow나 red였으면 explain_unassigned_shards()로 원인을 확인한다.
+4단계 최종 cluster_health가 green이면 이 단계는 실행하지 않는다.
+
+non-green이거나 분석 결과에 특정 노드 문제가 의심되면 아래를 수행한다.
+
+a. slowlog에 반복 등장하는 인덱스는 get_index_summary()로 상태를 확인한다.
+
+b. 클러스터가 한 번이라도 yellow나 red였으면 explain_unassigned_shards()로 원인을 확인한다.
+
+c. slowlog에 같은 노드가 반복 등장하면 그 노드의 ES 로그를 수집한다.
+   get_node_logs(node_id, start_iso=<3단계 결정 start>, end_iso=<3단계 결정 end>)
+   - node_id는 analyze_logs 결과에서 확인한 노드 ID다.
+   - 수집 결과를 보고 더 앞 시간대가 필요하다고 판단되면 start_iso를 당겨 재호출한다.
+   - 여러 노드가 의심되면 노드마다 각각 호출한다.
+
+d. non-green 상태라면 마스터 노드 로그도 수집한다.
+   get_node_logs("_master", start_iso=<3단계 결정 start>, end_iso=<3단계 결정 end>)
+   - analyze_logs 내부에서 수집한 마스터 로그(시간창 단위)와 달리,
+     여기서는 사고 전체 구간을 한 번에 요청해 더 넓은 맥락을 본다.
 
 ### 6단계: 리포트 작성
+
+analyze_logs가 반환한 LangGraph 리포트를 그대로 복사하지 않는다.
+그것은 입력 데이터 중 하나일 뿐이다.
+아래 모든 정보를 통합해 새 리포트를 처음부터 작성한다.
+- analyze_logs 결과 (구간별 slowlog 분석 + 마스터 로그 시간 연계)
+- 5단계 보조 조사에서 수집한 데이터 노드 SSH 로그
+- 5단계 보조 조사에서 수집한 마스터 노드 SSH 로그 (전체 구간)
+- cluster_health 변화 이력
+- explain_unassigned_shards / get_index_summary 결과
 
 ## 출력 규칙
 • 반드시 한국어로만 답한다.

@@ -17,8 +17,9 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timezone, timedelta
 
-_KST = timezone(timedelta(hours=9))
 from langchain_core.tools import tool
+
+_KST = timezone(timedelta(hours=9))
 
 _logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
 )
 from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
 from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import LlmCaller
+from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
 
 
 def _parse_kst(iso: str) -> datetime:
@@ -81,6 +83,7 @@ def make_tools(
     call_llm: LlmCaller,
     call_llm_minute: LlmCaller,
     *,
+    node_log_fetcher: NodeLogFetcher,
     run_state: dict,
 ) -> list:
     """tool 묶음을 만든다.
@@ -144,6 +147,21 @@ def make_tools(
             logs = fetch_logs(time_range)
             if not logs:
                 return f"{start_iso} ~ {end_iso} 구간에 로그 없음"
+
+            # 마스터 노드 SSH 로그를 같은 구간으로 수집해 synthesis 컨텍스트에 준다.
+            # 실패해도 주 분석을 중단하지 않는다.
+            master_logs = ""
+            try:
+                m_info = cluster.node_info("_master")
+                if m_info and m_info.get("ip"):
+                    master_logs = node_log_fetcher.fetch(
+                        m_info["ip"], m_info["log_path"], m_info["cluster_name"],
+                        start_dt=start_dt,
+                        end_dt=end_dt,
+                    )
+            except Exception as m_exc:
+                _logger.warning("[tool] analyze_logs master log 수집 실패: %s", m_exc)
+
             state = _graph.invoke(
                 {
                     "time_range": time_range,
@@ -151,8 +169,9 @@ def make_tools(
                     "buckets": [],
                     "findings": [],
                     "report": "",
+                    "master_logs": master_logs,
                 },
-                config={"max_concurrency": 1},
+                config={"max_concurrency": 5},
             )
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[tool] analyze_logs 분석 실패: %s", exc)
@@ -228,6 +247,98 @@ def make_tools(
             return f"미할당 샤드 없음 또는 조회 불가: {exc}"
 
     @tool
+    def get_node_info(node_id: str) -> dict:
+        """ES 노드 ID로 해당 노드의 IP와 로그 디렉터리 경로를 조회한다.
+
+        마스터 로그에서 문제 노드 ID를 확인한 뒤 SSH 접속 정보와 로그 위치를
+        얻을 때 호출한다. 노드를 찾지 못하면 빈 dict를 반환한다.
+
+        반환 키:
+          ip           — SSH 접속에 쓸 transport 주소
+          log_path     — 해당 노드의 ES 로그 디렉터리 경로
+          cluster_name — 로그 파일명 구성에 사용하는 클러스터명
+
+        Args:
+            node_id: ES 노드 ID. 예) "bEY4xABCDEF456GH"
+        """
+        _logger.info("[tool] get_node_info(%s)", node_id)
+        try:
+            result = cluster.node_info(node_id)
+        except Exception as exc:
+            _logger.warning("[tool] get_node_info 조회 실패: %s", exc)
+            run_state["degraded"] = True
+            return {"error": f"노드 정보 조회 실패: {exc}"}
+        if not result:
+            _logger.info("[tool] get_node_info → 노드 없음 (id=%s)", node_id)
+            return {}
+        _logger.info("[tool] get_node_info → ip=%s log_path=%s", result.get("ip"), result.get("log_path"))
+        return result
+
+    @tool
+    def get_node_logs(
+        node_id: str,
+        start_iso: str,
+        end_iso: str,
+        keyword: str = "",
+        max_lines: int = 300,
+    ) -> str:
+        """ES 노드 ID로 해당 노드에 SSH 접속해 지정 구간의 ES 로그를 가져온다.
+
+        내부에서 GET /_nodes/{node_id}로 ip/cluster_name을 조회한 뒤
+        SSH로 접속해 severity 키워드(WARN/ERROR/GC/heap/thread pool/reject/shard)
+        라인만 필터링한다. node_id 하나로 완결된다.
+
+        분석 결과를 보고 앞 시간대가 더 필요하다고 판단되면 start_iso를 앞으로 당겨
+        다시 호출한다. "_master"도 유효한 node_id다.
+
+        Args:
+            node_id:   ES 노드 ID. 예) "1xwAA7FOTpekenDXft67Bg", "_master"
+            start_iso: 구간 시작. ISO 8601. 예) "2026-09-08T02:00:00"
+            end_iso:   구간 종료. ISO 8601. 예) "2026-09-08T02:15:00"
+            keyword:   추가 필터 키워드. 비어 있으면 전체. 예) "Exception"
+            max_lines: 최대 반환 라인 수 (기본값: 300)
+        """
+        _logger.info("[tool] get_node_logs(%s, %s ~ %s)", node_id, start_iso, end_iso)
+        try:
+            start_dt = _parse_kst(start_iso)
+            end_dt = _parse_kst(end_iso)
+        except ValueError as exc:
+            return f"시각 파싱 오류: {exc}"
+
+        try:
+            info = cluster.node_info(node_id)
+        except Exception as exc:
+            _logger.warning("[tool] get_node_logs 노드 정보 조회 실패: %s", exc)
+            run_state["degraded"] = True
+            return f"노드 정보 조회 실패: {exc}"
+        if not info:
+            return f"노드를 찾지 못함 (id={node_id})"
+
+        ip = info.get("ip", "")
+        log_path = info.get("log_path", "")
+        cluster_name = info.get("cluster_name", "")
+        _logger.info("[tool] get_node_logs → ip=%s cluster_name=%s", ip, cluster_name)
+
+        try:
+            result = node_log_fetcher.fetch(
+                ip, log_path, cluster_name,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                keyword=keyword,
+                max_lines=max_lines,
+            )
+        except Exception as exc:
+            _logger.warning("[tool] get_node_logs SSH 실패: %s", exc)
+            run_state["degraded"] = True
+            return f"로그 수집 실패 (ip={ip}): {exc}"
+
+        if not result:
+            return "(해당 시간대 로그 없음)"
+        line_count = result.count("\n") + 1
+        _logger.info("[tool] get_node_logs → %d라인", line_count)
+        return result
+
+    @tool
     def get_index_summary(index_pattern: str) -> list[dict]:
         """특정 인덱스 패턴의 상태 요약을 반환한다.
 
@@ -277,5 +388,7 @@ def make_tools(
         cluster_health,
         explain_unassigned_shards,
         get_index_summary,
+        get_node_info,
+        get_node_logs,
         sleep,
     ]
