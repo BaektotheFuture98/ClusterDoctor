@@ -46,6 +46,32 @@ class MinuteOutput(BaseModel):
 
 _MINUTE_FORMAT = "%Y-%m-%d %H:%M"
 
+# 종합 응답의 블록 구분자. build_synthesis_prompt가 요구하는 문자열과 정확히
+# 같아야 한다 — 한 글자만 어긋나도 추론이 리포트에 그대로 실린다.
+_REPORT_DELIMITER = "===리포트==="
+
+
+def _strip_reasoning(text: str) -> str:
+    """구획 CoT 응답에서 리포트 본문만 꺼낸다.
+
+    이 프로젝트가 쓰는 모델(gemma-4-31b-it)은 thinking을 지원하지 않아 추론을
+    출력으로 받는다. 그 추론이 운영자에게 그대로 가면 리포트가 아니므로
+    여기서 잘라낸다.
+
+    구분자를 못 찾으면 전문을 그대로 돌려준다. 모델이 형식을 어겼을 때 빈
+    리포트를 돌려주는 것보다, 추론이 섞인 리포트라도 돌려주는 편이 낫다 —
+    운영자가 읽고 판단할 수 있다. 그 사실은 경고로 남겨 형식 이탈이 눈에
+    보이게 한다.
+    """
+    _, sep, tail = text.partition(_REPORT_DELIMITER)
+    if not sep:
+        _logger.warning(
+            "종합 응답에 %s 구분자가 없다. 추론이 섞인 채 전문을 리포트로 쓴다.",
+            _REPORT_DELIMITER,
+        )
+        return text.strip()
+    return tail.strip()
+
 
 def split_by_minute(state: GraphState) -> dict:
     """로그를 1분 버킷으로 나눈다. 빈 구간은 만들지 않는다.
@@ -185,10 +211,13 @@ def make_synthesize(
             minute_sections=_format_findings(findings),
             analyzed=len(findings) - len(failed),
             failed=len(failed),
+            master_logs=state["master_logs"],
         )
         return {
-            "report": call_llm(
-                [{"role": "user", "content": prompt}], _SYNTHESIS_MAX_TOKENS
+            "report": _strip_reasoning(
+                call_llm(
+                    [{"role": "user", "content": prompt}], _SYNTHESIS_MAX_TOKENS
+                )
             )
         }
 

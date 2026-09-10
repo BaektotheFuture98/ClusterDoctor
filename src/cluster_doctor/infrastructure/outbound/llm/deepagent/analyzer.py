@@ -12,7 +12,7 @@ from functools import partial
 
 _KST = timezone(timedelta(hours=9))
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_litellm import ChatLiteLLM
 from deepagents import create_deep_agent, FilesystemPermission
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
@@ -24,6 +24,7 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
+from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.outbound.llm.deepagent.prompts import SYSTEM_PROMPT
 from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import MinuteOutput
 from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
@@ -52,13 +53,18 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         cluster: ClusterRepository,
         fetch_logs: Callable[[TimeRange], list[LogEntry]],
         drain_pending: Callable[[], list[LogEntry]],
+        node_log_fetcher: NodeLogFetcher,
+        provider: str = "gemini",
     ) -> None:
-        self._provider = require_supported_provider("gemini")
+        # 생성자에서 검증한다. 잘못된 provider를 첫 호출까지 끌고 가면
+        # 진단 요청 한 건을 통째로 날린 뒤에야 오타를 알게 된다.
+        self._provider = require_supported_provider(provider)
         self._api_key = api_key
         self._default_model = default_model
         self._cluster = cluster
         self._fetch_logs = fetch_logs
         self._drain_pending = drain_pending
+        self._node_log_fetcher = node_log_fetcher
 
     def analyze(self, log_time: datetime, kafka_receive_time: datetime) -> str:
         _bound = partial(
@@ -70,18 +76,25 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         call_llm = _bound
         call_llm_minute = partial(_bound, response_format=MinuteOutput)
 
-        llm = ChatGoogleGenerativeAI(
-            model=self._default_model,
-            google_api_key=self._api_key,
-            # 기본값은 6이다. 429일 때 서버는 retryDelay로 40초를 지시하는데
-            # SDK는 1.4초·2.3초·4.7초·8.4초로 재시도해 그 창을 넘기지 못하고,
-            # 그동안 요청을 더 밀어 넣어 한도를 더 태운다.
+        llm = ChatLiteLLM(
+            # litellm의 모델 문자열은 "<provider>/<model>" 형태다.
+            # litellm_client._PROVIDER_PREFIX와 같은 규칙을 쓴다.
+            model=f"{self._provider}/{self._default_model}",
+            api_key=self._api_key,
+            # 재시도하지 않는다. 이 경로의 실패는 대부분 429이고, 그것은 분당
+            # 입력 토큰 한도 초과가 원인이다. 같은 프롬프트를 다시 보내면
+            # 실패가 보장된 채 소비만 배로 늘어난다 —
+            # complete()의 num_retries=0과 같은 이유다(실측 513,122 토큰 →
+            # 재시도 포함 2,052,488 토큰, 한도 250,000의 821%).
             #
-            # 0이 아니라 1이다. langchain_google_genai/_common.py가 명시한다 —
-            # max_retries=0은 "Google SDK 기본값을 쓰라"(5회)로 해석되고,
-            # 재시도를 끄려면 1을 줘야 한다. attempts=max_retries가
-            # HttpRetryOptions로 그대로 전달되기 때문이다(chat_models.py:3420).
-            max_retries=1,
+            # 오케스트레이터는 tool 루프라 재시도가 루프 전체로 증폭되고,
+            # 트리거 서비스가 큐 잔여 시 10초 간격으로 최대 4회 연속
+            # 실행하므로(_MAX_CONSECUTIVE_RETRIGGERS=3) 증폭이 한 번 더 곱해진다.
+            #
+            # 예전 ChatGoogleGenerativeAI에서는 1이었다. 그쪽은 0을 "SDK
+            # 기본값을 쓰라"(5회)로 해석하는 특수값이었기 때문이다.
+            # ChatLiteLLM에는 그 해석이 없으므로 0이 곧 재시도 없음이다.
+            max_retries=0,
         )
 
         # tool은 실패를 예외가 아니라 문자열로 돌려준다(예외는 agent 실행
@@ -93,6 +106,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             drain_pending=self._drain_pending,
             call_llm=call_llm,
             call_llm_minute=call_llm_minute,
+            node_log_fetcher=self._node_log_fetcher,
             run_state=run_state,
         )
 

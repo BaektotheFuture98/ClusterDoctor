@@ -17,10 +17,10 @@ import pytest
 
 from cluster_doctor.domain.model.log_entry import (
     LogEntry,
-    NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
+from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 
 TS = datetime(2026, 8, 27, 18, 33, 2)
 

@@ -40,9 +40,22 @@ def test_result_is_always_timezone_aware():
         assert _parse_kst(iso).utcoffset() == timedelta(hours=9), iso
 
 
-def _tools(fetch_logs=None, drain_pending=None, cluster=None, run_state=None):
+def _tools(
+    fetch_logs=None,
+    drain_pending=None,
+    cluster=None,
+    run_state=None,
+    node_log_fetcher=None,
+):
     """이름 → tool 매핑. make_tools 호출마다 클로저 상태가 새로 만들어진다."""
     from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
+
+    if node_log_fetcher is None:
+        # fetch가 빈 문자열을 돌려주게 못 박는다. MagicMock 기본 반환값을
+        # 그대로 두면 master_logs에 MagicMock이 실려 종합 프롬프트에 그
+        # repr이 들어간다 — SSH 수집을 건너뛴 경우와 같은 빈 문자열이 맞다.
+        node_log_fetcher = MagicMock()
+        node_log_fetcher.fetch.return_value = ""
 
     built = make_tools(
         cluster=cluster or MagicMock(),
@@ -50,6 +63,7 @@ def _tools(fetch_logs=None, drain_pending=None, cluster=None, run_state=None):
         drain_pending=drain_pending or (lambda: []),
         call_llm=MagicMock(return_value="report"),
         call_llm_minute=MagicMock(return_value='{"summary": "s", "evidence": []}'),
+        node_log_fetcher=node_log_fetcher,
         run_state=run_state if run_state is not None else {"degraded": False},
     )
     return {t.name: t for t in built}

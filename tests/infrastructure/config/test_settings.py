@@ -26,7 +26,7 @@ def test_defaults_applied(monkeypatch):
     monkeypatch.delenv("CLICKHOUSE_LOG_TABLE", raising=False)
     monkeypatch.delenv("CLICKHOUSE_NODE_METRIC_TABLE", raising=False)
     s = Settings(_env_file=None)
-    assert s.gemini_model                 == "gemini-2.5-flash"
+    assert s.gemini_model                 == "gemini-3.5-flash-lite"
     assert s.clickhouse_user              == "default"
     assert s.clickhouse_password          == ""
     assert s.clickhouse_slowlog_table     == "slowlog_v2"
@@ -51,6 +51,85 @@ def test_required_fields_loaded(monkeypatch):
     s = Settings(_env_file=None)
     assert s.gemini_api_key == "test-key"
     assert s.clickhouse_url == "jdbc:clickhouse://localhost:8123/default"
+
+
+def test_provider_defaults_to_gemini(monkeypatch):
+    """provider를 고르지 않으면 기존 동작을 유지한다."""
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    s = Settings(_env_file=None)
+    assert s.llm_provider == "gemini"
+    assert s.llm_api_key == s.gemini_api_key
+    assert s.llm_model == s.gemini_model
+
+
+def test_selecting_nvidia_switches_key_and_model(monkeypatch):
+    """provider를 바꾸면 키와 모델이 함께 그쪽으로 간다.
+
+    호출부가 provider를 분기하지 않게 하려고 프로퍼티로 묶었다. 예전에는
+    dependencies가 s.gemini_api_key를 직접 읽어, .env에 NVIDIA 설정을 넣어도
+    Gemini로 갔다.
+    """
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia_nim")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-key")
+    monkeypatch.setenv("NVIDIA_MODEL", "google/gemma-4-31b-it")
+    s = Settings(_env_file=None)
+    assert s.llm_api_key == "nv-key"
+    assert s.llm_model == "google/gemma-4-31b-it"
+
+
+def test_nvidia_selected_without_its_key_is_rejected(monkeypatch):
+    """쓰는 키가 비어 있으면 기동을 막는다.
+
+    예전에는 provider와 무관하게 Gemini 키만 요구했다. 정작 쓰는 키가 비어도
+    통과해, 첫 진단 요청을 통째로 날린 뒤에야 알게 됐다.
+    """
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia_nim")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    assert "nvidia_api_key" in str(excinfo.value)
+
+
+def test_gemini_key_is_not_required_when_nvidia_is_selected(monkeypatch):
+    """쓰지 않는 provider의 키를 강제하지 않는다."""
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia_nim")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    Settings(_env_file=None)
+
+
+def test_unknown_provider_is_rejected(monkeypatch):
+    """오타를 첫 호출까지 끌고 가지 않는다."""
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    assert "llm_provider" in str(excinfo.value)
+
+
+def test_provider_key_error_does_not_echo_the_other_providers_key(monkeypatch):
+    """검증 실패 메시지에 다른 provider의 키가 실려서는 안 된다.
+
+    필드 단위 검증기를 유지하는 이유다. model_validator(mode="after")는
+    ValidationError에 모델 전체 dict를 실어 나른다.
+    """
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia_nim")
+    monkeypatch.setenv("GEMINI_API_KEY", CANARY)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    assert CANARY not in str(excinfo.value)
 
 
 def test_missing_gemini_key_is_rejected(monkeypatch):

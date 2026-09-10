@@ -27,3 +27,16 @@ class ClusterRepository(ABC):
     def index_summary(self, index_pattern: str) -> list[dict]:
         """인덱스 패턴에 걸리는 인덱스들의 상태 요약."""
         ...
+
+    @abstractmethod
+    def node_info(self, node_id: str) -> dict:
+        """단일 노드의 IP와 로그 디렉터리 경로를 반환한다.
+
+        반환 키:
+          ip           — SSH 접속에 쓸 transport 주소
+          log_path     — nodes.*.settings.path.logs
+          cluster_name — nodes.*.settings.cluster.name (로그 파일명 구성에 사용)
+
+        노드를 찾지 못하면 빈 dict를 돌려준다.
+        """
+        ...

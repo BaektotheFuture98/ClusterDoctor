@@ -10,7 +10,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cluster_doctor.application.port.outbound.llm_analyzer import LlmResponseError
-from cluster_doctor.infrastructure.outbound.llm.litellm_client import complete
+from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
+    complete,
+    require_supported_provider,
+)
 
 MESSAGES = [{"role": "user", "content": "안녕"}]
 
@@ -79,6 +82,26 @@ def test_response_format_is_sent_only_when_asked():
 
 def test_max_tokens_is_caller_controlled():
     assert _call(max_tokens=1024)["max_tokens"] == 1024
+
+
+def test_nvidia_nim_provider_is_supported():
+    assert require_supported_provider("nvidia_nim") == "nvidia_nim"
+
+
+def test_nvidia_model_gets_the_nvidia_prefix():
+    # 모델명 자체에 슬래시가 있다("google/gemma-4-31b-it"). prefix를 붙인
+    # 결과가 "nvidia_nim/google/gemma-4-31b-it"여야 litellm이 라우팅한다.
+    sent = _call(provider="nvidia_nim", model="google/gemma-4-31b-it")
+    assert sent["model"] == "nvidia_nim/google/gemma-4-31b-it"
+    # 키는 여전히 파라미터로만 간다.
+    assert "test-key" not in sent["model"]
+
+
+def test_unsupported_provider_names_what_is_supported():
+    # 오타를 첫 호출까지 끌고 가지 않는다. 메시지가 지원 목록을 알려줘야
+    # 운영자가 무엇을 적어야 하는지 안다.
+    with pytest.raises(ValueError, match="nvidia_nim"):
+        require_supported_provider("nvidia")
 
 
 def test_empty_text_becomes_a_response_error():

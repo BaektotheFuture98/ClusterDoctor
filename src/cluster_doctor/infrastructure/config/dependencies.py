@@ -10,6 +10,7 @@ from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter im
 from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import ElasticsearchClusterAdapter
 from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import DeepAgentAnalyzer
 from cluster_doctor.infrastructure.outbound.notifier.stdout_notifier import StdoutNotifier
+from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
 
@@ -85,12 +86,20 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
                 break
         return items
 
+    # provider별 키·모델을 직접 읽지 않는다. llm_api_key/llm_model이
+    # LLM_PROVIDER에 따라 고른 값을 돌려주므로 여기서 분기할 일이 없다.
     analyzer = DeepAgentAnalyzer(
-        api_key=s.gemini_api_key,
-        default_model=s.gemini_model,
+        provider=s.llm_provider,
+        api_key=s.llm_api_key,
+        default_model=s.llm_model,
         cluster=_get_cluster_repository(),
         fetch_logs=_get_log_repository().fetch_logs,
         drain_pending=drain_pending,
+        node_log_fetcher=NodeLogFetcher(
+            ssh_user=s.ssh_user,
+            ssh_password=s.ssh_password,
+            ssh_port=s.ssh_port,
+        ),
     )
 
     return SlowlogTriggerService(

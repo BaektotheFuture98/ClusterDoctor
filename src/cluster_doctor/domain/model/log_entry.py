@@ -1,14 +1,7 @@
-"""소스별 로그 항목.
+"""이벤트 로그 항목.
 
-세 소스(slowlog / es_query_log / node_metric)는 담는 것이 서로 다르다. 하나의
-``LogEntry``로 합쳐 쓰는 동안 두 가지가 무너져 있었다.
-
-  - 같은 필드가 소스마다 다른 뜻이었다. ``component``가 slowlog에서는 인덱스명,
-    es_query_log에서는 service, node_metric에서는 ``None``이었다. 이름만 보고는
-    무엇이 들었는지 알 수 없었다.
-  - 값이 ``message`` 문자열로 평탄화됐다. ``run_time``·``keywords``·``cpu``가
-    전부 텍스트가 되어, 느린 쿼리만 거르거나 keyword 배열을 자르려면 만들어 둔
-    문자열을 다시 파싱하는 수밖에 없었다.
+두 소스(slowlog / es_query_log)의 개별 사건 기록이다. 주기 수집 샘플인
+NodeMetricEntry는 node_metric.py에 따로 둔다.
 
 공통으로 두는 것은 발생 시각과 출처뿐이다. ``fetch_logs``가 셋을 한 리스트에
 담아 돌려주고 ``split_by_minute``이 ``timestamp``로 묶으므로 그 둘은 필요하다.
@@ -21,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import ClassVar
+
 
 
 @dataclass(frozen=True)
@@ -76,23 +70,3 @@ class QueryLogEntry(LogEntry):
     keywords: tuple[str, ...]
     company: str | None
     user: str | None
-
-
-@dataclass(frozen=True)
-class NodeMetricEntry(LogEntry):
-    """한 노드의 한 시점 리소스 샘플."""
-
-    source: ClassVar[str] = "node_metric"
-
-    node_name: str
-    node_ip: str
-    os_cpu_percent: int
-    os_mem_used_percent: int
-    process_cpu_percent: int
-    jvm_heap_used_percent: int
-    search_active: int
-    search_queue: int
-    search_rejected: int
-    write_active: int
-    write_queue: int
-    write_rejected: int

@@ -8,10 +8,10 @@ from functools import singledispatch
 
 from cluster_doctor.domain.model.log_entry import (
     LogEntry,
-    NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
+from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
 _SOURCE_DESC = {
@@ -134,16 +134,47 @@ evidence 위 요약의 근거가 된 로그를 원문 그대로, 한 줄에 하�
 
 
 def build_synthesis_prompt(
-    time_range: TimeRange, minute_sections: str, analyzed: int, failed: int
+    time_range: TimeRange,
+    minute_sections: str,
+    analyzed: int,
+    failed: int,
+    master_logs: str = "",
 ) -> str:
     """구간별 결과를 최종 리포트로 합성하라고 시키는 프롬프트.
 
     원본 로그 전량이 아니라 구간별 요약 + 근거 원문만 들어온다. 전량을 다시
     넣으면 단발 모드와 똑같은 절단이 재발한다.
+    master_logs가 있으면 slowlog 분석 결과와 시간 연계해 원인 추론에 활용한다.
+
+    응답은 ``===추론===`` / ``===리포트===`` 두 블록으로 받는다(구획 CoT).
+    3번(근본 원인)·4번(소스 간 상관관계)은 구간을 가로지르는 다단계 추론이
+    필요한데, 이 프로젝트가 쓰는 모델(gemma-4-31b-it)은 thinking을 지원하지
+    않아 추론을 출력으로 받는 수밖에 없다. 추론 블록은 ``nodes.py``의
+    ``_strip_reasoning``이 잘라내므로 운영자에게는 리포트만 간다.
+
+    호출을 추론용·리포트용 두 번으로 쪼개는 대안은 쓰지 않는다. 같은 입력을
+    두 번 보내 입력 토큰이 2배가 되는데, 트리거 서비스가 큐 잔여 시 10초
+    간격으로 최대 4회 연속 실행하므로(``_MAX_CONSECUTIVE_RETRIGGERS=3``) 그
+    증가가 다시 곱해진다 — 429의 원인이 분당 입력 토큰 한도 초과다.
+
+    분별 분석(``build_minute_prompt``)에는 걸지 않는다. 요약·인용 작업이라
+    추론이 불필요하고, 팬아웃되므로 비용이 구간 수만큼 배로 늘어난다.
     """
     coverage = f"분석된 구간 {analyzed}개"
     if failed:
         coverage += f", 분석 실패 {failed}개"
+
+    master_section = ""
+    if master_logs:
+        master_section = f"""
+=== 마스터 노드 로그 (같은 시간대) ===
+{master_logs}
+
+위 로그는 같은 분석 구간의 마스터 노드 ES 로그다(WARN/ERROR/GC/shard 관련 줄만).
+slowlog 분석 결과와 시간대를 연계하라. 마스터 이벤트(shard relocation, cluster
+state change, allocation 실패 등)가 slowlog 급증 시각과 겹치면 인과관계를 설명한다.
+마스터 로그에 특이사항이 없으면 그렇게 명시한다.
+"""
 
     return f"""분석 시간 범위: {time_range.start} ~ {time_range.end}
 ({coverage})
@@ -152,7 +183,7 @@ def build_synthesis_prompt(
 목록에 없다. 이것들을 종합해 하나의 진단 리포트를 작성하라.
 
 === 구간별 분석 ===
-{minute_sections}
+{minute_sections}{master_section}
 
 === 분석 원칙 ===
 • slowlog에 기록된 쿼리는 임계치 초과일 뿐, 그 자체로 문제가 아님. 빈도·리소스 영향 등을 종합 판단.
@@ -169,9 +200,17 @@ def build_synthesis_prompt(
 
 === 출력 규칙 ===
 • 반드시 한국어로만 답한다.
-• 사고 과정·추론·설명을 출력하지 않는다. 아래 형식의 최종 답변만 출력한다.
+• 아래 두 블록을 이 순서로, 구분자를 한 글자도 바꾸지 않고 출력한다.
 
-=== 응답 형식 ===
+===추론===
+여기서 먼저 추론한다. 형식은 자유이고 15줄 이내로 압축한다.
+  1) 구간을 가로질러 반복되거나 번지는 패턴. 한 구간에만 나타난 것과 구분한다.
+  2) 원인 가설을 열거하고, 각 가설을 뒷받침하는 근거와 반박하는 근거를 함께 쓴다.
+  3) 마스터 로그·메트릭과 slowlog의 시각이 겹치는 지점.
+  4) 위를 종합한 가장 유력한 근본 원인.
+
+===리포트===
+여기서부터 최종 리포트만 쓴다. 추론 과정을 다시 설명하지 않는다.
 마크다운 금지. 아래 형식 준수:
 • 섹션 제목 아래 ── 구분선
 • • 불렛, 두 칸 들여쓰기 후 - 세부 내용

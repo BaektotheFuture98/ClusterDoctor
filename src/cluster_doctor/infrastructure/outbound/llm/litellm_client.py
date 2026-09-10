@@ -31,6 +31,16 @@ _REQUEST_TIMEOUT_SECONDS = 120.0
 
 _PROVIDER_PREFIX: dict[str, str] = {
     "gemini": "gemini",
+    # NVIDIA NIM. settings._SUPPORTED_LLM_PROVIDERS와 같은 집합이어야 한다.
+    #
+    # 두 가지를 알아 둘 것:
+    # 1. google/gemma-4-31b-it는 litellm 로컬 cost map에 항목이 없다. 라우팅은
+    #    이 prefix로 결정되므로 호출은 정상이지만 비용 추적은 0으로 잡힌다.
+    # 2. 이 provider는 reasoning_effort를 지원하지 않는다(litellm의
+    #    get_supported_openai_params 지원 목록에 없다). thinking으로 추론
+    #    깊이를 올리는 길이 없어, 추론은 프롬프트로 유도한다 —
+    #    langgraph/prompts.py의 구획 CoT를 볼 것.
+    "nvidia_nim": "nvidia_nim",
 }
 
 # 응답에 텍스트가 없을 때의 안내. litellm은 provider의 원본 사유 문자열을

@@ -3,10 +3,10 @@ from datetime import timedelta
 
 from cluster_doctor.domain.model.log_entry import (
     LogEntry,
-    NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
+from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.application.port.outbound.log_repository import LogRepository
 

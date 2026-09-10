@@ -10,10 +10,10 @@ from datetime import datetime
 from decimal import Decimal
 
 from cluster_doctor.domain.model.log_entry import (
-    NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
+from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
     build_minute_prompt,
     format_log_line,

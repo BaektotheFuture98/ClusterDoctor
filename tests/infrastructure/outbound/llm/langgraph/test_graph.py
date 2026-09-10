@@ -99,6 +99,10 @@ def _run(llm, logs, time_range=TR):
             "buckets": [],
             "findings": [],
             "report": "",
+            # GraphState의 필수 키다. LangGraph는 빠진 키를 채워 주지 않으므로
+            # 생략하면 synthesize가 KeyError로 죽는다. 프로덕션은 tools.py가
+            # 마스터 노드 SSH 로그를 여기 실어 보낸다(수집 실패 시 빈 문자열).
+            "master_logs": "",
         }
     )
 
@@ -297,6 +301,71 @@ def test_empty_log_set_still_produces_a_report():
     assert state["report"] == FINAL_REPLY
     assert llm.minute_calls == []
     assert "로그가 없습니다" in llm.synthesis_prompt
+
+
+def test_reasoning_block_is_stripped_from_the_report():
+    """구획 CoT: 추론은 프롬프트가 요구하지만 리포트에는 실리지 않는다.
+
+    gemma-4-31b-it는 thinking(reasoning_effort)을 지원하지 않아 추론을 출력으로
+    받는 수밖에 없다. 그 추론이 운영자에게 그대로 전달되면 리포트가 아니다.
+    """
+
+    class _WithReasoning(_Recorder):
+        def __call__(self, messages, max_tokens):
+            if max_tokens != MINUTE_MAX_TOKENS:
+                with self._lock:
+                    self.calls.append(max_tokens)
+                    self.prompts.append(messages[0]["content"])
+                return (
+                    "===추론===\n"
+                    "es-data-02에 부하가 몰렸다\n"
+                    "===리포트===\n"
+                    "1. 요청 이해\n"
+                    "실제 리포트 본문"
+                )
+            return super().__call__(messages, max_tokens)
+
+    state = _run(_WithReasoning(), [_log(9, 5)])
+
+    assert "es-data-02에 부하가 몰렸다" not in state["report"], (
+        "추론 블록이 리포트에 남았다"
+    )
+    assert "===추론===" not in state["report"]
+    assert "실제 리포트 본문" in state["report"]
+    assert state["report"].startswith("1. 요청 이해")
+
+
+def test_missing_delimiter_keeps_the_whole_response():
+    """형식을 어겨도 빈 리포트를 돌려주지 않는다.
+
+    구분자를 못 찾으면 전문을 그대로 쓴다. 추론이 섞인 리포트라도 운영자가
+    읽고 판단할 수 있지만, 빈 리포트는 아무것도 알려주지 않는다.
+    """
+    state = _run(_Recorder(), [_log(9, 5)])
+    assert state["report"] == FINAL_REPLY
+
+
+def test_synthesis_prompt_asks_for_reasoning_before_the_report():
+    """추론을 시키지 않으면 구분자가 나올 이유가 없다.
+
+    프롬프트의 구분자와 nodes.py의 _REPORT_DELIMITER가 한 글자라도 어긋나면
+    추론이 리포트에 그대로 실린다 — 예외 없이 조용히 벌어진다.
+    """
+    llm = _Recorder()
+    _run(llm, [_log(9, 5)])
+    assert "===추론===" in llm.synthesis_prompt
+    assert "===리포트===" in llm.synthesis_prompt
+
+
+def test_minute_prompt_does_not_ask_for_reasoning():
+    """분별 분석에는 CoT를 걸지 않는다.
+
+    요약·인용 작업이라 추론이 불필요하고, 팬아웃되므로 비용이 구간 수만큼
+    배로 늘어난다.
+    """
+    llm = _Recorder()
+    _run(llm, [_log(9, 5)])
+    assert "===추론===" not in llm.minute_prompts[0]
 
 
 def test_minute_analyses_can_run_concurrently():
