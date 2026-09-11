@@ -12,7 +12,10 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+from cluster_doctor.application.port.outbound.llm_analyzer import (
+    DiagnosisResult,
+    LlmApiError,
+)
 from cluster_doctor.application.service.slowlog_trigger_service import (
     _MAX_CONSECUTIVE_RETRIGGERS,
     SlowlogTriggerService,
@@ -30,7 +33,7 @@ class _Analyzer:
         self._error = error
         self._drains = drains
 
-    def analyze(self, log_time, kafka_receive_time) -> str:
+    def analyze(self, log_time, kafka_receive_time) -> DiagnosisResult:
         self.calls += 1
         if self._error is not None:
             raise self._error
@@ -38,21 +41,29 @@ class _Analyzer:
             # 정상 agent는 check_new_slowlogs로 큐를 비운다. 그 동작을 흉내낸다.
             while not self._drains.empty():
                 self._drains.get_nowait()
-        return "리포트"
+        return DiagnosisResult(report="리포트")
 
 
 class _Notifier:
     def __init__(self):
         self.reports = []
+        self.calls = []
 
-    async def notify(self, message: str) -> None:
+    async def notify(
+        self,
+        message: str,
+        *,
+        gaps: tuple[str, ...] = (),
+        analysis_failed: bool = False,
+    ) -> None:
         self.reports.append(message)
+        self.calls.append({"gaps": gaps, "analysis_failed": analysis_failed})
 
 
-def _service(analyzer, pending):
+def _service(analyzer, pending, notifier=None):
     return SlowlogTriggerService(
         llm_analyzer=analyzer,
-        notifier=_Notifier(),
+        notifier=notifier or _Notifier(),
         pending=pending,
         micro_batch_seconds=0.01,
     )
@@ -125,9 +136,9 @@ async def test_retriggers_wait_the_batch_window_before_running_again():
         def __init__(self):
             self.starts = []
 
-        def analyze(self, log_time, kafka_receive_time) -> str:
+        def analyze(self, log_time, kafka_receive_time) -> DiagnosisResult:
             self.starts.append(time.perf_counter())
-            return "리포트"
+            return DiagnosisResult(report="리포트")
 
     analyzer = _Timed()
     service = SlowlogTriggerService(
@@ -170,10 +181,10 @@ async def test_agent_task_handle_is_kept_while_running():
     release = threading.Event()
 
     class _Blocking:
-        def analyze(self, log_time, kafka_receive_time) -> str:
+        def analyze(self, log_time, kafka_receive_time) -> DiagnosisResult:
             started.set()
             release.wait(timeout=5)
-            return "리포트"
+            return DiagnosisResult(report="리포트")
 
     service = _service(_Blocking(), pending)
     service._running = True
@@ -193,3 +204,77 @@ async def test_agent_task_handle_is_kept_while_running():
     # 끼어들어도 None을 await하게 된다.
     release.set()
     await handle
+
+
+# --------------------------------------------------------------------------
+# 리포트 전달과 재트리거 판단의 분리
+#
+# 예전에는 analyze가 문자열만 돌려주고 실패를 예외로 알렸다. 그래서 예외가
+# 나면 notify가 호출되지 않아 리포트가 사라졌고, 보조 조사(SSH) 실패 하나로
+# 4단계 분석이 온전히 끝난 진단까지 버려졌다.
+# --------------------------------------------------------------------------
+
+async def test_a_failed_analysis_still_delivers_the_report():
+    class _Failed:
+        def analyze(self, log_time, kafka_receive_time) -> DiagnosisResult:
+            return DiagnosisResult(report="분석 실패 리포트", analysis_failed=True)
+
+    notifier = _Notifier()
+    pending = stdlib_queue.Queue()
+    service = _service(_Failed(), pending, notifier=notifier)
+
+    await service._run_agent(TS, TS)
+    await _settle(service)
+
+    assert notifier.reports == ["분석 실패 리포트"]
+    assert notifier.calls[0]["analysis_failed"] is True
+
+
+async def test_a_failed_analysis_does_not_retrigger():
+    # 큐에 항목이 남아 있어도 재실행하지 않는다. 실패한 실행을 바로 다시
+    # 걸면 같은 실패를 백오프 없이 반복하며 할당량만 태운다.
+    class _Failed:
+        def __init__(self):
+            self.calls = 0
+
+        def analyze(self, log_time, kafka_receive_time) -> DiagnosisResult:
+            self.calls += 1
+            return DiagnosisResult(report="분석 실패 리포트", analysis_failed=True)
+
+    analyzer = _Failed()
+    pending = stdlib_queue.Queue()
+    pending.put(SlowlogEntry(timestamp=TS))
+    service = _service(analyzer, pending)
+
+    await service._run_agent(TS, TS)
+    await _settle(service)
+
+    assert analyzer.calls == 1
+
+
+async def test_gaps_are_passed_to_the_notifier_and_do_not_block_retrigger():
+    # 근거가 일부 빠진 것은 분석 성공이다. 큐에 남은 항목은 그 사이 새로
+    # 도착한 slowlog이므로 정상적으로 재실행되어야 한다.
+    class _WithGap:
+        def __init__(self):
+            self.calls = 0
+
+        def analyze(self, log_time, kafka_receive_time) -> DiagnosisResult:
+            self.calls += 1
+            return DiagnosisResult(
+                report="리포트",
+                gaps=("es-data-02 노드 로그 SSH 수집 실패",),
+            )
+
+    analyzer = _WithGap()
+    notifier = _Notifier()
+    pending = stdlib_queue.Queue()
+    pending.put(SlowlogEntry(timestamp=TS))
+    service = _service(analyzer, pending, notifier=notifier)
+
+    await service._run_agent(TS, TS)
+    await _settle(service)
+
+    assert notifier.calls[0]["gaps"] == ("es-data-02 노드 로그 SSH 수집 실패",)
+    assert notifier.calls[0]["analysis_failed"] is False
+    assert analyzer.calls > 1

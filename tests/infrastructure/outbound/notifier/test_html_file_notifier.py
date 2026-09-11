@@ -311,3 +311,58 @@ class TestFailureGuarantee:
 
         assert "리포트 HTML 저장 실패" in caplog.text
         assert "es-data-02" in caplog.text
+
+
+class TestGapAndFailureBanners:
+    """누락과 실패를 배너로 그린다.
+
+    본문에 섞지 않는 이유는 두 가지다 — 모델이 쓴 것과 시스템이 덧붙인 것이
+    구별되어야 하고, 모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이
+    배너는 반드시 남는다.
+    """
+
+    def test_분석_실패는_붉은_배너로_경고한다(self):
+        html_out = render_report(_REPORT, _AT, analysis_failed=True)
+
+        assert "banner-fail" in html_out
+        assert "결론을 신뢰할 수 없다" in html_out
+        assert "재트리거는 걸리지 않는다" in html_out
+
+    def test_누락된_근거를_목록으로_밝힌다(self):
+        html_out = render_report(
+            _REPORT,
+            _AT,
+            gaps=("es-data-02 노드 로그 SSH 수집 실패", "분석 호출 상한 도달"),
+        )
+
+        assert "수집하지 못한 근거가 있다" in html_out
+        assert "es-data-02 노드 로그 SSH 수집 실패" in html_out
+        assert "분석 호출 상한 도달" in html_out
+
+    def test_누락_항목도_이스케이프된다(self):
+        html_out = render_report(_REPORT, _AT, gaps=("<script>x</script>",))
+
+        assert "<script>x" not in html_out
+        assert "&lt;script&gt;" in html_out
+
+    def test_둘_다_있으면_배너가_둘_다_나온다(self):
+        html_out = render_report(
+            _REPORT, _AT, gaps=("노드 로그 실패",), analysis_failed=True
+        )
+
+        assert "banner-fail" in html_out
+        assert "수집하지 못한 근거가 있다" in html_out
+
+    def test_아무_문제가_없으면_배너가_없다(self):
+        assert 'class="banner' not in render_report(_REPORT, _AT)
+
+    async def test_notify가_두_값을_리포트까지_전달한다(self, tmp_path):
+        await HtmlFileNotifier(output_dir=tmp_path).notify(
+            _REPORT,
+            gaps=("es-data-02 노드 로그 SSH 수집 실패",),
+            analysis_failed=True,
+        )
+
+        body = next(tmp_path.glob("report-*.html")).read_text(encoding="utf-8")
+        assert "banner-fail" in body
+        assert "es-data-02 노드 로그 SSH 수집 실패" in body

@@ -65,15 +65,24 @@ class HtmlFileNotifier(Notifier):
     def __init__(self, output_dir: str | Path = "reports") -> None:
         self._output_dir = Path(output_dir)
 
-    async def notify(self, message: str) -> None:
+    async def notify(
+        self,
+        message: str,
+        *,
+        gaps: tuple[str, ...] = (),
+        analysis_failed: bool = False,
+    ) -> None:
         # 인코딩 불가 문자를 먼저 걸러낸다. 파일과 폴백 로그가 같은 문자열을
         # 쓰므로, 여기서 한 번 치환하면 두 경로가 함께 안전해진다.
         message = _scrub(message)
+        gaps = tuple(_scrub(gap) for gap in gaps)
 
         # 파일 쓰기는 짧지만 이벤트 루프에서 하지 않는다. 같은 루프가 Kafka를
         # 계속 소비하고 있고, 리포트는 수십 KB까지 자란다.
         try:
-            path = await asyncio.to_thread(self._write, message)
+            path = await asyncio.to_thread(
+                self._write, message, gaps, analysis_failed
+            )
         except Exception as exc:  # noqa: BLE001
             # OSError만 잡으면 보장이 깨진다. 렌더링·인코딩 실패도 여기로
             # 와야 한다 — 예를 들어 provider 응답에 짝 없는 서로게이트가
@@ -86,11 +95,24 @@ class HtmlFileNotifier(Notifier):
 
         _logger.info("리포트 저장: %s", path)
 
-    def _write(self, message: str) -> Path:
+    def _write(
+        self,
+        message: str,
+        gaps: tuple[str, ...] = (),
+        analysis_failed: bool = False,
+    ) -> Path:
         self._output_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now(_KST)
         path = _unique_path(self._output_dir, now)
-        path.write_text(render_report(message, generated_at=now), encoding="utf-8")
+        path.write_text(
+            render_report(
+                message,
+                generated_at=now,
+                gaps=gaps,
+                analysis_failed=analysis_failed,
+            ),
+            encoding="utf-8",
+        )
         return path
 
 
@@ -269,24 +291,51 @@ def _render_items(items: list[dict]) -> str:
     return "\n".join(out)
 
 
-def render_report(message: str, generated_at: datetime | None = None) -> str:
+def render_report(
+    message: str,
+    generated_at: datetime | None = None,
+    gaps: tuple[str, ...] = (),
+    analysis_failed: bool = False,
+) -> str:
     """리포트 평문을 완결된 HTML 문서 한 장으로 만든다.
 
     ``generated_at``은 테스트가 시각을 고정할 수 있게 열어 뒀다.
+
+    ``gaps``와 ``analysis_failed``는 배너로 그린다. 모델이 쓴 본문에 섞지
+    않는 이유는 두 가지다 — 본문과 시스템이 덧붙인 사실이 구별되어야 하고,
+    모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이 배너는 반드시 남는다.
     """
     now = generated_at or datetime.now(_KST)
     sections = _parse(message)
-    degraded = _FAILED_MARKER in message
 
-    banner = ""
-    if degraded:
-        banner = (
+    banners = []
+    if analysis_failed:
+        banners.append(
+            '<div class="banner banner-fail">'
+            "<b>이 진단은 분석에 실패했다.</b> "
+            "아래 본문은 agent가 작성한 것이지만 분석 근거가 확보되지 않았으므로 "
+            "결론을 신뢰할 수 없다. 같은 사고는 다음 slowlog가 도착할 때 다시 "
+            "진단된다(재트리거는 걸리지 않는다)."
+            "</div>"
+        )
+    if gaps:
+        items = "".join(f"<li>{_e(gap)}</li>" for gap in gaps)
+        banners.append(
+            '<div class="banner">'
+            "<b>수집하지 못한 근거가 있다.</b> "
+            "리포트의 결론은 아래 항목 없이 도출된 것이다."
+            f"<ul>{items}</ul>"
+            "</div>"
+        )
+    elif _FAILED_MARKER in message:
+        banners.append(
             '<div class="banner">'
             "<b>이 리포트에는 분석하지 못한 구간이 있다.</b> "
             "해당 구간은 LLM 호출이 실패해 내용이 비어 있으며, 리포트의 결론은 "
             "남은 구간만 근거로 한다."
             "</div>"
         )
+    banner = "\n".join(banners)
 
     if sections:
         toc_rows = "".join(
@@ -350,6 +399,10 @@ font-variant-numeric:tabular-nums}
 .banner{margin-top:24px;padding:13px 16px;background:var(--warn-soft);
 border:1px solid var(--warn);border-left-width:3px;border-radius:0 4px 4px 0;
 font-size:13.5px}
+.banner+.banner{margin-top:10px}
+.banner-fail{background:var(--crit-soft);border-color:var(--crit)}
+.banner ul{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.banner li{font-family:var(--mono);font-size:12.5px}
 .toc{margin-top:28px;background:var(--surface);border:1px solid var(--line);
 border-radius:5px;padding:14px 18px}
 .toc ol{margin:0;padding:0;list-style:none;display:grid;gap:2px 20px;

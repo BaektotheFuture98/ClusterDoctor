@@ -6,19 +6,22 @@ LlmAnalyzer 포트 구현.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from functools import partial
 
 _KST = timezone(timedelta(hours=9))
 
+_logger = logging.getLogger(__name__)
+
 from langchain_litellm import ChatLiteLLM
 from deepagents import create_deep_agent, FilesystemPermission
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
 from cluster_doctor.application.port.outbound.llm_analyzer import (
+    DiagnosisResult,
     LlmAnalyzer,
-    LlmApiError,
     LlmResponseError,
 )
 from cluster_doctor.domain.model.log_entry import LogEntry
@@ -68,7 +71,9 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         self._node_log_fetcher = node_log_fetcher
         self._fetch_node_logs = fetch_node_logs
 
-    def analyze(self, log_time: datetime, kafka_receive_time: datetime) -> str:
+    def analyze(
+        self, log_time: datetime, kafka_receive_time: datetime
+    ) -> DiagnosisResult:
         _bound = partial(
             _litellm_call,
             provider=self._provider,
@@ -101,7 +106,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
 
         # tool은 실패를 예외가 아니라 문자열로 돌려준다(예외는 agent 실행
         # 전체를 죽인다). 그 사실을 여기로 실어 나르는 통로다.
-        run_state = {"degraded": False}
+        run_state = {"degraded": False, "gaps": []}
         tools = make_tools(
             cluster=self._cluster,
             fetch_logs=self._fetch_logs,
@@ -141,14 +146,27 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 if isinstance(block, dict) and block.get("type") == "text"
             )
         if not content:
+            # 전달할 것이 아예 없는 유일한 경우다. 이것만 예외로 올린다.
             raise LlmResponseError("agent가 빈 응답을 반환했습니다.")
+
+        # 분석이 실패해도 본문은 전달한다. 예전에는 여기서 LlmApiError를
+        # 던졌는데, 그러면 notify가 호출되지 않아 리포트가 사라졌다 —
+        # 운영자는 logs/app.log를 뒤져야 실패를 알 수 있었다. 재트리거를
+        # 막는 목적은 analysis_failed가 그대로 담당한다.
         if run_state["degraded"]:
-            # 분석이 실패한 채로 리포트가 작성됐다. agent는 정상 종료했지만
-            # 진단은 이뤄지지 않았다. 이것을 성공으로 돌려주면 트리거 서비스가
-            # 큐에 남은 항목을 보고 곧바로 같은 실행을 다시 건다 — 429로
-            # 실패한 실행을 지연 없이 3번 더 반복하며 할당량만 태운다.
-            raise LlmApiError(f"분석이 실패한 채 리포트가 작성되었습니다: {content[:200]}")
-        return content
+            _logger.error("분석이 실패한 채 리포트가 작성되었다 — 재트리거하지 않는다")
+        if run_state["gaps"]:
+            _logger.warning(
+                "수집하지 못한 보조 근거 %d건: %s",
+                len(run_state["gaps"]),
+                " / ".join(run_state["gaps"]),
+            )
+
+        return DiagnosisResult(
+            report=content,
+            analysis_failed=run_state["degraded"],
+            gaps=tuple(run_state["gaps"]),
+        )
 
 
 def _litellm_call(

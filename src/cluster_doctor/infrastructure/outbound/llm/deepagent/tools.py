@@ -177,6 +177,12 @@ def make_tools(
     """
     _graph = build_graph(call_llm, call_llm_minute=call_llm_minute)
 
+    # 키가 없으면 _mark_gap이 KeyError를 내고, tool에서 나온 예외는 agent 실행
+    # 전체를 죽인다 — tool이 절대 하지 말아야 하는 일이다. 호출자가 채워 주는
+    # 것이 계약이지만, 계약 위반의 대가가 진단 소실이라 여기서 받쳐 둔다.
+    run_state.setdefault("degraded", False)
+    run_state.setdefault("gaps", [])
+
     def _mark_degraded(observation: str) -> str:
         """실패를 관찰 결과로 돌려주되 그 사실을 호출자에게 남긴다.
 
@@ -190,6 +196,22 @@ def make_tools(
         고쳐야 한다.
         """
         run_state["degraded"] = True
+        return observation
+
+    def _mark_gap(observation: str) -> str:
+        """근거가 일부 빠졌다는 사실을 남긴다. 리포트는 버리지 않는다.
+
+        ``_mark_degraded``와 나누는 기준은 "진단이 성립했는가"다. 보조 조사가
+        실패해도 4단계 분석 결과는 온전하므로 리포트를 버릴 이유가 없다 —
+        예전에는 SSH 접속 실패 하나로 완성된 리포트가 폐기되고 재트리거까지
+        막혔다.
+
+        그렇다고 조용히 넘길 수도 없다. 모델이 "노드 로그 확인 결과 특이사항
+        없음"이라고 쓰면 "못 봤다"와 "봤는데 정상이다"가 구별되지 않는다.
+        여기 남긴 것은 notifier가 리포트에 배너로 그리므로, 프롬프트를
+        어겼더라도 빠진 사실이 운영자에게 반드시 도달한다.
+        """
+        run_state["gaps"].append(observation)
         return observation
 
     # 예산은 클로저에 둔다. DeepAgentAnalyzer.analyze()가 실행마다 make_tools를
@@ -212,8 +234,12 @@ def make_tools(
         _logger.info("[tool] analyze_logs(%s ~ %s)", start_iso, end_iso)
         if analyze_state["calls"] >= _MAX_ANALYZE_CALLS:
             _logger.warning("[tool] analyze_logs 요청 무시 — 호출 상한 도달")
-            return (
+            # 상한에 걸린 뒤 쓴 리포트는 부분 커버리지다. 예전에는 이 거절
+            # 문자열이 아무 표식도 남기지 않아, 구간을 다 못 본 리포트가
+            # 완전한 것과 구별되지 않았다.
+            return _mark_gap(
                 f"분석 호출 상한({_MAX_ANALYZE_CALLS}회)에 도달했다. "
+                f"{start_iso} ~ {end_iso} 구간은 분석하지 못했다. "
                 "지금까지의 결과로 리포트를 작성하라."
             )
         analyze_state["calls"] += 1
@@ -316,6 +342,17 @@ def make_tools(
             _logger.exception("[tool] analyze_logs 조회/분석 오류")
             return _mark_degraded(f"조회/분석 오류({start_iso} ~ {end_iso}): {exc}")
 
+        # 일부 분이 실패한 채 종합된 경우. synthesize는 전 구간이 실패했을
+        # 때만 예외를 올리므로 여기까지 왔다면 리포트는 유효하지만 근거가
+        # 빠져 있다. 종합 프롬프트에 [분석 실패]로 표기되긴 하나 그것을
+        # 리포트에 옮기는 것은 모델 재량이었다.
+        failed_minutes = [f for f in state["findings"] if f.failed]
+        if failed_minutes:
+            _mark_gap(
+                f"{start_iso} ~ {end_iso} 구간 중 {len(failed_minutes)}개 분의 "
+                f"분석이 실패했다(전체 {len(state['findings'])}개 분)."
+            )
+
         report = state["report"]
         _logger.info("[tool] analyze_logs 종합 결과:\n%s", report)
         return report
@@ -410,7 +447,7 @@ def make_tools(
             info = cluster.node_info(node_id)
         except Exception as exc:
             _logger.warning("[tool] get_node_logs 노드 정보 조회 실패: %s", exc)
-            return _mark_degraded(f"노드 정보 조회 실패: {exc}")
+            return _mark_gap(f"노드 정보 조회 실패 (id={node_id}): {exc}")
         if not info:
             return f"노드를 찾지 못함 (id={node_id})"
 
@@ -429,7 +466,7 @@ def make_tools(
             )
         except Exception as exc:
             _logger.warning("[tool] get_node_logs SSH 실패: %s", exc)
-            return _mark_degraded(f"로그 수집 실패 (ip={ip}): {exc}")
+            return _mark_gap(f"{node_id} 노드 로그 SSH 수집 실패: {exc}")
 
         if not result:
             return "(해당 시간대 로그 없음)"
