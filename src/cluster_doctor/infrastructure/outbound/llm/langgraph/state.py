@@ -40,6 +40,13 @@ class MinuteFinding:
     summary: str
     evidence: list[str] = field(default_factory=list)
     failed: bool = False
+    # 소스별 건수. 모델이 아니라 코드가 센다 — 최종 리포트의 분 단위
+    # 타임라인이 이 값을 쓰므로, 모델이 옮겨 적다 틀리면 운영자가 잘못된
+    # 건수를 근거로 판단한다. 버킷이 바로 옆에 있으니 세는 쪽이 정확하다.
+    # 분석이 실패한 구간에도 채운다. LLM 호출과 무관하게 알 수 있는 값이고,
+    # 실패한 분이 타임라인에서 빈칸으로 보이면 그 시각에 아무 일도 없었던
+    # 것처럼 읽힌다.
+    counts: dict[str, int] = field(default_factory=dict)
 
 
 class GraphState(TypedDict):
