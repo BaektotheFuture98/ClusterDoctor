@@ -49,9 +49,10 @@ class GraphState(TypedDict):
     동시에 여러 개가 돌고, 각자 자기 결과 하나만 담은 리스트를 돌려준다.
     reducer가 없으면 마지막에 끝난 노드가 나머지를 덮어쓴다.
 
-    ``master_logs``는 analyze_logs tool이 SSH로 수집한 마스터 노드 ES 로그다.
-    분별 fan-out에는 쓰지 않고 synthesize 노드에서만 쓴다.
-    추후 ClickHouse에 마스터 로그 테이블이 생기면 fetch 로직만 바꾸면 된다.
+    ``master_logs``는 analyze_logs tool이 수집한 마스터 노드 ES 로그다. 1차
+    출처는 ClickHouse 조회이고, 그 조회가 실패할 때만 SSH로 내려간다.
+    분별 fan-out에는 쓰지 않고 synthesize 노드에서만 쓴다 — 시각 상관관계를
+    보는 것이 목적이므로 구간 요약과 함께 있어야 한다.
     """
 
     time_range: TimeRange

@@ -54,6 +54,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         fetch_logs: Callable[[TimeRange], list[LogEntry]],
         drain_pending: Callable[[], list[LogEntry]],
         node_log_fetcher: NodeLogFetcher,
+        fetch_node_logs: Callable[..., list],
         provider: str = "gemini",
     ) -> None:
         # 생성자에서 검증한다. 잘못된 provider를 첫 호출까지 끌고 가면
@@ -65,6 +66,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         self._fetch_logs = fetch_logs
         self._drain_pending = drain_pending
         self._node_log_fetcher = node_log_fetcher
+        self._fetch_node_logs = fetch_node_logs
 
     def analyze(self, log_time: datetime, kafka_receive_time: datetime) -> str:
         _bound = partial(
@@ -107,6 +109,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             call_llm=call_llm,
             call_llm_minute=call_llm_minute,
             node_log_fetcher=self._node_log_fetcher,
+            fetch_node_logs=self._fetch_node_logs,
             run_state=run_state,
         )
 

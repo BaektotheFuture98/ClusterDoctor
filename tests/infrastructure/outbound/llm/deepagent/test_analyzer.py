@@ -67,6 +67,7 @@ def _orchestrator_kwargs(provider="gemini", default_model="gemini-3.5-flash-lite
             fetch_logs=MagicMock(),
             drain_pending=MagicMock(),
             node_log_fetcher=MagicMock(),
+            fetch_node_logs=MagicMock(return_value=[]),
         )
 
         analyzer.analyze(log_time, kafka_receive_time)
@@ -111,6 +112,7 @@ def test_unsupported_provider_is_rejected_at_construction():
             fetch_logs=MagicMock(),
             drain_pending=MagicMock(),
             node_log_fetcher=MagicMock(),
+            fetch_node_logs=MagicMock(return_value=[]),
         )
 
 
@@ -156,6 +158,7 @@ def _run_analyze_with_tools(make_tools_impl, agent_text: str = "분석 실패 �
             fetch_logs=MagicMock(),
             drain_pending=MagicMock(),
             node_log_fetcher=MagicMock(),
+            fetch_node_logs=MagicMock(return_value=[]),
         )
         return analyzer.analyze(log_time, kafka_receive_time)
 

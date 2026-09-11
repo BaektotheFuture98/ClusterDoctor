@@ -8,6 +8,7 @@ from functools import singledispatch
 
 from cluster_doctor.domain.model.log_entry import (
     LogEntry,
+    NodeLogEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
@@ -18,6 +19,7 @@ _SOURCE_DESC = {
     "slowlog":      "ES 슬로우 쿼리 로그. JSON 형태의 원본 데이터 포함.",
     "es_query_log": "packetbeat가 수집한 ES 실시간 쿼리 실행 기록.",
     "node_metric":  "ES 노드 리소스 메트릭.",
+    "node_log":     "ES 노드가 파일에 남긴 로그(WARN/ERROR/GC/shard 이벤트 등).",
 }
 
 # 한 쿼리가 키워드 200개 넘게 싣고 오는 경우가 있다. 그대로 그리면 한 줄이
@@ -76,11 +78,39 @@ def _format_query_log(entry: QueryLogEntry) -> str:
 
 
 @format_log_line.register
+def _format_node_log(entry: NodeLogEntry) -> str:
+    """노드 로그 한 줄.
+
+    ``level``이 비어 있으면 ``detected_level``로 대체한다 — 수집기에 따라
+    한쪽만 채워진다. ``line``은 손대지 않는다. 스택 트레이스든 GC 통계든
+    진단에 쓰이는 것은 원문 그대로이고, 잘라내면 근거로 인용할 수 없다.
+    """
+    level = (entry.level or entry.detected_level or "-").strip()
+    role = f"/{entry.node_role}" if entry.node_role else ""
+    return (
+        f"  {entry.timestamp} [{level}] "
+        f"node={entry.node or '-'}{role} comp={entry.filename or '-'} "
+        f"logger={entry.logger or '-'} {entry.line}"
+    )
+
+
+@format_log_line.register
 def _format_node_metric(entry: NodeMetricEntry) -> str:
+    """노드 메트릭 한 줄.
+
+    ``mem``이 아니라 ``os_mem(캐시포함)``으로 그린다. 이 값은
+    ``GET _nodes/stats``의 ``os.mem.used_percent``이고 페이지 캐시를 포함한
+    OS 전체 메모리다. ES는 남는 RAM을 파일시스템 캐시로 쓰므로 95~99%가
+    정상인데, ``mem``이라고만 적어 두면 모델이 그것을 메모리 부족으로 읽고
+    "메모리 사용률 95~99%로 매우 높음"을 문제점으로 써 올린다(실제로 그랬다).
+
+    지시문으로도 같은 내용을 넣지만, 모델이 실제로 읽는 것은 이 줄이다.
+    레이블을 고치는 편이 산문 한 줄보다 확실하고 토큰도 늘지 않는다.
+    """
     return (
         f"  {entry.timestamp} [METRIC] "
         f"node={entry.node_name} ({entry.node_ip}) comp=- "
-        f"cpu={entry.os_cpu_percent}% mem={entry.os_mem_used_percent}% "
+        f"cpu={entry.os_cpu_percent}% os_mem(캐시포함)={entry.os_mem_used_percent}% "
         f"proc_cpu={entry.process_cpu_percent}% "
         f"jvm_heap={entry.jvm_heap_used_percent}% "
         f"search(active={entry.search_active},queue={entry.search_queue},"
@@ -123,6 +153,11 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
 • 이상 징후가 없으면 "특이사항 없음"이라고 명확히 쓴다. 억지로 문제를 만들지 않는다.
 • 노드명·수치·쿼리 내용을 구체적으로 인용한다. "부하가 높다"가 아니라
   "es-data-02가 cpu=94%, search queue=920"처럼 쓴다.
+• os_mem(캐시포함)은 GET _nodes/stats의 os.mem.used_percent다. 페이지 캐시를
+  포함한 OS 전체 메모리이고, ES는 남는 RAM을 파일시스템 캐시로 쓰므로
+  95~99%가 정상이다. 이 값만 보고 메모리 문제라고 쓰지 않는다.
+• 메모리 압박의 근거는 jvm_heap과 search/write rejected, GC 로그다.
+  jvm_heap이 85% 이상이면서 rejected나 GC 경고가 함께 있을 때만 문제로 쓴다.
 • 반드시 한국어로 쓴다.
 • 사고 과정·추론 설명은 담지 않는다. 결론만 담는다.
 
@@ -192,6 +227,9 @@ state change, allocation 실패 등)가 slowlog 급증 시각과 겹치면 인�
 • 구간을 가로질러 반복되거나 번지는 패턴을 우선한다. 한 구간에만 나타난 것과
   여러 구간에 걸친 것을 구분해서 쓴다.
 • 근거로 제시된 로그 원문의 쿼리·노드명·수치를 그대로 인용한다.
+• os_mem(캐시포함)이 높은 것은 ES의 정상 동작이다(페이지 캐시 포함, 95~99%가 정상).
+  구간별 분석이 이것을 문제로 적어 왔더라도 리포트에 문제점으로 옮기지 않는다.
+  메모리를 문제로 쓰려면 jvm_heap과 rejected/GC 근거를 함께 제시한다.
 • "분석 실패"로 표시된 구간이 있으면 그 사실을 리포트에 밝힌다. 없는 것처럼 쓰지 않는다.
 
 === 알려진 문제 패턴 ===

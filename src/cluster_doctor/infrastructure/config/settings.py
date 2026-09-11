@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     clickhouse_slowlog_table: str = "slowlog_v2"
     clickhouse_log_table: str = "log"
     clickhouse_node_metric_table: str = "es_node_metric"
+    # 노드 로그 테이블. 현재 적재 범위는 마스터 노드 로그다 — 데이터 노드
+    # 로그는 여기 들어오지 않고 SSH(get_node_logs)로 수집한다. 그 분기가
+    # deepagent 프롬프트 5단계 c/d의 근거다.
+    #
+    # 다른 테이블들과 같이 수식 없이 둔다 — 데이터베이스는 CLICKHOUSE_URL의
+    # 경로가 정한다. 다만 같은 이름의 테이블이 다른 DB에도 있고 그쪽은 적재가
+    # 멈춰 있으므로(실측), URL의 DB를 바꿀 때는 이 값을 함께 확인해야 한다.
+    # 조회가 성공하면서 오래된 데이터만 돌아오는 형태라 드러나지 않는다.
+    clickhouse_node_log_table: str = "loki_logs"
 
     es_host: str = ""
     es_port: int = 9200
@@ -53,6 +62,11 @@ class Settings(BaseSettings):
     # 첫 slowlog 수신 후 agent를 띄우기까지 모으는 시간. slowlog는 몰려서
     # 오므로 한 건마다 진단하면 같은 사고를 수십 번 분석하게 된다.
     micro_batch_seconds: float = 10.0
+
+    # 진단 리포트 HTML을 저장할 디렉터리. 상대 경로는 프로세스의 작업
+    # 디렉터리를 기준으로 한다(logs/와 같은 방식). 컨테이너에서 볼륨을
+    # 붙이려면 절대 경로를 준다.
+    report_dir: str = "reports"
 
     @field_validator("llm_provider")
     @classmethod

@@ -46,6 +46,8 @@ def _tools(
     cluster=None,
     run_state=None,
     node_log_fetcher=None,
+    fetch_node_logs=None,
+    call_llm=None,
 ):
     """이름 → tool 매핑. make_tools 호출마다 클로저 상태가 새로 만들어진다."""
     from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
@@ -57,13 +59,20 @@ def _tools(
         node_log_fetcher = MagicMock()
         node_log_fetcher.fetch.return_value = ""
 
+    if fetch_node_logs is None:
+        # 같은 이유로 빈 리스트를 못 박는다. MagicMock을 그대로 두면
+        # format_log_line이 MagicMock에 걸려 TypeError를 낸다(등록되지 않은
+        # 타입은 조용히 넘기지 않고 터뜨리도록 되어 있다).
+        fetch_node_logs = MagicMock(return_value=[])
+
     built = make_tools(
         cluster=cluster or MagicMock(),
         fetch_logs=fetch_logs or MagicMock(return_value=[]),
         drain_pending=drain_pending or (lambda: []),
-        call_llm=MagicMock(return_value="report"),
+        call_llm=call_llm or MagicMock(return_value="report"),
         call_llm_minute=MagicMock(return_value='{"summary": "s", "evidence": []}'),
         node_log_fetcher=node_log_fetcher,
+        fetch_node_logs=fetch_node_logs,
         run_state=run_state if run_state is not None else {"degraded": False},
     )
     return {t.name: t for t in built}
@@ -307,3 +316,322 @@ def test_get_index_summary_tool_goes_through_the_port():
 
     assert result == [{"index": "logs-1"}]
     cluster.index_summary.assert_called_once_with("logs-*")
+
+
+_NODE_LOG_WINDOW = {"start_iso": "2026-09-10T02:00:00", "end_iso": "2026-09-10T02:15:00"}
+
+
+def _node_log_entry(**overrides):
+    from cluster_doctor.domain.model.log_entry import NodeLogEntry
+
+    fields = {
+        "timestamp": datetime(2026, 9, 10, 2, 4, 33, tzinfo=timezone(timedelta(hours=9))),
+        "node": "es-data-02",
+        "node_role": "data",
+        "level": "WARN ",
+        "detected_level": "warn",
+        "logger": "o.e.i.b.HierarchyCircuitBreakerService",
+        "filename": "es-prod.log",
+        "host": "es-node-02.internal",
+        "line": "[gc][young] duration [1.2s]",
+    }
+    fields.update(overrides)
+    return NodeLogEntry(**fields)
+
+
+def test_search_node_logs_passes_every_condition_to_the_repository():
+    # levels는 LLM이 다루기 쉬운 쉼표 문자열로 받아 튜플로 바꿔 넘긴다.
+    fetch_node_logs = MagicMock(return_value=[])
+
+    _tools(fetch_node_logs=fetch_node_logs)["search_node_logs"].invoke({
+        "start_iso": "2026-09-10T02:00:00",
+        "end_iso": "2026-09-10T02:15:00",
+        "node": " es-data-02 ",
+        "node_role": "data",
+        "levels": "WARN,ERROR",
+        "keyword": " heap ",
+        "max_lines": 50,
+    })
+
+    args, kwargs = fetch_node_logs.call_args
+    assert args[0].utcoffset() == timedelta(hours=9)
+    assert args[1].utcoffset() == timedelta(hours=9)
+    assert kwargs["node"] == "es-data-02"
+    assert kwargs["node_role"] == "data"
+    assert kwargs["levels"] == ("WARN", "ERROR")
+    assert kwargs["keyword"] == "heap"
+    assert kwargs["limit"] == 50
+
+
+def test_search_node_logs_renders_entries_with_the_shared_formatter():
+    fetch_node_logs = MagicMock(return_value=[_node_log_entry()])
+
+    result = _tools(fetch_node_logs=fetch_node_logs)["search_node_logs"].invoke(_NODE_LOG_WINDOW)
+
+    assert "es-data-02" in result
+    assert "duration [1.2s]" in result
+    assert "1줄" in result
+
+
+def test_search_node_logs_reports_an_empty_result_as_an_observation():
+    # 0건은 실패가 아니다. agent가 조건을 넓혀 다시 물어볼 수 있게 안내한다.
+    result = _tools(fetch_node_logs=MagicMock(return_value=[]))["search_node_logs"].invoke(
+        _NODE_LOG_WINDOW
+    )
+
+    assert "노드 로그 없음" in result
+    assert "조건을 넓혀" in result
+
+
+def test_search_node_logs_says_when_the_row_limit_truncated_the_result():
+    fetch_node_logs = MagicMock(return_value=[_node_log_entry(), _node_log_entry()])
+    payload = dict(_NODE_LOG_WINDOW, max_lines=2)
+
+    result = _tools(fetch_node_logs=fetch_node_logs)["search_node_logs"].invoke(payload)
+
+    assert "상한 2줄에 걸려" in result
+
+
+def test_search_node_logs_failure_is_an_observation_not_a_degraded_run():
+    # 보조 조사다. 실패해도 slowlog 분석 결과는 온전하므로 리포트를 버리지 않는다.
+    run_state = {"degraded": False}
+    fetch_node_logs = MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE"))
+
+    result = _tools(fetch_node_logs=fetch_node_logs, run_state=run_state)[
+        "search_node_logs"
+    ].invoke(_NODE_LOG_WINDOW)
+
+    assert "노드 로그 조회 실패" in result
+    assert run_state["degraded"] is False
+
+
+def test_search_node_logs_rejects_an_unparsable_time_without_raising():
+    result = _tools()["search_node_logs"].invoke(
+        {"start_iso": "not-a-time", "end_iso": "2026-09-10T02:15:00"}
+    )
+
+    assert "시각 파싱 오류" in result
+
+
+def test_analyze_logs_takes_master_logs_from_clickhouse_before_ssh():
+    # 조회가 결과를 주면 SSH에 붙지 않는다. 접속 실패라는 실패 갈래를
+    # 아예 만들지 않는 것이 이 전환의 목적이다.
+    fetch_node_logs = MagicMock(return_value=[_node_log_entry(node_role="master")])
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = ""
+
+    _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=fetch_node_logs,
+        node_log_fetcher=node_log_fetcher,
+    )["analyze_logs"].invoke(_WINDOW)
+
+    assert fetch_node_logs.call_args.kwargs["node_role"] == "master"
+    node_log_fetcher.fetch.assert_not_called()
+
+
+def test_analyze_logs_falls_back_to_ssh_when_the_table_is_not_ready_yet():
+    fetch_node_logs = MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE"))
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = "[2026-09-10T02:04:33][WARN ] shard failed"
+
+    _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=fetch_node_logs,
+        node_log_fetcher=node_log_fetcher,
+    )["analyze_logs"].invoke(_WINDOW)
+
+    node_log_fetcher.fetch.assert_called_once()
+
+
+def test_analyze_logs_proceeds_when_the_master_has_no_logs_at_all():
+    # 마스터 로그는 보조 컨텍스트다. ClickHouse가 0건이고 SSH도 빈 문자열을
+    # 돌려주는 경우(한산한 구간, 또는 그 구간에 WARN 이상이 없었던 경우)에도
+    # slowlog 분석은 끝까지 진행되어야 한다.
+    run_state = {"degraded": False}
+    call_llm = MagicMock(return_value="===리포트===\n종합 결과")
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = ""
+
+    tools = _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=MagicMock(return_value=[]),
+        node_log_fetcher=node_log_fetcher,
+        run_state=run_state,
+        call_llm=call_llm,
+    )
+    result = tools["analyze_logs"].invoke(_WINDOW)
+
+    assert "종합 결과" in result
+    assert run_state["degraded"] is False
+    # 마스터 로그가 비면 종합 프롬프트에 해당 구획을 아예 넣지 않는다.
+    # 빈 구획을 넣으면 모델이 "로그가 없었다"와 "수집하지 못했다"를 구별할 수 없다.
+    synthesis_prompt = call_llm.call_args.args[0][0]["content"]
+    assert "마스터 노드 로그" not in synthesis_prompt
+
+
+def test_analyze_logs_proceeds_when_the_master_node_has_no_reachable_ip():
+    # node_info가 빈 dict를 주거나 ip가 없으면(마스터 조회 실패, filter_path
+    # 변경 등) SSH 폴백을 건너뛴다. 그때도 분석은 계속된다.
+    run_state = {"degraded": False}
+    cluster = MagicMock()
+    cluster.node_info.return_value = {}
+    node_log_fetcher = MagicMock()
+
+    tools = _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE")),
+        node_log_fetcher=node_log_fetcher,
+        cluster=cluster,
+        run_state=run_state,
+    )
+    result = tools["analyze_logs"].invoke(_WINDOW)
+
+    node_log_fetcher.fetch.assert_not_called()
+    assert "오류" not in result
+    assert run_state["degraded"] is False
+
+
+def test_analyze_logs_asks_for_cluster_event_loggers_not_just_warn_and_error():
+    # 샤드 재배치·노드 이탈·allocation은 ES가 INFO로 남긴다. 레벨만 걸면
+    # 이 수집의 목적인 이벤트가 통째로 빠진다.
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+        _MASTER_EVENT_LOGGERS,
+        _MASTER_LOG_MAX_LINES,
+    )
+
+    fetch_node_logs = MagicMock(return_value=[])
+
+    _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=fetch_node_logs,
+    )["analyze_logs"].invoke(_WINDOW)
+
+    kwargs = fetch_node_logs.call_args.kwargs
+    assert kwargs["node_role"] == "master"
+    assert kwargs["levels"] == ("WARN", "ERROR")
+    assert "o.e.c.r.a.AllocationService" in kwargs["loggers"]
+    assert "o.e.c.s.MasterService" in kwargs["loggers"]
+    assert kwargs["loggers"] == _MASTER_EVENT_LOGGERS
+    # 로거를 좁혔으므로 상한도 함께 내렸다. 사고 중 비용 천장을 낮게 둔다.
+    assert kwargs["limit"] == _MASTER_LOG_MAX_LINES == 80
+
+
+# --------------------------------------------------------------------------
+# search_node_logs — 클러스터 사건 로거 자동 포함
+#
+# 프롬프트 5c가 이 tool로 "shard 재배치·노드 이탈·리더 선출·allocation 실패"를
+# 찾으라고 지시하는데 ES는 그것들을 INFO로 남긴다. 기본 levels="WARN,ERROR"만
+# 걸면 0건이 돌아와 "특이사항 없음"으로 보고된다.
+# --------------------------------------------------------------------------
+
+def test_search_node_logs_adds_the_cluster_event_loggers_by_default():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+        _MASTER_EVENT_LOGGERS,
+    )
+
+    fetch_node_logs = MagicMock(return_value=[])
+
+    _tools(fetch_node_logs=fetch_node_logs)["search_node_logs"].invoke(_NODE_LOG_WINDOW)
+
+    kwargs = fetch_node_logs.call_args.kwargs
+    assert kwargs["levels"] == ("WARN", "ERROR")
+    assert kwargs["loggers"] == _MASTER_EVENT_LOGGERS
+
+
+def test_emptying_levels_drops_the_logger_filter_too():
+    # levels를 비우는 것은 "조건을 풀겠다"는 뜻이다. 로거를 남기면 비워도
+    # 화이트리스트 밖은 못 보게 되어 프롬프트의 "조건을 하나씩 풀어 다시
+    # 조회한다"가 성립하지 않는다.
+    fetch_node_logs = MagicMock(return_value=[])
+    payload = dict(_NODE_LOG_WINDOW, levels="")
+
+    _tools(fetch_node_logs=fetch_node_logs)["search_node_logs"].invoke(payload)
+
+    kwargs = fetch_node_logs.call_args.kwargs
+    assert kwargs["levels"] == ()
+    assert kwargs["loggers"] == ()
+
+
+def test_search_node_logs_reports_truncation_against_the_clamped_limit():
+    # 모델이 상한을 넘겨 부르면(자주 그런다) 요청값과 비교하는 순간 절단을
+    # 놓친다. 어댑터가 2000으로 조이므로 2000건이면 잘린 것이다.
+    from cluster_doctor.application.port.outbound.log_repository import (
+        MAX_NODE_LOG_LIMIT,
+    )
+
+    entries = [_node_log_entry()] * MAX_NODE_LOG_LIMIT
+    payload = dict(_NODE_LOG_WINDOW, max_lines=5000)
+
+    result = _tools(fetch_node_logs=MagicMock(return_value=entries))[
+        "search_node_logs"
+    ].invoke(payload)
+
+    assert f"상한 {MAX_NODE_LOG_LIMIT}줄에 걸려" in result
+    assert "상한 5000줄" not in result
+
+
+def test_zero_max_lines_does_not_claim_a_zero_line_cap():
+    result = _tools(fetch_node_logs=MagicMock(return_value=[_node_log_entry()]))[
+        "search_node_logs"
+    ].invoke(dict(_NODE_LOG_WINDOW, max_lines=0))
+
+    assert "상한 0줄" not in result
+
+
+def test_search_node_logs_clamps_the_limit_it_asks_for():
+    from cluster_doctor.application.port.outbound.log_repository import (
+        MAX_NODE_LOG_LIMIT,
+    )
+
+    fetch_node_logs = MagicMock(return_value=[])
+
+    _tools(fetch_node_logs=fetch_node_logs)["search_node_logs"].invoke(
+        dict(_NODE_LOG_WINDOW, max_lines=99_999)
+    )
+
+    assert fetch_node_logs.call_args.kwargs["limit"] == MAX_NODE_LOG_LIMIT
+
+
+# --------------------------------------------------------------------------
+# analyze_logs — SSH 폴백은 실패에서만
+#
+# 로거를 좁히고 상한을 80으로 내렸으니 건강한 창에서 0건은 정상이다. 0건마다
+# SSH로 내려가면 호출마다(최대 6회) ES 왕복 + 새 접속을 치르고, 이 전환으로
+# 없앤 접속 실패 갈래를 정상 경로에 다시 들여놓는다.
+# --------------------------------------------------------------------------
+
+def test_zero_master_rows_does_not_trigger_the_ssh_fallback():
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = ""
+    cluster = MagicMock()
+
+    _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=MagicMock(return_value=[]),
+        node_log_fetcher=node_log_fetcher,
+        cluster=cluster,
+    )["analyze_logs"].invoke(_WINDOW)
+
+    node_log_fetcher.fetch.assert_not_called()
+    cluster.node_info.assert_not_called()
+
+
+def test_a_failed_master_query_still_triggers_the_ssh_fallback():
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = "[2026-09-10T02:04:33][WARN ] shard failed"
+
+    _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE")),
+        node_log_fetcher=node_log_fetcher,
+    )["analyze_logs"].invoke(_WINDOW)
+
+    node_log_fetcher.fetch.assert_called_once()
+
+
+def test_get_node_info_is_gone():
+    # get_node_logs가 내부에서 같은 조회를 하므로 agent가 부를 실익이 없었고,
+    # 프롬프트에도 없었고, 호출 이력도 0회였다. 스키마 토큰만 먹고 있었다.
+    assert "get_node_info" not in _tools()
+    assert len(_tools()) == 8
