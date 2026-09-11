@@ -26,7 +26,11 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
 )
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
+from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+    coverage_gaps,
+    make_tools,
+    unresolved_failure,
+)
 from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.outbound.llm.deepagent.prompts import SYSTEM_PROMPT
 from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import MinuteOutput
@@ -116,6 +120,8 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             node_log_fetcher=self._node_log_fetcher,
             fetch_node_logs=self._fetch_node_logs,
             run_state=run_state,
+            log_time=log_time,
+            kafka_receive_time=kafka_receive_time,
         )
 
         agent = create_deep_agent(
@@ -149,12 +155,25 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             # 전달할 것이 아예 없는 유일한 경우다. 이것만 예외로 올린다.
             raise LlmResponseError("agent가 빈 응답을 반환했습니다.")
 
+        # 구간 커버리지는 실행이 끝난 뒤에만 판정할 수 있다. tool은 자기 호출만
+        # 알고, 분할 호출이 정당한지는 요청 구간 전체의 합집합을 봐야 안다.
+        run_state["gaps"].extend(coverage_gaps(run_state.get("observed", {})))
+
+        # 실패한 구간을 다시 불러 성공했으면 진단은 성립한 것이다. 일시 오류
+        # (provider 과부하 등)로 붉은 배너를 붙이고 재트리거까지 막으면 배너가
+        # 거짓이 되고, 거짓 배너는 배너 전체의 신뢰를 깎는다.
+        unresolved = unresolved_failure(run_state.get("observed", {}))
+        analysis_failed = run_state["degraded"] or unresolved is not None
+
         # 분석이 실패해도 본문은 전달한다. 예전에는 여기서 LlmApiError를
         # 던졌는데, 그러면 notify가 호출되지 않아 리포트가 사라졌다 —
         # 운영자는 logs/app.log를 뒤져야 실패를 알 수 있었다. 재트리거를
         # 막는 목적은 analysis_failed가 그대로 담당한다.
-        if run_state["degraded"]:
-            _logger.error("분석이 실패한 채 리포트가 작성되었다 — 재트리거하지 않는다")
+        if analysis_failed:
+            _logger.error(
+                "분석이 실패한 채 리포트가 작성되었다 — 재트리거하지 않는다%s",
+                f" (미해결 구간: {unresolved})" if unresolved else "",
+            )
         if run_state["gaps"]:
             _logger.warning(
                 "수집하지 못한 보조 근거 %d건: %s",
@@ -164,7 +183,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
 
         return DiagnosisResult(
             report=content,
-            analysis_failed=run_state["degraded"],
+            analysis_failed=analysis_failed,
             gaps=tuple(run_state["gaps"]),
         )
 
