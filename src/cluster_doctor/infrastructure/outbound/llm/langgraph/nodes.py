@@ -114,6 +114,7 @@ def make_analyze_minute(call_llm: LlmCaller):
 
     def analyze_minute(bucket: MinuteBucket) -> dict:
         label = bucket.minute.strftime(_MINUTE_FORMAT)
+        counts = _count_by_source(bucket.logs)
         prompt = build_minute_prompt(bucket.logs, label)
         try:
             text = call_llm(
@@ -127,6 +128,7 @@ def make_analyze_minute(call_llm: LlmCaller):
                         minute=bucket.minute,
                         summary=f"이 구간은 분석하지 못했습니다 ({exc}).",
                         failed=True,
+                        counts=counts,
                     )
                 ]
             }
@@ -158,7 +160,10 @@ def make_analyze_minute(call_llm: LlmCaller):
         return {
             "findings": [
                 MinuteFinding(
-                    minute=bucket.minute, summary=summary, evidence=evidence
+                    minute=bucket.minute,
+                    summary=summary,
+                    evidence=evidence,
+                    counts=counts,
                 )
             ]
         }
@@ -224,6 +229,13 @@ def make_synthesize(
     return synthesize
 
 
+def _count_by_source(logs: list) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for log in logs:
+        counts[log.source] = counts.get(log.source, 0) + 1
+    return counts
+
+
 def _format_findings(findings: list[MinuteFinding]) -> str:
     if not findings:
         return "(해당 시간 범위에 로그가 없습니다.)"
@@ -232,7 +244,15 @@ def _format_findings(findings: list[MinuteFinding]) -> str:
     for finding in findings:
         label = finding.minute.strftime(_MINUTE_FORMAT)
         marker = " [분석 실패]" if finding.failed else ""
-        block = [f"--- {label}{marker} ---", finding.summary]
+        block = [f"--- {label}{marker} ---"]
+        if finding.counts:
+            # 코드가 센 값이다. 종합 단계가 타임라인에 그대로 옮겨 적으면 되고,
+            # 모델이 로그 줄을 눈으로 세지 않아도 된다.
+            block.append(
+                "건수: "
+                + ", ".join(f"{k}={v}" for k, v in sorted(finding.counts.items()))
+            )
+        block.append(finding.summary)
         if finding.evidence:
             block.append("근거 로그:")
             block.extend(finding.evidence)

@@ -234,4 +234,9 @@ def test_synthesis_prompt_refuses_to_promote_high_os_memory_to_a_problem():
 
     assert "os_mem(캐시포함)이 높은 것은 ES의 정상 동작" in prompt
     assert "리포트에 문제점으로 옮기지 않는다" in prompt
-    assert "jvm_heap과 rejected/GC 근거를 함께 제시한다" in prompt
+    # jvm_heap도 같은 함정이다. 이 클러스터는 평시에도 90%대가 흔하므로
+    # 절대값 임계("85% 이상")를 트리거로 두면 정상 상태가 절반쯤 근거가 된다.
+    # 메모리를 문제로 쓰려면 rejected나 GC가 동반돼야 한다.
+    assert "jvm_heap도 값만으로는 근거가 아니다" in prompt
+    assert "rejected가 0이 아니거나 GC 경고가 있어야" in prompt
+    assert "85%" not in prompt

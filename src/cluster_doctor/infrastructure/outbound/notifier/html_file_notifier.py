@@ -47,7 +47,12 @@ _DIVIDER_RE = re.compile(r"^[─━—–\-=_]{3,}$")
 # 줄 앞머리의 심각도 표기. 배지로 뽑아내 한눈에 보이게 한다.
 _SEVERITY_RE = re.compile(r"^(Critical|Warning|Info)\s*[:\-]?\s*", re.IGNORECASE)
 # 쿼리 원문·로그 줄처럼 그대로 보여야 하는 것. 등폭으로 그리고 줄바꿈을 살린다.
-_RAW_HINTS = ('{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]")
+_RAW_HINTS = (
+    '{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]",
+    # 분 단위 타임라인과 노드 상태 줄. 줄을 맞춰 위아래로 비교해야 하는
+    # 수치이므로 등폭이 아니면 읽을 수 없다.
+    "slowlog=", "jvm_heap", "rejected=",
+)
 
 _FAILED_MARKER = "분석 실패"
 
@@ -255,6 +260,17 @@ def _e(text: str) -> str:
     return html.escape(text, quote=True)
 
 
+def _mono_attr(text: str) -> str:
+    """수치·로그 원문이 실린 줄은 등폭으로 그린다.
+
+    ``pre.raw``는 불렛이 아닌 줄에만 적용된다. 그런데 분 단위 타임라인과
+    노드 상태는 불렛으로 오고, 거기 실리는 것은 줄을 맞춰 읽어야 하는
+    수치다 — 비례 폭으로 그리면 분마다의 jvm_heap이나 rejected를 위아래로
+    비교할 수 없다. 근거로 인용된 로그 원문도 같다.
+    """
+    return ' class="mono"' if any(hint in text for hint in _RAW_HINTS) else ""
+
+
 def _render_items(items: list[dict]) -> str:
     out: list[str] = []
     bullets: list[dict] = []
@@ -272,9 +288,15 @@ def _render_items(items: list[dict]) -> str:
                 )
             subs = ""
             if bullet["subs"]:
-                sub_rows = "".join(f"<li>{_e(s)}</li>" for s in bullet["subs"])
+                sub_rows = "".join(
+                    f'<li{_mono_attr(sub)}>{_e(sub)}</li>' for sub in bullet["subs"]
+                )
                 subs = f'<ul class="subs">{sub_rows}</ul>'
-            rows.append(f"<li>{badge}<span>{_e(bullet['text'])}</span>{subs}</li>")
+            rows.append(
+                f"<li>{badge}"
+                f'<span{_mono_attr(bullet["text"])}>{_e(bullet["text"])}</span>'
+                f"{subs}</li>"
+            )
         out.append(f'<ul class="bullets">{"".join(rows)}</ul>')
         bullets.clear()
 
@@ -430,6 +452,9 @@ ul.subs{list-style:none;margin:7px 0 0;padding:0 0 0 3px;flex:1 1 100%;
 display:flex;flex-direction:column;gap:5px;
 border-left:2px solid var(--line);padding-left:13px}
 ul.subs>li{color:var(--ink-2);font-size:14px}
+.mono{font-family:var(--mono);font-size:12.5px;
+font-variant-numeric:tabular-nums;word-break:break-word}
+ul.subs>li.mono{font-size:12px}
 .sev{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.07em;
 text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid;
 flex:0 0 auto;position:relative;top:-1px}
