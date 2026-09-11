@@ -40,6 +40,9 @@ def test_result_is_always_timezone_aware():
         assert _parse_kst(iso).utcoffset() == timedelta(hours=9), iso
 
 
+_LOG_TIME = datetime(2026, 8, 27, 18, 30, tzinfo=timezone(timedelta(hours=9)))
+
+
 def _tools(
     fetch_logs=None,
     drain_pending=None,
@@ -48,6 +51,8 @@ def _tools(
     node_log_fetcher=None,
     fetch_node_logs=None,
     call_llm=None,
+    log_time=None,
+    kafka_receive_time=None,
 ):
     """이름 → tool 매핑. make_tools 호출마다 클로저 상태가 새로 만들어진다."""
     from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
@@ -74,6 +79,8 @@ def _tools(
         node_log_fetcher=node_log_fetcher,
         fetch_node_logs=fetch_node_logs,
         run_state=run_state if run_state is not None else {"degraded": False},
+        log_time=log_time or _LOG_TIME,
+        kafka_receive_time=kafka_receive_time or _LOG_TIME,
     )
     return {t.name: t for t in built}
 
@@ -108,7 +115,11 @@ def test_analyze_logs_rejects_an_unparsable_time_without_raising():
 # "분석하지 못했다" 리포트가 성공으로 취급된다. run_state에 남겨 알린다.
 # --------------------------------------------------------------------------
 
-def test_a_failed_analysis_marks_the_run_degraded():
+def test_a_failed_analysis_that_is_never_retried_is_a_failed_diagnosis():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+        unresolved_failure,
+    )
+
     run_state = {"degraded": False}
     fetch_logs = MagicMock(side_effect=RuntimeError("ClickHouse 접속 불가"))
     tool = _tools(fetch_logs=fetch_logs, run_state=run_state)["analyze_logs"]
@@ -116,7 +127,33 @@ def test_a_failed_analysis_marks_the_run_degraded():
     result = tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
 
     assert "오류" in result
-    assert run_state["degraded"] is True
+    assert unresolved_failure(run_state["observed"]) is not None
+
+
+def test_a_failure_that_a_retry_resolved_is_not_a_failed_diagnosis():
+    """일시 오류 뒤 같은 구간 재호출이 성공하면 진단은 성립한 것이다.
+
+    예전에는 첫 실패가 run_state["degraded"]를 박고 아무것도 그것을 되돌리지
+    않았다. 실측(13:54 status=529 실패 → 14:00 같은 구간 재호출 → 14:04 성공)에서
+    리포트에 붉은 "분석 실패" 배너가 붙고 재트리거까지 막혔다. 거짓 배너는
+    배너 전체의 신뢰를 깎는다.
+    """
+    from cluster_doctor.domain.model.log_entry import SlowlogEntry
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+        unresolved_failure,
+    )
+
+    run_state = {"degraded": False}
+    logs = [SlowlogEntry(timestamp=datetime(2026, 8, 27, 18, 31, tzinfo=KST))]
+    # 1회는 터지고 2회는 성공한다 — provider 과부하가 하는 그대로다.
+    fetch_logs = MagicMock(side_effect=[RuntimeError("provider 과부하"), logs])
+    tool = _tools(fetch_logs=fetch_logs, run_state=run_state)["analyze_logs"]
+
+    window = {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
+    assert "오류" in tool.invoke(window)
+    tool.invoke(window)
+
+    assert unresolved_failure(run_state["observed"]) is None
 
 
 def test_an_empty_window_is_not_a_degraded_run():
@@ -258,14 +295,28 @@ def test_check_new_slowlogs_summarises_the_drained_batch():
     result = tool.invoke({})
 
     assert result["count"] == 3
-    assert result["earliest"] == datetime(2026, 8, 27, 18, 32, 50, tzinfo=KST).isoformat()
-    assert result["latest"] == datetime(2026, 8, 27, 18, 33, 5, tzinfo=KST).isoformat()
+    assert result["earliest"] == "2026-08-27T18:32:50"
+    assert result["latest"] == "2026-08-27T18:33:05"
+    # 누적값도 같은 호출에서 갱신된다. agent가 기억으로 들고 있지 않아야 한다.
+    # first_seen은 트리거 시각(18:30)과 관측된 earliest 중 이른 쪽이다 —
+    # 여기서는 트리거 시각이 더 이르므로 그쪽이 유입 시작이다.
+    assert result["first_seen"] == "2026-08-27T18:30:00"
+    assert result["last_seen"] == "2026-08-27T18:33:05"
 
 
 def test_check_new_slowlogs_reports_an_empty_queue_as_zero():
-    # 2회 연속 이것이 나오면 유입이 멎은 것으로 본다.
     result = _tools()["check_new_slowlogs"].invoke({})
-    assert result == {"count": 0, "earliest": None, "latest": None}
+
+    assert result["count"] == 0
+    assert result["earliest"] is None
+    assert result["latest"] is None
+    # 유입이 멎었다는 판정은 코드가 센다. 1회로는 멎은 것이 아니다 —
+    # 커넥터 폴링 주기 때문에 유입 중에도 한 번은 0건이 나온다.
+    assert result["zero_streak"] == 1
+    assert result["inflow_settled"] is False
+    # 제안 구간은 멎은 뒤에만 싣는다. 진행 중인 동안의 제안은 무의미하고
+    # 토큰만 든다.
+    assert "suggested_windows" not in result
 
 
 # --------------------------------------------------------------------------
@@ -635,3 +686,114 @@ def test_get_node_info_is_gone():
     # 프롬프트에도 없었고, 호출 이력도 0회였다. 스키마 토큰만 먹고 있었다.
     assert "get_node_info" not in _tools()
     assert len(_tools()) == 8
+
+
+# --------------------------------------------------------------------------
+# 유입 구간의 관측과 커버리지
+#
+# 예전에는 프롬프트가 agent에게 first_seen·last_seen·zero_streak를 "계속
+# 갱신할 값"으로 시켰다. check_new_slowlogs가 호출분만 돌려주고 누적을 하지
+# 않으므로, 여러 호출에 걸친 값을 모델이 기억으로 들고 있는 구조였다.
+# 틀려도 검증이 없었고, 구간이 좁아지면 근거가 조용히 사라졌다.
+#
+# 커버리지 판정에서 가장 조심할 것은 오경보다. 없는 문제를 보고하면 배너가
+# 잡음이 되고, 잡음이 된 배너는 읽히지 않는다.
+# --------------------------------------------------------------------------
+
+def test_split_windows_that_together_cover_the_inflow_are_not_a_gap():
+    """정당한 분할과 분 경계 반올림을 누락으로 보지 않는다.
+
+    호출마다 따로 판정하면 분할이 전부 위반으로 잡힌다 — 첫 조각은
+    ``end < last_seen``이고 둘째 조각은 ``start > first_seen``인 것이 당연하다.
+    합집합으로만 봐야 한다.
+
+    끝의 30초는 허용오차 안이다. agent가 구간을 분 경계로 반올림하므로 유입
+    마지막 몇십 초가 밖으로 밀려나는 일이 정상적으로 생긴다.
+    """
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import coverage_gaps
+
+    run_state = {"degraded": False, "gaps": []}
+    trigger = datetime(2026, 8, 27, 18, 30, 10, tzinfo=KST)
+    tools = _tools(
+        drain_pending=lambda: _entries(
+            trigger, datetime(2026, 8, 27, 18, 42, 30, tzinfo=KST)
+        ),
+        run_state=run_state,
+        log_time=trigger,
+        kafka_receive_time=trigger,
+    )
+    tools["check_new_slowlogs"].invoke({})
+
+    # 유입 18:30:10 ~ 18:42:30 을 두 조각으로 나눠 부른다.
+    tools["analyze_logs"].invoke(
+        {"start_iso": "2026-08-27T18:25:00", "end_iso": "2026-08-27T18:35:00"}
+    )
+    tools["analyze_logs"].invoke(
+        {"start_iso": "2026-08-27T18:35:00", "end_iso": "2026-08-27T18:42:00"}
+    )
+
+    assert coverage_gaps(run_state["observed"]) == []
+
+
+def test_a_window_starting_after_the_inflow_began_is_reported_as_a_gap():
+    # 구간을 좁게 잡는 것은 조용히 근거를 잃는 경로다. 지금까지는 흔적이
+    # 남지 않았다 — 리포트에 분석 구간이 적히지만 그것이 유입을 감쌌는지는
+    # 아무도 보지 않았다.
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import coverage_gaps
+
+    run_state = {"degraded": False, "gaps": []}
+    trigger = datetime(2026, 8, 27, 18, 30, 0, tzinfo=KST)
+    tools = _tools(
+        drain_pending=lambda: _entries(
+            trigger, datetime(2026, 8, 27, 18, 41, 50, tzinfo=KST)
+        ),
+        run_state=run_state,
+        log_time=trigger,
+        kafka_receive_time=trigger,
+    )
+    tools["check_new_slowlogs"].invoke({})
+
+    tools["analyze_logs"].invoke(
+        {"start_iso": "2026-08-27T18:36:00", "end_iso": "2026-08-27T18:44:00"}
+    )
+
+    gaps = coverage_gaps(run_state["observed"])
+    assert len(gaps) == 1
+    assert "360초" in gaps[0], gaps[0]
+
+
+def test_nothing_is_claimed_when_the_inflow_was_never_observed():
+    # check_new_slowlogs를 한 번도 부르지 않으면 유입을 모른다. 근거 없이
+    # 누락을 보고하지 않는다.
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import coverage_gaps
+
+    assert coverage_gaps({}) == []
+    assert coverage_gaps({"first_seen": None, "last_seen": None}) == []
+
+
+def test_two_empty_checks_settle_the_inflow_and_one_does_not():
+    """유입이 멎었다는 판정을 코드가 센다.
+
+    0건 한 번으로는 부족하다 — 커넥터 폴링 주기 때문에 유입이 계속되는 중에도
+    한 번은 0건이 나온다. 중간에 유입이 있으면 다시 0에서 센다.
+    """
+    batches = [
+        _entries(datetime(2026, 8, 27, 18, 30, 5, tzinfo=KST)),
+        [],
+        _entries(datetime(2026, 8, 27, 18, 31, 40, tzinfo=KST)),
+        [],
+        [],
+    ]
+    tool = _tools(drain_pending=lambda: batches.pop(0))["check_new_slowlogs"]
+
+    assert tool.invoke({})["zero_streak"] == 0          # 유입 있음
+    assert tool.invoke({})["inflow_settled"] is False   # 0건 1회
+    assert tool.invoke({})["zero_streak"] == 0          # 다시 유입 → 리셋
+    assert tool.invoke({})["inflow_settled"] is False   # 0건 1회
+    settled = tool.invoke({})                            # 0건 2회
+    assert settled["inflow_settled"] is True
+
+    # 멎은 뒤에만 제안 구간이 실린다. 유입 시작 5분 전부터다.
+    windows = settled["suggested_windows"]
+    assert windows[0]["start_iso"] == "2026-08-27T18:25:00"
+    assert all(w["start_iso"] < w["end_iso"] for w in windows)

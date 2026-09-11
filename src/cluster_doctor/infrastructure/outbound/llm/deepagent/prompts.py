@@ -31,10 +31,8 @@ user message에 두 시각이 주어진다.
 - slowlog_timestamp: slowlog에 기재된 실제 쿼리 발생 시각
 - kafka_receive_time: Kafka에서 받은 시각 (파이프라인 지연이 포함돼 있다)
 
-기본은 slowlog_timestamp를 쓴다. 다만 아래 중 하나라도 해당하면 데이터 이상으로 보고
-kafka_receive_time을 쓴다.
-- slowlog_timestamp가 kafka_receive_time보다 미래인 경우 (clock skew)
-- 두 시각의 차이가 30분을 초과하는 경우
+어느 쪽을 기준으로 삼을지는 코드가 정한다. check_new_slowlogs()가 time_basis로
+알려주므로, 리포트의 "사용한 시각 기준"에는 그 값을 그대로 옮긴다.
 
 ## 진단 절차
 
@@ -47,12 +45,9 @@ a. cluster_health()를 한 번 호출해 현재 상태를 기록한다.
    여기서 기다리지 않는다. 상태 값만 남기고 곧바로 다음으로 넘어간다.
 
 b. check_new_slowlogs()를 한 번 호출한다.
-   - count > 0이면 earliest와 latest를 기록한다.
-   - earliest가 slowlog_timestamp보다 이르면 earliest를 유입 시작 시각으로 삼는다.
-     (재트리거로 실행된 경우 slowlog_timestamp가 실제 발생보다 늦을 수 있다)
-   - count == 0이면 slowlog_timestamp를 유입 시작 시각으로 삼는다.
-
-   이후 계속 갱신할 값: first_seen(유입 시작), last_seen(마지막 유입), zero_streak(0에서 시작)
+   반환값의 first_seen / last_seen / zero_streak / inflow_settled 는 코드가 호출에
+   걸쳐 누적한 값이다. 직접 기억하거나 계산하지 않는다. 재트리거로 실행된 경우의
+   보정(관측된 것이 더 이르면 그쪽으로 당기기)도 코드가 한다.
 
 ### 2단계: 유입 안정화 대기
 
@@ -60,32 +55,42 @@ b. check_new_slowlogs()를 한 번 호출한다.
 
   1. sleep(30)
   2. check_new_slowlogs()
-     - count == 0이면 zero_streak를 1 늘린다.
-       zero_streak가 2가 되면 유입이 멎은 것으로 보고 루프를 빠져나간다.
-     - count > 0이면 zero_streak를 0으로 되돌리고 last_seen을 latest로 갱신한다.
+     - inflow_settled 가 true 면 유입이 멎은 것이므로 루프를 빠져나간다.
   3. cluster_health()로 상태 변화를 기록한다.
      상태는 관찰만 한다. yellow나 red라는 이유로 더 기다리지 않는다.
-
-0건을 두 번 연속 확인해야 멎은 것으로 본다. 커넥터 폴링 주기 때문에 유입이 계속되는
-중에도 한 번은 0건이 나올 수 있기 때문이다.
 
 sleep()이 대기 상한에 도달했다고 알리면 그 즉시 루프를 빠져나간다.
 이 경우 리포트에 "유입이 지속되는 중에 분석했다"고 명시한다.
 
 ### 3단계: 분석 구간 결정
 
-- start는 first_seen보다 1~2분 이른 시각으로 잡는다 (사고 직전 상황을 포함시키기 위해).
-- end는 last_seen보다 1분 늦은 시각으로 잡는다.
-- 시각은 KST 기준으로, 오프셋 없이 입력한다. 예) "2026-08-27T18:30:00"
+마지막 check_new_slowlogs()가 돌려준 suggested_windows 를 쓴다. 유입 시작 5분 전부터
+마지막 유입 1분 후까지를 10분 이하로 쪼갠 목록이고, 분할도 이미 끝나 있다.
 
-전체 구간이 10분을 넘으면 10분 이하의 구간 여러 개로 나눈다.
-analyze_logs()는 10분을 넘는 구간을 거부한다.
+이것은 제안이다. 넓히거나 옮길 이유가 있으면 그렇게 한다 — analyze_logs()는 구간을
+인자로 받는다. 다만 관측된 유입(first_seen ~ last_seen)은 반드시 포함시킨다.
+빠뜨리면 그 사실이 리포트에 누락으로 남는다.
+
+시각은 KST 기준으로, 오프셋 없이 입력한다. 예) "2026-08-27T18:30:00"
 
 ### 4단계: 분석
 
 - 3단계에서 정한 구간마다 analyze_logs(start_iso, end_iso)를 시간순으로 호출한다.
 - 결과가 비어 있으면 구간을 앞뒤로 1~2분 옮겨 한 번만 재시도한다.
   그래도 비어 있으면 커넥터 적재 지연 가능성을 리포트에 명시하고 계속 진행한다.
+
+앞 시간대를 더 볼지 판단한다. 원인은 사고 구간이 아니라 그 앞에서 만들어지는 경우가
+있다(heap이 서서히 오름, 샤드 재배치가 앞서 시작). 분 단위 타임라인의 가장 앞쪽을
+보고 정한다.
+
+- 당긴다 — 구간 맨 앞부터 이미 징후가 진행 중이었을 때.
+  예) 첫 분부터 slowlog가 이미 쌓여 있다 / jvm_heap이 구간 내내 단조 상승이고
+      시작값이 이미 높다 / search·write rejected가 첫 분부터 0이 아니다 /
+      마스터 로그에 구간 시작 이전부터 진행 중인 사건이 있다
+  → start를 5분 더 당겨 한 번 더 호출한다. 필요하면 같은 판단을 반복한다.
+- 당기지 않는다 — 징후가 구간 중간에서 시작했을 때. 시작점을 이미 본 것이다.
+  근거 없이 당기면 호출 상한만 태우고 얻는 것이 없다.
+
 - 모든 analyze_logs 호출이 끝나면 cluster_health()를 한 번 호출해 현재 상태를 기록한다.
   status가 green이고 미할당 샤드가 없으면 5단계를 건너뛰고 6단계로 직행한다.
 
