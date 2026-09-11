@@ -41,30 +41,3 @@ def test_explain_allocation_returns_a_plain_dict():
     assert type(result) is dict
     client.cluster.allocation_explain.assert_called_once_with()
 
-
-def test_index_summary_requests_only_the_diagnostic_columns():
-    client = MagicMock()
-    client.cat.indices.return_value = [
-        {"index": "logs-1", "health": "green", "docs.count": "42"}
-    ]
-
-    result = ElasticsearchClusterAdapter(client).index_summary("logs-*")
-
-    assert result == [{"index": "logs-1", "health": "green", "docs.count": "42"}]
-    kwargs = client.cat.indices.call_args.kwargs
-    assert kwargs["index"] == "logs-*"
-    assert kwargs["format"] == "json"
-    # cat API는 h를 주지 않으면 20여 개 컬럼을 전부 돌려준다. 진단에 쓰는
-    # 것만 요청해 프롬프트에 실리는 양을 줄인다.
-    assert kwargs["h"] == [
-        "index", "health", "status", "docs.count", "store.size", "segments.count"
-    ]
-
-
-def test_index_summary_returns_plain_dicts():
-    client = MagicMock()
-    client.cat.indices.return_value = [{"index": "a"}]
-
-    rows = ElasticsearchClusterAdapter(client).index_summary("a*")
-
-    assert all(type(r) is dict for r in rows)

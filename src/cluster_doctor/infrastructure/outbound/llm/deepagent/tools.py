@@ -9,7 +9,7 @@ tool이 실패를 문자열로 삼킬 때 그 사실을 호출자에게 남기�
 - check_new_slowlogs(): agent 실행 중 큐에 새로 쌓인 slowlog 확인
 - search_node_logs(...): 마스터 노드 로그를 ClickHouse에서 검색
 - get_node_logs(node_id, ...): 데이터 노드 로그를 SSH로 수집 (내부에서 GET /_nodes/<id>)
-- cluster_health / explain_unassigned_shards / get_index_summary: ES 직접 호출
+- cluster_health / explain_unassigned_shards: ES 직접 호출
 - sleep: 대기
 
 노드 로그의 출처가 둘로 갈리는 것은 적재 범위에서 온 것이다. ClickHouse에는
@@ -810,19 +810,6 @@ def make_tools(
         return f"{header}\n{body}"
 
     @tool
-    def get_index_summary(index_pattern: str) -> list[dict]:
-        """특정 인덱스 패턴의 상태 요약을 반환한다.
-
-        slowlog에서 문제가 의심되는 인덱스를 발견했을 때 호출한다.
-        반환 항목: 인덱스명, 헬스, 상태, 문서수, 저장 크기, 세그먼트 수.
-
-        Args:
-            index_pattern: 조회할 인덱스 패턴. 예) 'my-index-2026.08*', 'logs-*'
-        """
-        _logger.info("[tool] get_index_summary(%s)", index_pattern)
-        return cluster.index_summary(index_pattern)
-
-    @tool
     def sleep(seconds: float) -> str:
         """지정한 초만큼 대기한다. slowlog 유입이 멎기를 기다릴 때 쓴다.
 
@@ -858,7 +845,6 @@ def make_tools(
         check_new_slowlogs,
         cluster_health,
         explain_unassigned_shards,
-        get_index_summary,
         get_node_logs,
         search_node_logs,
         sleep,

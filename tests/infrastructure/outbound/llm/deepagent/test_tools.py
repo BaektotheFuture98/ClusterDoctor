@@ -359,16 +359,6 @@ def test_explain_unassigned_shards_reports_failure_as_an_observation():
     assert "미할당 샤드 없음" in result
 
 
-def test_get_index_summary_tool_goes_through_the_port():
-    cluster = MagicMock()
-    cluster.index_summary.return_value = [{"index": "logs-1"}]
-
-    result = _tools(cluster=cluster)["get_index_summary"].invoke({"index_pattern": "logs-*"})
-
-    assert result == [{"index": "logs-1"}]
-    cluster.index_summary.assert_called_once_with("logs-*")
-
-
 _NODE_LOG_WINDOW = {"start_iso": "2026-09-10T02:00:00", "end_iso": "2026-09-10T02:15:00"}
 
 
@@ -685,7 +675,7 @@ def test_get_node_info_is_gone():
     # get_node_logs가 내부에서 같은 조회를 하므로 agent가 부를 실익이 없었고,
     # 프롬프트에도 없었고, 호출 이력도 0회였다. 스키마 토큰만 먹고 있었다.
     assert "get_node_info" not in _tools()
-    assert len(_tools()) == 8
+    assert len(_tools()) == 7
 
 
 # --------------------------------------------------------------------------

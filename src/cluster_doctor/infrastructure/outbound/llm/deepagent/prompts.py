@@ -100,11 +100,9 @@ sleep()이 대기 상한에 도달했다고 알리면 그 즉시 루프를 빠�
 
 non-green이거나 분석 결과에 특정 노드 문제가 의심되면 아래를 수행한다.
 
-a. slowlog에 반복 등장하는 인덱스는 get_index_summary()로 상태를 확인한다.
+a. 클러스터가 한 번이라도 yellow나 red였으면 explain_unassigned_shards()로 원인을 확인한다.
 
-b. 클러스터가 한 번이라도 yellow나 red였으면 explain_unassigned_shards()로 원인을 확인한다.
-
-c. 마스터 노드 로그를 먼저 본다. 클러스터 차원의 사건(shard 재배치, 노드 이탈,
+b. 마스터 노드 로그를 먼저 본다. 클러스터 차원의 사건(shard 재배치, 노드 이탈,
    리더 선출, allocation 실패)이 여기 남고, 그 줄에 문제 노드의 이름이 함께 찍힌다.
    search_node_logs(start_iso=<3단계 start>, end_iso=<3단계 end>, node_role="master")
    - analyze_logs 내부에서도 마스터 로그를 자동 수집하지만 그것은 분석 구간
@@ -112,11 +110,11 @@ c. 마스터 노드 로그를 먼저 본다. 클러스터 차원의 사건(shard
    - 이 tool은 구간 길이 제한이 없다. 사고 전체를 한 번에 넣어도 된다.
 
    - 마스터 로그 줄에는 문제 노드가 [노드이름][노드ID] 형태로 함께 찍힌다.
-     그 값을 d단계에서 쓴다.
+     그 값을 c단계에서 쓴다.
 
-d. c단계에서 지목된 노드의 로그를 SSH로 수집한다.
+c. b단계에서 지목된 노드의 로그를 SSH로 수집한다.
    get_node_logs(node_id, start_iso=<3단계 start>, end_iso=<3단계 end>)
-   - node_id에는 c단계 마스터 로그에서 확인한 노드 ID 또는 노드 이름을 넣는다.
+   - node_id에는 b단계 마스터 로그에서 확인한 노드 ID 또는 노드 이름을 넣는다.
      analyze_logs 결과(slowlog·메트릭)에 반복 등장한 노드 이름도 유효하다.
    - 이 tool이 내부에서 GET /_nodes/<node_id>로 그 노드의 IP와 로그 경로를
      조회한 뒤 SSH로 접속한다. 접속 정보를 따로 구할 필요가 없다.
@@ -126,7 +124,7 @@ d. c단계에서 지목된 노드의 로그를 SSH로 수집한다.
    - 수집 결과를 보고 더 앞 시간대가 필요하면 start_iso를 당겨 재호출한다.
    - 여러 노드가 의심되면 노드마다 각각 호출한다.
 
-e. c단계 조회가 "조회 실패"를 돌려주면(적재 지연·테이블 문제) 마스터 로그도
+d. b단계 조회가 "조회 실패"를 돌려주면(적재 지연·테이블 문제) 마스터 로그도
    SSH로 받는다. get_node_logs("_master", start_iso=…, end_iso=…)
 
 ### 6단계: 리포트 작성
@@ -138,7 +136,7 @@ analyze_logs가 반환한 LangGraph 리포트를 그대로 복사하지 않는�
 - 5단계에서 조회한 마스터 노드 로그 (사고 전체 구간)
 - 5단계에서 조회한 문제 노드 로그
 - cluster_health 변화 이력
-- explain_unassigned_shards / get_index_summary 결과
+- explain_unassigned_shards 결과
 
 ## 지표 해석
 

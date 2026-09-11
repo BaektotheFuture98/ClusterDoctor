@@ -49,7 +49,7 @@ Once triggered:
 5. **Report** — `HtmlFileNotifier` writes one HTML file per diagnosis into `REPORT_DIR`.
 
 Everything the agent can do is one of eight tools: `analyze_logs`, `check_new_slowlogs`,
-`sleep`, `cluster_health`, `explain_unassigned_shards`, `get_index_summary`,
+`sleep`, `cluster_health`, `explain_unassigned_shards`,
 `search_node_logs`, `get_node_logs`. Filesystem access is denied outright.
 
 Limits are enforced by the tools, not by the prompt. The prompt can ask the model to stop

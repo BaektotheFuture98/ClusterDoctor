@@ -24,11 +24,6 @@ class ClusterRepository(ABC):
         ...
 
     @abstractmethod
-    def index_summary(self, index_pattern: str) -> list[dict]:
-        """인덱스 패턴에 걸리는 인덱스들의 상태 요약."""
-        ...
-
-    @abstractmethod
     def node_info(self, node_id: str) -> dict:
         """단일 노드의 IP와 로그 디렉터리 경로를 반환한다.
 
