@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -19,8 +20,41 @@ class LlmResponseError(RuntimeError):
     """
 
 
+@dataclass(frozen=True)
+class DiagnosisResult:
+    """진단 한 건의 결과.
+
+    예전에는 ``analyze``가 리포트 문자열만 돌려주고, 실패는 예외로 알렸다.
+    그래서 "리포트를 전달할지"와 "실패한 실행을 재트리거할지"가 한 갈래로
+    묶여 있었다 — 예외가 나면 ``notify``가 호출되지 않으므로 리포트가
+    통째로 사라졌다.
+
+    그 묶임이 실제로 손해를 냈다. 보조 조사(노드 로그 SSH 수집)가 실패하면
+    4단계 분석이 온전히 끝난 리포트까지 버려졌다. 문자열 하나로는 "아무것도
+    만들지 못했다"와 "만들었지만 일부가 빠졌다"를 구별할 수 없었기 때문이다.
+
+    이제 셋을 따로 싣는다.
+
+      report          운영자에게 전달할 본문. **항상 전달한다.**
+      analysis_failed 분석 자체가 실패했는가. 재트리거를 막는 유일한 조건이다.
+      gaps            수집하지 못한 보조 근거. 리포트는 유효하지만 일부가 빠졌다.
+                      재트리거를 막지 않는다 — 분석은 성공했으므로.
+    """
+
+    report: str
+    analysis_failed: bool = False
+    gaps: tuple[str, ...] = field(default_factory=tuple)
+
+
 class LlmAnalyzer(ABC):
     @abstractmethod
-    def analyze(self, log_time: datetime, kafka_receive_time: datetime) -> str:
-        """slowlog 자체 timestamp와 Kafka 수신 시각을 받아 클러스터를 진단하고 리포트를 반환한다."""
+    def analyze(
+        self, log_time: datetime, kafka_receive_time: datetime
+    ) -> DiagnosisResult:
+        """slowlog 자체 timestamp와 Kafka 수신 시각을 받아 클러스터를 진단한다.
+
+        전달할 것이 아예 없을 때만 예외를 올린다(빈 응답). 분석이 실패했더라도
+        agent가 쓴 본문이 있으면 ``analysis_failed=True``로 실어 보낸다 —
+        운영자가 로그를 뒤지지 않고 실패를 알 수 있어야 한다.
+        """
         ...

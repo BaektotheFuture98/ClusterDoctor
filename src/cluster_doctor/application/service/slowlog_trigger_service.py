@@ -106,12 +106,27 @@ class SlowlogTriggerService:
         )
         succeeded = False
         try:
-            report = await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 self._llm_analyzer.analyze, log_time, kafka_receive_time
             )
-            _logger.info("agent 완료 — 리포트 전송")
-            await self._notifier.notify(report)
-            succeeded = True
+            _logger.info(
+                "agent 완료 — 리포트 전송 (analysis_failed=%s, gaps=%d)",
+                result.analysis_failed,
+                len(result.gaps),
+            )
+            # 리포트는 항상 전달한다. 분석이 실패했더라도 agent가 쓴 본문이
+            # 있으면 운영자가 읽을 수 있어야 한다 — 예전에는 실패가 예외로
+            # 올라와 notify를 건너뛰었고, 그때는 logs/app.log를 뒤져야
+            # 실패를 알 수 있었다.
+            await self._notifier.notify(
+                result.report,
+                gaps=result.gaps,
+                analysis_failed=result.analysis_failed,
+            )
+            # 재트리거 여부는 완전성으로만 판단한다. 근거가 일부 빠진 것
+            # (gaps)은 분석이 성공한 것이므로 막지 않는다 — 큐에 남은 항목은
+            # 그 사이 새로 도착한 slowlog다.
+            succeeded = not result.analysis_failed
         except (LlmApiError, LlmResponseError) as exc:
             # 두 예외는 상속 관계가 없는 형제다(둘 다 RuntimeError 직속).
             # LlmApiError만 잡으면 빈 응답(LlmResponseError)이 아래

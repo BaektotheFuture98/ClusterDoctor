@@ -163,21 +163,42 @@ def _run_analyze_with_tools(make_tools_impl, agent_text: str = "분석 실패 �
         return analyzer.analyze(log_time, kafka_receive_time)
 
 
-def test_a_tool_marking_the_run_degraded_makes_analyze_fail():
+def test_a_degraded_run_still_delivers_the_report():
+    # 예전에는 여기서 LlmApiError를 던졌고, 그러면 _run_agent이 notify를
+    # 건너뛰어 리포트가 통째로 사라졌다 — 운영자는 logs/app.log를 뒤져야
+    # 실패를 알 수 있었다. 이제 본문은 전달하고 재트리거만 막는다.
     def _degrading(**kwargs):
         # analyze_logs가 실패 문자열을 돌려줄 때 하는 일과 같다.
         kwargs["run_state"]["degraded"] = True
         return []
 
-    with pytest.raises(LlmApiError):
-        _run_analyze_with_tools(_degrading)
+    result = _run_analyze_with_tools(_degrading, agent_text="분석 실패 리포트")
+
+    assert result.report == "분석 실패 리포트"
+    assert result.analysis_failed is True
+
+
+def test_supplementary_gaps_do_not_fail_the_run():
+    # 보조 조사(노드 로그 SSH 수집)가 실패해도 4단계 분석 결과는 온전하다.
+    # 재트리거를 막지 않고, 빠진 사실만 결과에 실어 보낸다.
+    def _with_gap(**kwargs):
+        kwargs["run_state"]["gaps"].append("es-data-02 노드 로그 SSH 수집 실패")
+        return []
+
+    result = _run_analyze_with_tools(_with_gap, agent_text="정상 리포트")
+
+    assert result.report == "정상 리포트"
+    assert result.analysis_failed is False
+    assert result.gaps == ("es-data-02 노드 로그 SSH 수집 실패",)
 
 
 def test_a_clean_run_still_returns_the_report():
-    # 저하 표시가 없으면 지금까지처럼 리포트를 그대로 돌려줘야 한다.
-    # (무조건 raise하는 구현으로는 위 테스트가 통과해 버린다.)
     def _clean(**kwargs):
-        assert kwargs["run_state"] == {"degraded": False}
+        assert kwargs["run_state"] == {"degraded": False, "gaps": []}
         return []
 
-    assert _run_analyze_with_tools(_clean, agent_text="정상 리포트") == "정상 리포트"
+    result = _run_analyze_with_tools(_clean, agent_text="정상 리포트")
+
+    assert result.report == "정상 리포트"
+    assert result.analysis_failed is False
+    assert result.gaps == ()

@@ -254,7 +254,7 @@ uv run python scripts/produce_test_message.py
 uv run pytest -q
 ```
 
-248 tests, ~7 s. No test touches a real LLM, Kafka, ClickHouse, Elasticsearch, or SSH.
+258 tests, ~7 s. No test touches a real LLM, Kafka, ClickHouse, Elasticsearch, or SSH.
 
 ## Reports
 
@@ -279,6 +279,34 @@ dark palettes plus print styles.
 A write failure never loses the diagnosis: the full text is logged instead. Characters that
 cannot be encoded — an unpaired surrogate from a provider response, say — are replaced at
 the door, because otherwise the file write *and* the fallback log both fail.
+
+### The report is always delivered
+
+`analyze` returns a `DiagnosisResult`, not a string, and that separates two decisions the
+old design had fused:
+
+| | Governed by |
+|---|---|
+| Is the report delivered? | **Always.** `notify` is called on every path that produced text. |
+| Does the run retrigger? | `analysis_failed` only. |
+| What was missing? | `gaps` — rendered as a banner, never mixed into the body. |
+
+Fusing them cost real diagnoses. A failed run raised an exception, `notify` was skipped,
+and the report vanished — an operator had to grep `logs/app.log` to learn anything. Worse,
+a *supplementary* failure did the same: one refused SSH connection threw away a diagnosis
+whose slow-log analysis had finished cleanly.
+
+Now the split is by "did the diagnosis hold up":
+
+- `analyze_logs` failing → `analysis_failed`. The report still ships, with a red banner
+  saying its conclusions cannot be trusted, and the run does not retrigger.
+- A node-log collection failing, or the `analyze_logs` call cap being hit, or some minute
+  buckets failing → a `gaps` entry. The report ships normally and **does** retrigger,
+  because the analysis itself succeeded.
+
+`gaps` are recorded by the code, not by the model. Asking the prompt to "state what you
+could not collect" is not enough — the model can ignore it, and then "I could not read the
+node's logs" and "I read them and found nothing" look identical in the report.
 
 `reports/` is git-ignored. Reports carry operational index names, query sources, and
 company/user identifiers.
@@ -357,24 +385,9 @@ Saves disk only — startup time is unchanged, since those files are not on the 
   fixed; the underlying prompt size is not. The remaining levers are aggregating
   `node_metric` (107 near-identical lines per minute) and filtering `es_query_log` by
   runtime.
-- **A partly-failed analysis is treated as a success.** The degraded flag is set only when
-  *every* minute bucket fails. Since the quota resets each minute, partial failure is the
-  common shape, and those runs still retrigger. The obvious fix — degrade on *any* failure —
-  is wrong: degrading both suppresses the retrigger *and* discards the report, so a
-  nine-of-ten-good diagnosis would be thrown away. Doing it properly means separating
-  "produced nothing" from "produced something partial", which the `str` return type of
-  `LlmAnalyzer.analyze` cannot express today.
-- **Hitting the `analyze_logs` call cap is also treated as a success.** Same asymmetry, a
-  different cause: the refusal string does not set the degraded flag, so a report written
-  from partial coverage looks identical to a complete one.
 - **`check_new_slowlogs` drains the queue before analysis starts.** If a run then dies hard,
   the drained entries are gone and no retrigger fires; the incident waits for the next
   slow-log.
-- **An SSH failure discards the whole report.** `get_node_logs` sets the degraded flag, and
-  the analyzer promotes that to `LlmApiError` — so a diagnosis whose slow-log analysis
-  finished cleanly is thrown away because a *supplementary* log collection failed, and the
-  retrigger is suppressed too. `search_node_logs` deliberately does not do this. The two
-  should be reconciled.
 - **Zero master-log rows is indistinguishable from "not ingested yet".** The SSH fallback
   inside `analyze_logs` fires only when the ClickHouse query *fails*, because with the
   logger whitelist in place zero rows is the normal outcome for a healthy window — falling
