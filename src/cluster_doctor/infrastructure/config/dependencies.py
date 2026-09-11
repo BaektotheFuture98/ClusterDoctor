@@ -9,7 +9,7 @@ from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTr
 from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
 from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import ElasticsearchClusterAdapter
 from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import DeepAgentAnalyzer
-from cluster_doctor.infrastructure.outbound.notifier.stdout_notifier import StdoutNotifier
+from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
 from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
@@ -67,6 +67,7 @@ def _get_log_repository() -> ClickHouseLogAdapter:
         slowlog_table=s.clickhouse_slowlog_table,
         log_table=s.clickhouse_log_table,
         node_metric_table=s.clickhouse_node_metric_table,
+        node_log_table=s.clickhouse_node_log_table,
     )
 
 
@@ -94,6 +95,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
         default_model=s.llm_model,
         cluster=_get_cluster_repository(),
         fetch_logs=_get_log_repository().fetch_logs,
+        fetch_node_logs=_get_log_repository().fetch_node_logs,
         drain_pending=drain_pending,
         node_log_fetcher=NodeLogFetcher(
             ssh_user=s.ssh_user,
@@ -104,7 +106,9 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
 
     return SlowlogTriggerService(
         llm_analyzer=analyzer,
-        notifier=StdoutNotifier(),
+        # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
+        # 떨어뜨리므로, 예전 StdoutNotifier의 동작이 폴백으로 남아 있다.
+        notifier=HtmlFileNotifier(output_dir=s.report_dir),
         pending=pending,
         micro_batch_seconds=s.micro_batch_seconds,
     )

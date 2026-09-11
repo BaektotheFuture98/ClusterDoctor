@@ -74,7 +74,7 @@ def test_split_crosses_two_boundaries():
 
 def test_fetch_logs_maps_slowlog():
     client = _make_client(slowlog_rows=[SLOWLOG_ROW])
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     sl      = [l for l in adapter.fetch_logs(TR) if l.source == "slowlog"]
 
     assert len(sl) == 1
@@ -98,7 +98,7 @@ def test_slowlog_projects_named_subcolumns_instead_of_the_whole_source():
     #     행당 2.7KB 중 73%를 차지한다(실측).
     # 테스트 더블은 어느 쪽도 재현하지 못하므로 SQL의 투영을 직접 검증한다.
     client  = _make_client()
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
 
     sql = next(
@@ -116,7 +116,7 @@ def test_slowlog_is_filtered_by_occurrence_time_not_ingestion_time():
     # 분 경계를 넘기면 트리거를 유발한 그 slowlog가 조회 구간에서 빠지고,
     # 분 단위 버킷의 시각 라벨도 통째로 밀린다.
     client  = _make_client()
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
 
     sql = next(
@@ -135,7 +135,7 @@ QUERY_ROW = (
 
 def test_fetch_logs_maps_query_log_success():
     client = _make_client(query_rows=[QUERY_ROW])
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     ql      = [l for l in adapter.fetch_logs(TR) if l.source == "es_query_log"]
 
     assert len(ql) == 1
@@ -154,7 +154,7 @@ def test_fetch_logs_maps_query_log_success():
 def test_query_log_keywords_become_a_hashable_tuple():
     # ClickHouse는 list를 준다. frozen dataclass에서 list 필드는 해시를 깨뜨린다.
     client = _make_client(query_rows=[QUERY_ROW])
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     e = [l for l in adapter.fetch_logs(TR) if l.source == "es_query_log"][0]
 
     assert e.keywords == ("kwd", "kwd2")
@@ -164,7 +164,7 @@ def test_query_log_keywords_become_a_hashable_tuple():
 def test_fetch_logs_maps_query_log_fail():
     row    = (*QUERY_ROW[:3], "N", *QUERY_ROW[4:])
     client = _make_client(query_rows=[row])
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     ql      = [l for l in adapter.fetch_logs(TR) if l.source == "es_query_log"]
     assert ql[0].success is False
 
@@ -172,7 +172,7 @@ def test_fetch_logs_maps_query_log_fail():
 def test_fetch_logs_maps_node_metric():
     row    = (datetime(2026, 8, 20, 2, 9, 0), "node1", "10.0.0.1", 30, 60, 15, 70, 2, 0, 0, 1, 0, 0)
     client = _make_client(metric_rows=[row])
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     metrics = [l for l in adapter.fetch_logs(TR) if l.source == "node_metric"]
 
     assert len(metrics) == 1
@@ -188,14 +188,14 @@ def test_fetch_logs_maps_node_metric():
 
 def test_fetch_logs_queries_each_source_per_minute_segment():
     client  = _make_client()
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR_MULTI)
     assert client.query.call_count == 9
 
 
 def test_fetch_logs_slowlog_query_has_limit():
     client  = _make_client()
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
     slowlog_calls = [
         call for call in client.query.call_args_list if "slowlog_v2" in call.args[0].lower()
@@ -207,7 +207,7 @@ def test_fetch_logs_slowlog_query_has_limit():
 
 def test_fetch_logs_query_log_query_has_limit():
     client  = _make_client()
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
     log_calls = [
         call for call in client.query.call_args_list if "from log " in call.args[0].lower()
@@ -219,7 +219,7 @@ def test_fetch_logs_query_log_query_has_limit():
 
 def test_fetch_logs_node_metric_query_has_limit():
     client  = _make_client()
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
     metric_calls = [
         call for call in client.query.call_args_list if "es_node_metric" in call.args[0].lower()
@@ -238,7 +238,7 @@ def test_warns_when_a_segment_query_returns_exactly_the_limit(caplog):
     # an arbitrary subset with no signal in the result -- and _build_prompt
     # then reports the capped count to the model as if it were the total.
     client  = _make_client(slowlog_rows=_slowlog_rows(_MAX_ROWS_PER_SEGMENT_PER_SOURCE))
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
 
     with caplog.at_level(logging.WARNING):
         adapter.fetch_logs(TR)
@@ -259,7 +259,7 @@ def test_warns_when_a_segment_query_returns_exactly_the_limit(caplog):
 
 def test_does_not_warn_when_a_segment_query_stays_below_the_limit(caplog):
     client  = _make_client(slowlog_rows=_slowlog_rows(_MAX_ROWS_PER_SEGMENT_PER_SOURCE - 1))
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
 
     with caplog.at_level(logging.WARNING):
         adapter.fetch_logs(TR)
@@ -272,7 +272,7 @@ def test_warns_once_per_truncated_segment_and_source(caplog):
     # truncates, so each must be reported separately -- one aggregate
     # warning would hide which minute of the window is affected.
     client  = _make_client(slowlog_rows=_slowlog_rows(_MAX_ROWS_PER_SEGMENT_PER_SOURCE))
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
 
     with caplog.at_level(logging.WARNING):
         adapter.fetch_logs(TR_MULTI)
@@ -288,7 +288,7 @@ def test_fetch_logs_sorted_descending():
         slowlog_rows=[SLOWLOG_ROW],
         query_rows=[(t2, "h", Decimal("0.1"), "Y", "GET", "s", "e", "p", "c", ["k"], None, None)],
     )
-    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric")
+    adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     logs    = adapter.fetch_logs(TR)
     times   = [l.timestamp for l in logs]
     assert times == sorted(times, reverse=True)

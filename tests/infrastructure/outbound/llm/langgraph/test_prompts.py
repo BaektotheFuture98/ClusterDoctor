@@ -6,7 +6,7 @@
 축내며, 만들 수 없는 형식을 만들라고 시키는 상태가 된다.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from cluster_doctor.domain.model.log_entry import (
@@ -14,8 +14,10 @@ from cluster_doctor.domain.model.log_entry import (
     SlowlogEntry,
 )
 from cluster_doctor.domain.model.node_metric import NodeMetricEntry
+from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
     build_minute_prompt,
+    build_synthesis_prompt,
     format_log_line,
 )
 
@@ -115,10 +117,12 @@ def test_failed_query_renders_as_FAIL():
     assert "[FAIL]" in line
 
 
-def test_node_metric_line_is_unchanged():
+def test_node_metric_line_renders_every_gauge():
+    # 이름이 "is_unchanged"였다가 바뀌었다. os_mem 레이블을 의도적으로 고쳤기
+    # 때문이다 — 그 변경은 아래 지표 해석 절에 이유가 적혀 있다.
     assert format_log_line(METRIC) == (
         "  2026-08-27 14:00:02 [METRIC] node=node-b02 (10.0.0.12) comp=- "
-        "cpu=1% mem=99% proc_cpu=0% jvm_heap=59% "
+        "cpu=1% os_mem(캐시포함)=99% proc_cpu=0% jvm_heap=59% "
         "search(active=0,queue=0,rejected=0) write(active=0,queue=0,rejected=0)"
     )
 
@@ -170,3 +174,64 @@ def test_unknown_entry_type_is_rejected_loudly():
 def test_still_forbids_inventing_problems():
     # 억지로 문제를 만들어내면 리포트 전체가 신뢰를 잃는다.
     assert "특이사항 없음" in _prompt()
+
+
+# --------------------------------------------------------------------------
+# 지표 해석 지시
+#
+# os.mem.used_percent는 페이지 캐시를 포함한 OS 전체 메모리다. ES는 남는 RAM을
+# 파일시스템 캐시로 쓰므로 95~99%가 정상인데, 프롬프트가 그 사실을 알려 주지
+# 않아 리포트가 "메모리 사용률 95~99%로 매우 높음"을 문제점으로 올렸다.
+# --------------------------------------------------------------------------
+
+def test_metric_line_labels_os_memory_as_cache_inclusive():
+    # 모델이 실제로 읽는 것은 이 줄이다. 레이블이 산문 지시보다 확실하다.
+    from cluster_doctor.domain.model.node_metric import NodeMetricEntry
+
+    entry = NodeMetricEntry(
+        timestamp=datetime(2026, 9, 10, 2, 4, tzinfo=timezone(timedelta(hours=9))),
+        node_name="es-data-02",
+        node_ip="10.0.0.2",
+        os_cpu_percent=12,
+        os_mem_used_percent=98,
+        process_cpu_percent=8,
+        jvm_heap_used_percent=61,
+        search_active=1,
+        search_queue=0,
+        search_rejected=0,
+        write_active=0,
+        write_queue=0,
+        write_rejected=0,
+    )
+
+    line = format_log_line(entry)
+
+    assert "os_mem(캐시포함)=98%" in line
+    # "mem=98%"이라고만 적으면 모델이 메모리 부족으로 읽는다.
+    assert " mem=" not in line
+
+
+def test_minute_prompt_warns_that_high_os_memory_is_normal():
+    prompt = build_minute_prompt([], "2026-09-10 02:04")
+
+    assert "os.mem.used_percent" in prompt
+    assert "95~99%가 정상" in prompt
+    assert "jvm_heap" in prompt
+
+
+def test_synthesis_prompt_refuses_to_promote_high_os_memory_to_a_problem():
+    # 분별 분석이 오탐을 만들었을 때의 2차 방어선이다. 종합 단계는 원본 로그를
+    # 다시 보지 않으므로 여기서 막지 못하면 리포트에 그대로 실린다.
+    prompt = build_synthesis_prompt(
+        time_range=TimeRange(
+            start=datetime(2026, 9, 10, 2, 0, tzinfo=timezone(timedelta(hours=9))),
+            end=datetime(2026, 9, 10, 2, 5, tzinfo=timezone(timedelta(hours=9))),
+        ),
+        minute_sections="--- 02:04 ---\n특이사항 없음",
+        analyzed=1,
+        failed=0,
+    )
+
+    assert "os_mem(캐시포함)이 높은 것은 ES의 정상 동작" in prompt
+    assert "리포트에 문제점으로 옮기지 않는다" in prompt
+    assert "jvm_heap과 rejected/GC 근거를 함께 제시한다" in prompt

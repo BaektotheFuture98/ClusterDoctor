@@ -9,6 +9,7 @@
 3. 텍스트 없는 200 응답을 ``LlmResponseError``로 바꾼다
 """
 
+import logging
 import os
 
 # LITELLM_LOCAL_MODEL_COST_MAP은 litellm이 import 시점에 읽는다. import 전에
@@ -26,8 +27,26 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (  # noqa: E40
 
 litellm.suppress_debug_info = True
 
+_logger = logging.getLogger(__name__)
+
 _MAX_OUTPUT_TOKENS = 8192
 _REQUEST_TIMEOUT_SECONDS = 120.0
+
+# 429 진단용으로 남길 응답 헤더. 화이트리스트인 것이 핵심이다 —
+# 응답 본문·요청 URL·str(exc)는 어떤 경우에도 로그에 넣지 않는다. provider에
+# 따라 요청 URL에 API 키가 실리고, 본문에는 provider 내부 정보가 실린다.
+# 그 원칙 때문에 LlmApiError는 상태 코드만 담는데, 그 결과 429가 났을 때
+# "요청 수 한도인지 토큰 한도인지"를 알 길이 사라졌다. 아래 값들이 그 구분을
+# 알려 주는 표준 헤더이고, 키나 URL을 담지 않는다.
+_RATE_LIMIT_HEADERS = (
+    "retry-after",
+    "x-ratelimit-limit-requests",
+    "x-ratelimit-remaining-requests",
+    "x-ratelimit-reset-requests",
+    "x-ratelimit-limit-tokens",
+    "x-ratelimit-remaining-tokens",
+    "x-ratelimit-reset-tokens",
+)
 
 _PROVIDER_PREFIX: dict[str, str] = {
     "gemini": "gemini",
@@ -61,6 +80,53 @@ _EMPTY_RESPONSE_GUIDANCE: dict[str, str] = {
 _UNKNOWN_EMPTY_RESPONSE = (
     "LLM이 응답에 텍스트를 담지 않았습니다 (finish_reason={reason})."
 )
+
+
+def _log_provider_error(provider: str, status, exc: Exception) -> None:
+    """provider 거절의 원인을 알 수 있는 값만 골라 남긴다.
+
+    429는 원인이 둘이다 — 분당 요청 수(RPM) 초과와 분당 입력 토큰 수(TPM)
+    초과. 대응이 서로 다른데(앞은 호출 간격, 뒤는 프롬프트 크기) 상태 코드만
+    보면 구별할 수 없다. ``x-ratelimit-*`` 헤더가 그 구분을 알려 주므로
+    화이트리스트로 뽑아 남긴다.
+
+    ``exc``에서 꺼내는 것은 화이트리스트 헤더와 짧은 기계 코드(``code``,
+    ``type``)뿐이다. ``str(exc)``·``exc.body``·``exc.request.url``은 넣지
+    않는다 — 그것들이 새는 것을 막는 것이 이 모듈 전체의 전제다.
+
+    메시지가 ASCII인 이유는 ClickHouse 어댑터의 절단 경고와 같다. root
+    ``StreamHandler``가 ``sys.stderr``에 쓰고 Python이 OS 로케일로 인코딩하므로
+    (한국어 Windows에서 cp949) 한국어를 쓰면 UTF-8 수집기에서 깨진다.
+
+    로깅이 실패해도 호출자의 예외 변환을 막지 않는다. 진단용 부가 정보가
+    본래 오류를 가리는 것은 뒤바뀐 우선순위다.
+    """
+    try:
+        details = []
+        for attr in ("code", "type"):
+            value = getattr(exc, attr, None)
+            if value:
+                details.append(f"{attr}={value}")
+
+        headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+        for name in _RATE_LIMIT_HEADERS:
+            value = headers.get(name)
+            if value:
+                details.append(f"{name}={value}")
+
+        _logger.warning(
+            "LLM provider=%s rejected the request with status=%s; %s",
+            provider,
+            status,
+            " ".join(details) if details else "no rate-limit headers were returned",
+        )
+    except Exception:  # noqa: BLE001
+        _logger.warning(
+            "LLM provider=%s rejected the request with status=%s; "
+            "could not read rate-limit details",
+            provider,
+            status,
+        )
 
 
 def require_supported_provider(provider: str) -> str:
@@ -124,6 +190,10 @@ def complete(
         # provider가 돌려준 본문이 실릴 수 있고, 그 안에 요청 URL이
         # 들어올 수 있다.
         status = getattr(exc, "status_code", None) or "unknown"
+        # 예외 메시지에는 상태 코드만 담기므로, 원인 구분에 필요한 값은
+        # 여기서 로그로 남긴다. 던지기 전에 부르는 것이 중요하다 —
+        # 호출자가 이 예외를 삼키더라도 진단 흔적은 남는다.
+        _log_provider_error(provider, status, exc)
         raise LlmApiError(
             f"LLM provider({provider}) 호출이 실패했습니다 (status={status})"
         ) from None

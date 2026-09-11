@@ -34,6 +34,10 @@ htmlcov/
 logs/
 *.log
 
+# 진단 리포트 산출물. 운영 인덱스명·쿼리 원문·company/user가 실리므로
+# 저장소에 올리지 않는다.
+reports/
+
 # IDE
 .idea/
 .vscode/

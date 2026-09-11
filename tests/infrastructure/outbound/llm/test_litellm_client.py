@@ -115,3 +115,121 @@ def test_empty_text_becomes_a_response_error():
                 model="gemini-2.5-flash",
                 api_key="test-key",
             )
+
+
+# --------------------------------------------------------------------------
+# provider 거절(429) 진단 로깅
+#
+# LlmApiError는 상태 코드만 담는다(본문·URL에 키가 실릴 수 있어서). 그 결과
+# 429가 났을 때 "요청 수 한도인지 토큰 한도인지" 알 길이 없었다. 대응이 서로
+# 다르므로(호출 간격 vs 프롬프트 크기) 구분에 필요한 헤더만 로그로 남긴다.
+# --------------------------------------------------------------------------
+
+def _rate_limited(headers=None, **attrs):
+    """429를 던지는 openai.APIError 대역."""
+    import openai
+
+    exc = openai.APIError.__new__(openai.APIError)
+    exc.status_code = 429
+    exc.response = MagicMock()
+    exc.response.headers = headers if headers is not None else {}
+    for name, value in attrs.items():
+        setattr(exc, name, value)
+    return exc
+
+
+def _complete_expecting_failure(exc, caplog):
+    from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+
+    with patch("litellm.completion", side_effect=exc):
+        with caplog.at_level("WARNING"):
+            with pytest.raises(LlmApiError):
+                complete(
+                    messages=MESSAGES,
+                    provider="nvidia_nim",
+                    model="google/gemma-4-31b-it",
+                    api_key="test-key",
+                )
+    return caplog.text
+
+
+def test_429_logs_the_token_limit_headers(caplog):
+    # TPM 초과인지 알려 주는 값들. 프롬프트 크기를 줄여야 하는 경우다.
+    text = _complete_expecting_failure(
+        _rate_limited(
+            headers={
+                "retry-after": "40",
+                "x-ratelimit-limit-tokens": "250000",
+                "x-ratelimit-remaining-tokens": "0",
+            }
+        ),
+        caplog,
+    )
+
+    assert "status=429" in text
+    assert "retry-after=40" in text
+    assert "x-ratelimit-limit-tokens=250000" in text
+    assert "x-ratelimit-remaining-tokens=0" in text
+
+
+def test_429_logs_the_request_limit_headers(caplog):
+    # RPM 초과인지 알려 주는 값들. 호출 간격을 벌려야 하는 경우다.
+    text = _complete_expecting_failure(
+        _rate_limited(
+            headers={
+                "x-ratelimit-limit-requests": "60",
+                "x-ratelimit-remaining-requests": "0",
+            }
+        ),
+        caplog,
+    )
+
+    assert "x-ratelimit-limit-requests=60" in text
+
+
+def test_provider_error_logs_the_short_machine_code(caplog):
+    text = _complete_expecting_failure(
+        _rate_limited(code="rate_limit_exceeded", type="requests"),
+        caplog,
+    )
+
+    assert "code=rate_limit_exceeded" in text
+    assert "type=requests" in text
+
+
+def test_never_logs_the_response_body_or_the_request_url(caplog):
+    # 이 모듈 전체의 전제다. URL에는 provider에 따라 키가 실린다.
+    exc = _rate_limited(
+        headers={"retry-after": "40", "authorization": "Bearer super-secret"},
+        body={"error": {"message": "quota exceeded for https://host/v1?key=SECRET"}},
+    )
+    exc.request = MagicMock()
+    exc.request.url = "https://host/v1/chat/completions?key=SECRET"
+
+    text = _complete_expecting_failure(exc, caplog)
+
+    assert "SECRET" not in text
+    assert "super-secret" not in text
+    assert "https://" not in text
+    # 화이트리스트에 없는 헤더는 남기지 않는다.
+    assert "authorization" not in text.lower()
+
+
+def test_missing_headers_do_not_break_the_conversion(caplog):
+    # provider가 rate-limit 헤더를 보내지 않는 경우가 있다. 그때도 예외
+    # 변환은 정상이어야 하고, 헤더가 없다는 사실만 남는다.
+    text = _complete_expecting_failure(_rate_limited(headers=None), caplog)
+
+    assert "no rate-limit headers" in text
+
+
+def test_a_broken_response_object_does_not_mask_the_error(caplog):
+    # 진단용 부가 정보가 본래 오류를 가리는 것은 뒤바뀐 우선순위다.
+    exc = _rate_limited()
+    broken = MagicMock()
+    type(broken).headers = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+    exc.response = broken
+
+    text = _complete_expecting_failure(exc, caplog)
+
+    assert "status=429" in text
