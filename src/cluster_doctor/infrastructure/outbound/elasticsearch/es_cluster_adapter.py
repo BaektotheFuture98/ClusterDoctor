@@ -2,12 +2,6 @@ from elasticsearch import Elasticsearch
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
 
-# cat API는 h를 주지 않으면 20여 개 컬럼을 전부 돌려준다. 이 결과는 그대로
-# LLM 프롬프트에 실리므로 진단에 쓰는 것만 요청한다.
-_INDEX_SUMMARY_COLUMNS = [
-    "index", "health", "status", "docs.count", "store.size", "segments.count",
-]
-
 
 class ElasticsearchClusterAdapter(ClusterRepository):
     """ClusterRepository의 Elasticsearch 구현.
@@ -28,14 +22,6 @@ class ElasticsearchClusterAdapter(ClusterRepository):
         # 않는다 — "샤드 문제 없음"과 "ES에 못 붙었음"은 다른 사실이고,
         # 무엇을 리포트에 쓸지는 호출자가 판단한다.
         return dict(self._client.cluster.allocation_explain())
-
-    def index_summary(self, index_pattern: str) -> list[dict]:
-        rows = self._client.cat.indices(
-            index=index_pattern,
-            h=_INDEX_SUMMARY_COLUMNS,
-            format="json",
-        )
-        return [dict(row) for row in rows]
 
     def node_info(self, node_id: str) -> dict:
         # filter_path에 node_id를 리터럴로 넣으면 id에 포함된 '-' 등이
