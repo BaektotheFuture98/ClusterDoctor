@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, TypedDict
 
+from cluster_doctor.domain.model.diagnosis_report import TimelineRow
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
@@ -47,6 +48,13 @@ class MinuteFinding:
     # 실패한 분이 타임라인에서 빈칸으로 보이면 그 시각에 아무 일도 없었던
     # 것처럼 읽힌다.
     counts: dict[str, int] = field(default_factory=dict)
+    # 그 분의 관측값 전량. counts보다 넓다(took_max, runtime_max, jvm_heap_max,
+    # rejected). 최종 리포트의 타임라인이 이 값을 그대로 싣는다 — 모델이 옮겨
+    # 적지 않으므로 옮겨 적다 틀릴 일이 없다.
+    #
+    # counts를 남겨 둔 이유: 종합 프롬프트(_format_findings)가 이미 쓰고 있고,
+    # 그쪽은 모델에게 보여 주는 입력이라 관심사가 다르다.
+    row: TimelineRow | None = None
 
 
 class GraphState(TypedDict):

@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timezone, timedelta
 
 from langchain_core.tools import tool
@@ -33,11 +34,18 @@ from cluster_doctor.application.port.outbound.log_repository import (
     DEFAULT_NODE_LOG_LIMIT,
     clamp_node_log_limit,
 )
+from cluster_doctor.domain.model.diagnosis_report import HealthPoint
 from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
 from cluster_doctor.domain.model.time_range import (
     MAX_TIME_RANGE_DURATION,
     InvalidTimeRangeError,
     TimeRange,
+)
+from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
+    candidate_key,
+    merge_node_rows,
+    node_metric_summary,
+    slow_candidates,
 )
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import format_log_line
 from cluster_doctor.application.port.outbound.llm_analyzer import (
@@ -148,6 +156,12 @@ _MASTER_EVENT_LOGGERS = (
 )
 # 로거를 좁혔으므로 300은 과하다. 사고 중 비용 천장을 낮게 유지한다.
 _MASTER_LOG_MAX_LINES = 80
+
+# analyze_logs 호출 한 번이 소스마다 내놓는 느린 요청 후보 수. 모델은 이
+# 목록에서 id로 고르기만 하므로 너무 많으면 고르는 일 자체가 어려워지고,
+# 너무 적으면 진짜 원인이 목록 밖으로 밀려난다. 호출 상한이 6회이므로
+# 최악의 경우에도 후보는 60건을 넘지 않는다.
+_CANDIDATES_PER_CALL = 5
 
 
 # 유입 시작 앞으로 얼마나 더 보는가. 원인은 사고 구간이 아니라 그 앞에서
@@ -347,6 +361,90 @@ def make_tools(
     run_state.setdefault("degraded", False)
     run_state.setdefault("gaps", [])
 
+    # 코드가 관측한 사실. 모델을 거치지 않고 리포트로 직행한다.
+    #
+    # 전부 **키 기반 dict**인 것이 요점이다. analyze_logs는 한 진단에서 여러 번
+    # 불리고 구간이 겹칠 수 있는데, 리스트에 이어 붙이면 같은 분·같은 노드·같은
+    # 로그 줄이 두 번 실린다. health만 리스트인 것은 그것이 시간순 이력이기
+    # 때문이고, 대신 직전과 같은 상태면 항목을 늘리지 않고 접는다.
+    observations = run_state.setdefault(
+        "observations",
+        {
+            "timeline": {},          # dict[datetime, TimelineRow]
+            "nodes": {},             # dict[str, NodeMetricRow]
+            "master_logs": {},       # dict[key, (정렬용 시각, 렌더된 줄)]
+            "master_log_total": 0,
+            "health": [],            # list[HealthPoint]
+            "candidates": {},        # dict[내용키, SlowCandidate]
+            "wait_seconds": 0.0,
+            "wait_cap_reached": False,
+        },
+    )
+
+    def _record_master_logs(entries: list[NodeLogEntry]) -> None:
+        """ClickHouse에서 온 마스터 로그를 기록한다. 중복은 내용으로 거른다."""
+        store = observations["master_logs"]
+        for entry in entries:
+            key = (entry.timestamp, entry.node, entry.line)
+            if key not in store:
+                store[key] = (entry.timestamp, format_log_line(entry))
+        observations["master_log_total"] = len(store)
+
+    def _record_master_text(text: str) -> None:
+        """SSH 폴백으로 온 마스터 로그. 줄 자체가 키다.
+
+        이쪽은 NodeLogEntry가 아니라 문자열 덩어리라 timestamp를 뽑을 수 없다.
+        정렬 키를 None으로 두고, 렌더할 때 안정 정렬로 원래 순서를 유지한다.
+        """
+        store = observations["master_logs"]
+        for line in text.splitlines():
+            if line.strip() and line not in store:
+                store[line] = (None, line)
+        observations["master_log_total"] = len(store)
+
+    def _record_candidates(entries: list[LogEntry]) -> None:
+        """느린 요청 후보에 id를 붙여 기록한다.
+
+        id는 발견 순서대로 한 번만 붙는다. 겹친 구간을 다시 조회해 같은 요청이
+        또 나와도 새 번호를 주지 않는다 — 모델이 이미 본 id가 가리키는 것이
+        중간에 바뀌면 안 된다.
+        """
+        store = observations["candidates"]
+        for candidate in slow_candidates(entries, limit=_CANDIDATES_PER_CALL):
+            key = candidate_key(candidate)
+            if key in store:
+                continue
+            store[key] = replace(candidate, candidate_id=f"C{len(store) + 1}")
+
+    def _record_health(payload: dict) -> None:
+        """클러스터 상태를 이력에 접어 넣는다.
+
+        cluster_health는 2단계 대기 루프에서 여러 번 불린다. 호출마다 한 줄을
+        쌓으면 같은 green이 열 줄 늘어서고, 그 목록은 "상태 변화를 시간순으로"
+        라는 리포트의 요구를 오히려 가린다. 직전과 같으면 until만 늘린다.
+        """
+        now = datetime.now(_KST)
+        status = str(payload.get("status", ""))
+        unassigned = int(payload.get("unassigned_shards", 0) or 0)
+        history = observations["health"]
+        if (
+            history
+            and history[-1].status == status
+            and history[-1].unassigned_shards == unassigned
+        ):
+            history[-1] = replace(history[-1], until=now)
+            return
+        history.append(
+            HealthPoint(
+                at=now,
+                until=now,
+                status=status,
+                unassigned_shards=unassigned,
+                active_shards=int(payload.get("active_shards", 0) or 0),
+                number_of_nodes=int(payload.get("number_of_nodes", 0) or 0),
+            )
+        )
+
     def _mark_window_failed(start_dt, end_dt, observation: str) -> str:
         """이 구간 분석이 실패했음을 기록한다. 진단 실패로 확정하지는 않는다.
 
@@ -494,6 +592,7 @@ def make_tools(
                     limit=_MASTER_LOG_MAX_LINES,
                 )
                 master_logs = _render_entries(master_entries)
+                _record_master_logs(master_entries)
                 _logger.info(
                     "[tool] analyze_logs 마스터 로그 %d줄 (ClickHouse)",
                     len(master_entries),
@@ -513,6 +612,7 @@ def make_tools(
                             start_dt=start_dt,
                             end_dt=end_dt,
                         )
+                        _record_master_text(master_logs)
                         _logger.info(
                             "[tool] analyze_logs 마스터 로그 %d줄 (SSH 폴백)",
                             master_logs.count("\n") + 1 if master_logs else 0,
@@ -549,6 +649,16 @@ def make_tools(
         # 때만 예외를 올리므로 여기까지 왔다면 리포트는 유효하지만 근거가
         # 빠져 있다. 종합 프롬프트에 [분석 실패]로 표기되긴 하나 그것을
         # 리포트에 옮기는 것은 모델 재량이었다.
+        # 관측값을 거둔다. 종합 리포트(모델 출력)가 아니라 이쪽이 최종
+        # 리포트의 타임라인·노드 섹션이 된다. 분을 키로 덮어쓰는 이유:
+        # 실패한 구간을 다시 불러 성공하면 그 분의 failed 표시가 사라져야
+        # 한다.
+        for finding in state["findings"]:
+            if finding.row is not None:
+                observations["timeline"][finding.row.minute] = finding.row
+        merge_node_rows(observations["nodes"], node_metric_summary(logs))
+        _record_candidates(logs)
+
         failed_minutes = [f for f in state["findings"] if f.failed]
         if failed_minutes:
             _mark_gap(
@@ -629,6 +739,7 @@ def make_tools(
         """
         _logger.info("[tool] cluster_health()")
         result = cluster.health()
+        _record_health(result)
         _logger.info("[tool] cluster_health → status=%s", result.get("status"))
         return result
 
@@ -830,6 +941,10 @@ def make_tools(
         _logger.info("[tool] sleep(%.0fs, 요청 %.0fs)", actual, requested)
         time.sleep(actual)
         wait_state["slept"] += actual
+        # 대기 예산은 클로저에만 있어 밖에서 읽을 길이 없다. 리포트의
+        # "총 대기 시간 / 대기 상한 도달 여부"가 그 값이므로 여기서 미러한다.
+        observations["wait_seconds"] = wait_state["slept"]
+        observations["wait_cap_reached"] = wait_state["slept"] >= _MAX_WAIT_SECONDS
 
         parts = [f"{actual:.0f}초 대기 완료 (누적 {wait_state['slept']:.0f}초)."]
         if actual < requested:
