@@ -46,6 +46,10 @@ def _make_agent_response(text: str = "리포트", *, structured=True):
     message = MagicMock()
     message.content = text
     message.type = "ai"
+    # 실제 AIMessage는 tool_call이 없으면 빈 리스트다. MagicMock에 맡기면
+    # 자동 생성된 속성이 늘 truthy라, "아직 일하는 중인 메시지"를 걸러내는
+    # _last_model_text의 판정이 모든 메시지에 걸린다.
+    message.tool_calls = []
     narrative = ReportNarrative(headline=text) if structured else None
     return {"messages": [message], "structured_response": narrative}
 
@@ -318,3 +322,80 @@ def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든
     # 4단 — 관측값도 없으면 그때만 예외
     with pytest.raises(LlmResponseError):
         _run_analyze_with_tools(lambda **kwargs: [], agent_text="", structured=False)
+
+
+# --------------------------------------------------------------------------
+# _last_model_text — 진행 안내문을 리포트로 집지 않는다
+#
+# gemini 계열은 tool_call과 안내 문장을 한 AIMessage에 함께 싣는 일이 흔하다.
+# "본문이 있는 마지막 메시지"를 찾아 거슬러 올라가면, 마지막 턴이 조용히
+# 끝났을 때 중간 안내문이 리포트가 되어 나간다.
+# --------------------------------------------------------------------------
+
+def _msg(text: str, *, kind: str = "ai", tool_calls=()):
+    message = MagicMock()
+    message.content = text
+    message.type = kind
+    message.tool_calls = list(tool_calls)
+    return message
+
+
+def test_마지막_모델_메시지의_본문을_쓴다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    messages = [_msg("먼저 구간을 보겠습니다", tool_calls=[{"name": "analyze_logs"}]),
+                _msg("도구 결과", kind="tool"),
+                _msg("최종 리포트입니다")]
+
+    assert _last_model_text(messages) == "최종 리포트입니다"
+
+
+def test_구조화_tool_안내문은_리포트가_되지_않는다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    # ToolStrategy가 스키마를 tool로 바인딩하므로 마지막 메시지는
+    # ToolMessage("Returning structured response: …")가 된다(실측).
+    messages = [_msg("평문 리포트"),
+                _msg("Returning structured response: ...", kind="tool")]
+
+    assert _last_model_text(messages) == "평문 리포트"
+
+
+def test_아직_일하는_중인_메시지는_리포트로_집지_않는다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    # recursion_limit 도달이나 중간 중단으로 끝난 모양. 안내문을 집으면
+    # 운영자가 "먼저 …구간을 보겠습니다" 한 줄짜리 진단을 받는다.
+    messages = [_msg("이전 턴의 요약"),
+                _msg("도구 결과", kind="tool"),
+                _msg("이제 16:09 구간을 보겠습니다",
+                     tool_calls=[{"name": "analyze_logs"}])]
+
+    assert _last_model_text(messages) == ""
+
+
+def test_사람과_시스템_메시지는_모델이_쓴_것이_아니다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    messages = [_msg("모델이 쓴 것"),
+                _msg("지시문", kind="system"),
+                _msg("사용자 입력", kind="human")]
+
+    assert _last_model_text(messages) == "모델이 쓴 것"
+
+
+def test_메시지가_없으면_빈_문자열이다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    assert _last_model_text([]) == ""
+    assert _last_model_text(None) == ""
