@@ -8,10 +8,15 @@
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from pydantic import BaseModel
 
+from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
+    count_by_source,
+    timeline_row,
+)
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
     build_minute_prompt,
     build_synthesis_prompt,
@@ -114,7 +119,11 @@ def make_analyze_minute(call_llm: LlmCaller):
 
     def analyze_minute(bucket: MinuteBucket) -> dict:
         label = bucket.minute.strftime(_MINUTE_FORMAT)
-        counts = _count_by_source(bucket.logs)
+        # 관측값을 먼저 만든다. LLM 호출이 실패해도 이 값은 유효하다 —
+        # 실패한 분이 타임라인에서 빈칸으로 보이면 그 시각에 아무 일도
+        # 없었던 것처럼 읽힌다.
+        row = timeline_row(bucket.minute, bucket.logs)
+        counts = row.counts
         prompt = build_minute_prompt(bucket.logs, label)
         try:
             text = call_llm(
@@ -129,6 +138,7 @@ def make_analyze_minute(call_llm: LlmCaller):
                         summary=f"이 구간은 분석하지 못했습니다 ({exc}).",
                         failed=True,
                         counts=counts,
+                        row=replace(row, failed=True),
                     )
                 ]
             }
@@ -164,6 +174,7 @@ def make_analyze_minute(call_llm: LlmCaller):
                     summary=summary,
                     evidence=evidence,
                     counts=counts,
+                    row=row,
                 )
             ]
         }
@@ -230,10 +241,12 @@ def make_synthesize(
 
 
 def _count_by_source(logs: list) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for log in logs:
-        counts[log.source] = counts.get(log.source, 0) + 1
-    return counts
+    """observations.count_by_source로 위임한다.
+
+    세는 곳이 둘이면 언젠가 서로 다른 값을 말한다. 이름을 남겨 두는 것은
+    호출부를 건드리지 않기 위해서다.
+    """
+    return count_by_source(logs)
 
 
 def _format_findings(findings: list[MinuteFinding]) -> str:
