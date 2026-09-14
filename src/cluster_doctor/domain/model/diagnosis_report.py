@@ -105,6 +105,29 @@ class HealthPoint:
 
 
 @dataclass(frozen=True)
+class MasterEvent:
+    """마스터 노드 로그 한 줄.
+
+    렌더된 문자열이 아니라 구조로 들고 있는 이유: 리포트에 전부 싣지 않고
+    **같은 사건끼리 묶어야** 하기 때문이다. 실측에서 24줄 중 20줄이 같은
+    ``follower_check`` 타임아웃이었고 대상 노드 이름만 달랐다. 한 줄이 524자라
+    그대로 실으면 리포트의 72%를 그 20줄이 차지한다.
+
+    묶으려면 ``logger``와 ``action``이 값으로 있어야 한다. 문자열에서 매번
+    정규식으로 뽑으면 렌더 형식이 바뀔 때 조용히 묶이지 않는다.
+    """
+
+    timestamp: datetime | None
+    node: str = ""
+    level: str = ""
+    logger: str = ""
+    line: str = ""
+    # 렌더된 한 줄. 대표 줄을 원문 그대로 인용할 때 쓴다 — 근거는 원문이어야
+    # 근거다.
+    rendered: str = ""
+
+
+@dataclass(frozen=True)
 class SlowCandidate:
     """느린 요청 후보 한 건. 코드가 골라 id를 붙인다.
 
@@ -152,8 +175,8 @@ class Observations:
     wait_cap_reached: bool = False
     timeline: tuple[TimelineRow, ...] = ()
     nodes: tuple[NodeMetricRow, ...] = ()
-    # 렌더된 마스터 로그 줄. 상한에 걸렸는지 보이려고 전체 건수를 따로 든다.
-    master_logs: tuple[str, ...] = ()
+    # 마스터 노드 로그. 상한에 걸렸는지 보이려고 전체 건수를 따로 든다.
+    master_events: tuple[MasterEvent, ...] = ()
     master_log_total: int = 0
     health: tuple[HealthPoint, ...] = ()
     candidates: tuple[SlowCandidate, ...] = ()
@@ -165,7 +188,7 @@ class Observations:
         예외를 올린다 — 그 전에는 모델이 아무 말도 남기지 못했더라도
         관측값만으로 리포트가 성립한다.
         """
-        return not (self.timeline or self.nodes or self.master_logs or self.health)
+        return not (self.timeline or self.nodes or self.master_events or self.health)
 
 
 @dataclass(frozen=True)

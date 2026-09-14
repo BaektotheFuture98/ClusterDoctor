@@ -35,7 +35,8 @@ from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
 from cluster_doctor.infrastructure.outbound.notifier.report_text import (
     candidate_details,
     candidate_line,
-    health_line,
+    health_lines,
+    master_log_lines,
     node_lines,
     overview_lines,
     render_text,
@@ -390,21 +391,17 @@ def _sections_from_report(report: DiagnosisReport) -> list[_Section]:
         ),
         (
             "클러스터 상태 이력 (관측값)",
-            _raw_block([health_line(point) for point in obs.health]),
+            _raw_block(health_lines(obs.health, obs.requested)),
         ),
         ("노드별 구간 최대값 (관측값)", _raw_block(node_lines(obs.nodes))),
     ]
 
-    if obs.master_logs:
-        header = f"마스터 노드 로그 {len(obs.master_logs)}줄"
-        if obs.master_log_total > len(obs.master_logs):
-            header += f" (전체 {obs.master_log_total}줄 중)"
-        blocks.append(
-            (
-                "마스터 노드 로그 (관측값)",
-                [_bullet(header, mono=False), *_raw_block(list(obs.master_logs))],
-            )
+    blocks.append(
+        (
+            "마스터 노드 로그 (관측값)",
+            _raw_block(master_log_lines(obs.master_events, obs.master_log_total)),
         )
+    )
 
     picks = {
         pick.candidate_id: pick.reason

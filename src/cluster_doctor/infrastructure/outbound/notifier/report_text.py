@@ -13,9 +13,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import re
+from collections import Counter
+
 from cluster_doctor.domain.model.diagnosis_report import (
     DiagnosisReport,
     HealthPoint,
+    MasterEvent,
     NodeMetricRow,
     Observations,
     SlowCandidate,
@@ -107,19 +111,126 @@ def _node_rank(row: NodeMetricRow) -> tuple:
 
 
 def node_lines(rows: tuple[NodeMetricRow, ...]) -> list[str]:
-    """노드 섹션의 줄 전체. 정렬·절단·헤더를 함께 만든다."""
+    """노드 섹션의 줄 전체.
+
+    **전 구간 정상이면 목록을 싣지 않는다.** 실측에서 노드 107대 중 rejected가
+    0이 아닌 것이 하나도 없었는데, 그때 20줄을 실으면 전부 같은 말을 하는 줄이
+    리포트의 13%를 차지한다. 프롬프트의 지표 해석이 "rejected는 0이 아닌 것
+    자체가 유의미하다"고 한 기준을 그대로 쓴다 — 유의미한 것이 없으면 그 사실을
+    한 줄로 말하고, 대신 최댓값은 남겨 근거로 쓸 수 있게 한다.
+    """
     if not rows:
         return []
-    ordered = sorted(rows, key=_node_rank)
-    shown = ordered[:_NODE_RENDER_MAX]
-    lines = [node_line(row) for row in shown]
-    if len(ordered) > len(shown):
-        lines.insert(
-            0,
-            f"노드 {len(ordered)}개 중 {len(shown)}개 "
-            "(rejected 발생 · jvm_heap 높은 순)",
+
+    flagged = [
+        row
+        for row in rows
+        if row.search_rejected_max or row.write_rejected_max
+    ]
+    if flagged:
+        ordered = sorted(flagged, key=_node_rank)
+        shown = ordered[:_NODE_RENDER_MAX]
+        lines = [f"rejected가 발생한 노드 {len(ordered)}대 (전체 {len(rows)}대)"]
+        lines += [node_line(row) for row in shown]
+        if len(ordered) > len(shown):
+            lines.append(f"… 외 {len(ordered) - len(shown)}대")
+        return lines
+
+    top = max(rows, key=lambda row: row.jvm_heap_max)
+    cpu = max(rows, key=lambda row: row.cpu_max)
+    return [
+        f"노드 {len(rows)}대 전 구간 정상 범위 — search/write rejected 0",
+        f"jvm_heap 최대 {top.jvm_heap_max}% ({top.node})",
+        f"cpu 최대 {cpu.cpu_max}% ({cpu.node})",
+    ]
+
+
+# 마스터 로그 한 묶음에서 원문으로 인용할 대표 줄 수. 근거는 원문이어야
+# 근거이므로 0으로 두지 않고, 같은 말을 반복하지 않도록 1로 둔다.
+_MASTER_SAMPLE_PER_GROUP = 1
+
+# 묶음 헤더에 나열할 대상 노드 수. 전부 적으면 헤더가 다시 길어진다.
+_MASTER_TARGETS_SHOWN = 6
+
+# ES가 타임아웃 로그에 남기는 대상 action. 같은 action이면 같은 사건으로 본다.
+#
+# ``[^\]]+``로 잡으면 안 된다. action 이름 자체에 대괄호가 들어간다
+# (``cluster:monitor/nodes/stats[n]``) — 첫 ``]``에서 멈추면 ``stats[n``으로
+# 잘려 괄호가 깨지고, 서로 다른 두 action이 같은 이름으로 보인다(실측).
+# ES 로그 형식이 ``action [...], node [...]``이므로 뒤의 쉼표를 앵커로 쓴다.
+_ACTION_RE = re.compile(r"action \[(.+?)\],")
+# 대상 노드는 "node [{RC17-08}{...}]" 형태로 찍힌다.
+_TARGET_RE = re.compile(r"node \[\{([^}]+)\}")
+
+
+def _event_kind(event: MasterEvent) -> str:
+    """같은 사건인지 판정하는 키.
+
+    action이 있으면 그것으로 묶는다 — 실측에서 24줄 중 20줄이
+    ``internal:coordination/fault_detection/follower_check`` 하나였고, 대상
+    노드와 시각만 달랐다. action이 없으면 logger로 묶는다.
+    """
+    match = _ACTION_RE.search(event.line)
+    if match:
+        return match.group(1)
+    return event.logger or "(로거 없음)"
+
+
+def _short_kind(kind: str) -> str:
+    """긴 action 이름을 읽을 수 있게 줄인다.
+
+    마지막 마디 하나만 남기면 서로 다른 action이 같은 이름이 된다 —
+    ``cluster:monitor/nodes/stats[n]``과 ``indices:monitor/stats[n]``이 둘 다
+    ``stats[n]``이 되어 헤더가 두 번 나온다(실측). 두 마디를 남기면 구별된다.
+    """
+    parts = kind.split("/")
+    return "/".join(parts[-2:]) if len(parts) > 1 else kind
+
+
+def master_log_lines(events: tuple[MasterEvent, ...], total: int = 0) -> list[str]:
+    """마스터 로그를 사건별로 묶어 그린다.
+
+    전부 싣지 않는 이유는 부피다. 실측에서 24줄이 리포트의 72%(12,685자)를
+    차지했고, 한 줄이 평균 524자였다. 그런데 그중 20줄은 같은 사건이라
+    **묶으면 더 잘 읽힌다** — "40초 동안 19대에 대해 20건"이 한눈에 들어온다.
+
+    대표 줄은 원문 그대로 남긴다. 근거로 인용하려면 원문이어야 한다.
+    """
+    if not events:
+        return []
+
+    grouped: dict[str, list[MasterEvent]] = {}
+    for event in events:
+        grouped.setdefault(_event_kind(event), []).append(event)
+
+    header = f"마스터 노드 로그 {len(events)}건"
+    if total > len(events):
+        header += f" (전체 {total}건 중)"
+    header += f", 사건 {len(grouped)}종"
+    lines = [header, ""]
+
+    for kind, items in sorted(grouped.items(), key=lambda kv: -len(kv[1])):
+        stamps = [e.timestamp for e in items if e.timestamp]
+        span = ""
+        if stamps:
+            span = f"  {_hms(min(stamps))} ~ {_hms(max(stamps))}"
+        lines.append(f"[{_short_kind(kind)}] {len(items)}건{span}")
+
+        targets = Counter(
+            match.group(1)
+            for match in (_TARGET_RE.search(e.line) for e in items)
+            if match
         )
-    return lines
+        if targets:
+            names = [name for name, _ in targets.most_common(_MASTER_TARGETS_SHOWN)]
+            more = f" 외 {len(targets) - len(names)}대" if len(targets) > len(names) else ""
+            lines.append(f"  대상 노드 {len(targets)}대: {', '.join(names)}{more}")
+
+        for event in items[:_MASTER_SAMPLE_PER_GROUP]:
+            lines.append(f"  {event.rendered}")
+        lines.append("")
+
+    return [line for line in lines[:-1]]
 
 
 def health_line(point: HealthPoint) -> str:
@@ -132,6 +243,40 @@ def health_line(point: HealthPoint) -> str:
         f"unassigned={point.unassigned_shards} active={point.active_shards} "
         f"nodes={point.number_of_nodes}"
     )
+
+
+def health_lines(
+    points: tuple[HealthPoint, ...],
+    requested: tuple[tuple[datetime, datetime], ...] = (),
+) -> list[str]:
+    """상태 이력 섹션. 조회 시점이 분석 구간 밖이면 그 사실을 먼저 밝힌다.
+
+    ``cluster_health``는 ES 실시간 API라 **과거 상태를 모른다.** 그래서 과거
+    사고를 분석할 때 이 섹션의 시각은 사고 시각이 아니라 진단을 돌린 시각이다.
+    실측에서 9/10 15:27 사고를 분석한 리포트에 ``11:40 status=green``이 실렸고,
+    그대로 두면 운영자는 사고 당시가 green이었다고 읽는다.
+
+    값을 숨기지는 않는다. 지금 green이라는 것도 사실이고, 사고 뒤 회복됐다는
+    근거가 된다 — 다만 무엇의 사실인지를 분명히 한다.
+    """
+    if not points:
+        return []
+
+    lines: list[str] = []
+    if requested:
+        window_start = min(start for start, _end in requested)
+        window_end = max(end for _start, end in requested)
+        outside = [p for p in points if not (window_start <= p.at <= window_end)]
+        if outside:
+            lines.append(
+                "주의: ES는 과거 클러스터 상태를 보관하지 않는다. 아래는 진단을 "
+                "돌린 시점의 상태이며, 분석 구간"
+                f"({_ymd_hms(window_start)} ~ {_hms(window_end)})의 상태가 아니다."
+            )
+            lines.append("")
+
+    lines += [health_line(point) for point in points]
+    return lines
 
 
 def candidate_line(candidate: SlowCandidate) -> str:
@@ -227,16 +372,14 @@ def render_text(report: DiagnosisReport) -> str:
     )
     out += _section(
         "3. 클러스터 상태 이력 (관측값)",
-        [health_line(point) for point in obs.health],
+        health_lines(obs.health, obs.requested),
     )
     out += _section("4. 노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
 
-    master = list(obs.master_logs)
-    if master:
-        header = f"마스터 노드 로그 {len(master)}줄"
-        if obs.master_log_total > len(master):
-            header += f" (전체 {obs.master_log_total}줄 중)"
-        out += _section("5. 마스터 노드 로그 (관측값)", [header, *master])
+    out += _section(
+        "5. 마스터 노드 로그 (관측값)",
+        master_log_lines(obs.master_events, obs.master_log_total),
+    )
 
     picks = {
         pick.candidate_id: pick.reason
@@ -257,7 +400,10 @@ def render_text(report: DiagnosisReport) -> str:
             out += _section("7. 결론", [narrative.headline, *narrative.context])
         findings = []
         for finding in narrative.findings:
-            findings.append(f"{finding.severity}: {finding.title}")
+            # severity가 비면 모델이 분류하지 않은 것이다. ": 제목"으로
+            # 그리면 빈 앞머리가 오타처럼 보이므로 표식을 붙인다.
+            label = finding.severity or "(분류 없음)"
+            findings.append(f"{label}: {finding.title}")
             findings += [f"    - {item}" for item in finding.evidence]
         out += _section("8. 발견된 문제점", findings)
         cause = []

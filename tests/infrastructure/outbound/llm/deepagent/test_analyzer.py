@@ -28,14 +28,26 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+    ReportNarrative,
+)
 
 _UTC = timezone.utc
 
 
-def _make_agent_response(text: str = "리포트"):
+def _make_agent_response(text: str = "리포트", *, structured=True):
+    """agent.invoke의 반환을 흉내낸다.
+
+    ``structured=True``가 정상 경로다 — ToolStrategy가 스키마를 tool로
+    바인딩하고, 모델이 그것을 부르면 결과가 structured_response로 온다.
+    ``False``는 모델이 그 tool을 부르지 않고 평문으로 끝낸 경우이며,
+    폴백 사다리 2단이 받는 자리다.
+    """
     message = MagicMock()
     message.content = text
-    return {"messages": [message]}
+    message.type = "ai"
+    narrative = ReportNarrative(headline=text) if structured else None
+    return {"messages": [message], "structured_response": narrative}
 
 
 def _orchestrator_kwargs(provider="gemini", default_model="gemini-3.5-flash-lite"):
@@ -127,7 +139,9 @@ def test_unsupported_provider_is_rejected_at_construction():
 # analyze()가 그것을 실패로 승격해 재실행 경로를 끊는다.
 # --------------------------------------------------------------------------
 
-def _run_analyze_with_tools(make_tools_impl, agent_text: str = "분석 실패 리포트"):
+def _run_analyze_with_tools(
+    make_tools_impl, agent_text: str = "분석 실패 리포트", *, structured: bool = True
+):
     log_time = datetime(2026, 8, 27, 3, 0, 0, tzinfo=_UTC)
     kafka_receive_time = log_time + timedelta(seconds=5)
 
@@ -144,7 +158,9 @@ def _run_analyze_with_tools(make_tools_impl, agent_text: str = "분석 실패 �
         ),
     ):
         agent = MagicMock()
-        agent.invoke.return_value = _make_agent_response(agent_text)
+        agent.invoke.return_value = _make_agent_response(
+            agent_text, structured=structured
+        )
         create_deep_agent.return_value = agent
 
         from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
@@ -174,7 +190,7 @@ def test_a_degraded_run_still_delivers_the_report():
 
     result = _run_analyze_with_tools(_degrading, agent_text="분석 실패 리포트")
 
-    assert result.report.narrative_text == "분석 실패 리포트"
+    assert result.report.narrative.headline == "분석 실패 리포트"
     assert result.analysis_failed is True
 
 
@@ -187,7 +203,7 @@ def test_supplementary_gaps_do_not_fail_the_run():
 
     result = _run_analyze_with_tools(_with_gap, agent_text="정상 리포트")
 
-    assert result.report.narrative_text == "정상 리포트"
+    assert result.report.narrative.headline == "정상 리포트"
     assert result.analysis_failed is False
     assert result.gaps == ("es-data-02 노드 로그 SSH 수집 실패",)
 
@@ -199,6 +215,66 @@ def test_a_clean_run_still_returns_the_report():
 
     result = _run_analyze_with_tools(_clean, agent_text="정상 리포트")
 
-    assert result.report.narrative_text == "정상 리포트"
+    assert result.report.narrative.headline == "정상 리포트"
+    assert result.report.narrative_text == ""
     assert result.analysis_failed is False
     assert result.gaps == ()
+
+
+def test_구조화_실패는_평문으로_떨어지되_진단을_버리지_않는다():
+    """폴백 사다리 2단.
+
+    ToolStrategy는 스키마를 평범한 tool 하나로 바인딩할 뿐이라, 모델이
+    그것을 부르지 않고 평문으로 끝내는 갈래가 열려 있다. 그때도 관측값은
+    온전하므로 분석 실패가 아니다 — 빠진 사실만 gaps로 남긴다.
+    """
+    result = _run_analyze_with_tools(
+        lambda **kwargs: [], agent_text="평문 리포트", structured=False
+    )
+
+    assert result.report.narrative is None
+    assert result.report.narrative_text == "평문 리포트"
+    assert result.analysis_failed is False
+    assert any("구조화 리포트를 제출하지 않아" in gap for gap in result.gaps)
+
+
+def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든다():
+    """폴백 사다리 3단과 4단.
+
+    예전에는 빈 응답이 곧 LlmResponseError였다. 그것은 "전달할 것이 없다"가
+    참이었을 때의 판단이고, 이제는 코드가 모은 관측값이 있다. 관측값마저
+    비었을 때만 예외를 올린다.
+    """
+    from datetime import datetime as _dt
+
+    from cluster_doctor.application.port.outbound.llm_analyzer import (
+        LlmResponseError,
+    )
+    from cluster_doctor.domain.model.diagnosis_report import TimelineRow
+
+    def _with_observations(**kwargs):
+        kwargs["run_state"]["observations"] = {
+            "timeline": {
+                _dt(2026, 9, 10, 15, 27, tzinfo=_UTC): TimelineRow(
+                    minute=_dt(2026, 9, 10, 15, 27, tzinfo=_UTC),
+                    counts={"es_query_log": 264},
+                )
+            },
+            "nodes": {},
+            "master_logs": {},
+            "master_log_total": 0,
+            "health": [],
+            "candidates": {},
+            "wait_seconds": 0.0,
+            "wait_cap_reached": False,
+        }
+        return []
+
+    # 3단 — 관측값이 있으면 리포트가 나온다
+    result = _run_analyze_with_tools(_with_observations, agent_text="", structured=False)
+    assert result.report.observations.timeline
+    assert result.analysis_failed is True
+
+    # 4단 — 관측값도 없으면 그때만 예외
+    with pytest.raises(LlmResponseError):
+        _run_analyze_with_tools(lambda **kwargs: [], agent_text="", structured=False)
