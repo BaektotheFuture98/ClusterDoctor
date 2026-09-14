@@ -298,6 +298,18 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             run_state["gaps"].append(
                 "모델이 구조화 리포트를 제출하지 않아 판단 부분을 평문으로 실었다."
             )
+            if observations.is_empty():
+                # 관측값이 하나도 없는데 평문만 있다면 analyze_logs가 한 번도
+                # 성공하지 않았다는 뜻이다. 429 직후 모델이 "로그를 확인할 수
+                # 없습니다" 한 줄로 끝내는 형태가 실제로 이 갈래에 떨어진다.
+                # 그것은 근거가 하나도 없는 판단이므로 정상 진단으로 내보내면
+                # 안 된다 — "숫자는 코드가 세고 모델은 판단만 쓴다"의 이면이다.
+                # 예외까지는 올리지 않는다. 평문은 남기되 배너를 붙여, 운영자가
+                # 무엇을 근거로 읽어야 할지 알게 한다.
+                _logger.error(
+                    "관측값이 하나도 없다 — 평문을 싣되 분석 실패로 표시한다"
+                )
+                analysis_failed = True
         elif observations.is_empty():
             # 4단. 관측값도 판단도 없다. 여기까지 오는 것은 analyze_logs가 한 번도
             # 성공하지 않은 실행뿐이고, 그때만 예외로 올린다.
@@ -358,12 +370,16 @@ def _build_observations(run_state: dict) -> Observations:
         master_events=master_events[:_MASTER_LOG_REPORT_MAX],
         master_log_total=len(master_events),
         health=tuple(raw.get("health") or ()),
-        # id는 C1, C2 … 순으로 붙었으므로 숫자로 정렬해야 발견 순서가 된다.
-        # 문자열 정렬이면 C10이 C2 앞에 온다.
+        # id는 C1, C2 … 순으로 붙었으므로 발견 순서로 정렬하려면 숫자 부분을
+        # 봐야 한다. 문자열 정렬이면 C10이 C2 앞에 온다. 다만 int()로 파싱하지
+        # 않는다 — 이 함수는 tool이 아니라 analyze() 안이라 예외가 나면
+        # _run_agent의 generic handler로 가서 notify를 건너뛰고, "리포트는 항상
+        # 전달된다"가 그대로 깨진다. 길이를 먼저 보면 파싱 없이 같은 순서가
+        # 나오고 어떤 문자열이 와도 터지지 않는다.
         candidates=tuple(
             sorted(
                 candidate_map.values(),
-                key=lambda c: int(c.candidate_id[1:] or 0),
+                key=lambda c: (len(c.candidate_id), c.candidate_id),
             )
         ),
     )

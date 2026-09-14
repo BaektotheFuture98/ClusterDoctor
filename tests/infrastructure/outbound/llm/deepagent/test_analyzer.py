@@ -221,21 +221,61 @@ def test_a_clean_run_still_returns_the_report():
     assert result.gaps == ()
 
 
+def _seed_observation(run_state) -> None:
+    """관측값이 하나라도 있는 상태를 만든다.
+
+    ``analyze_logs``가 한 번이라도 성공한 실행과 같은 모양이다. 2단 폴백의
+    판정이 관측값 유무로 갈리므로 두 갈래를 나눠 검증하려면 이 씨앗이 필요하다.
+    """
+    from datetime import datetime as _dt
+
+    from cluster_doctor.domain.model.diagnosis_report import TimelineRow
+
+    minute = _dt(2026, 8, 27, 3, 0, tzinfo=timezone.utc)
+    run_state.setdefault("observations", {})["timeline"] = {
+        minute: TimelineRow(minute=minute, counts={"slowlog": 3})
+    }
+
+
 def test_구조화_실패는_평문으로_떨어지되_진단을_버리지_않는다():
-    """폴백 사다리 2단.
+    """폴백 사다리 2단 — 관측값이 온전한 경우.
 
     ToolStrategy는 스키마를 평범한 tool 하나로 바인딩할 뿐이라, 모델이
     그것을 부르지 않고 평문으로 끝내는 갈래가 열려 있다. 그때도 관측값은
     온전하므로 분석 실패가 아니다 — 빠진 사실만 gaps로 남긴다.
     """
+
+    def _with_observation(**kwargs):
+        _seed_observation(kwargs["run_state"])
+        return []
+
     result = _run_analyze_with_tools(
-        lambda **kwargs: [], agent_text="평문 리포트", structured=False
+        _with_observation, agent_text="평문 리포트", structured=False
     )
 
     assert result.report.narrative is None
     assert result.report.narrative_text == "평문 리포트"
     assert result.analysis_failed is False
     assert any("구조화 리포트를 제출하지 않아" in gap for gap in result.gaps)
+
+
+def test_근거_없는_평문은_정상_진단으로_나가지_않는다():
+    """폴백 사다리 2단 — 관측값이 하나도 없는 경우.
+
+    관측값이 비었다는 것은 analyze_logs가 한 번도 성공하지 않았다는 뜻이다.
+    429 직후 모델이 "로그를 확인할 수 없습니다" 한 줄로 끝내면 이 갈래에
+    떨어지는데, 예전에는 그것이 analysis_failed=False로 나가 재트리거까지
+    허용됐다 — 근거가 하나도 없는 판단이 정상 진단으로 보였다.
+
+    평문은 그대로 싣는다. 예외를 올리면 "리포트는 항상 전달된다"가 깨진다.
+    """
+    result = _run_analyze_with_tools(
+        lambda **kwargs: [], agent_text="로그를 확인할 수 없습니다", structured=False
+    )
+
+    assert result.report.narrative_text == "로그를 확인할 수 없습니다"
+    assert result.report.observations.is_empty()
+    assert result.analysis_failed is True
 
 
 def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든다():
