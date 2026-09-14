@@ -46,6 +46,7 @@ from cluster_doctor.infrastructure.config.dependencies import (
     close_clickhouse_client,
 )
 from cluster_doctor.infrastructure.config.settings import get_settings
+from cluster_doctor.infrastructure.outbound.notifier.report_text import render_text
 
 # 진단용으로 private 헬퍼를 빌려 쓴다. 기준 시각 판정을 다시 구현하면
 # 실제 동작과 어긋날 수 있고, 어긋난 안내는 없느니만 못하다.
@@ -189,7 +190,14 @@ def run(moments: list) -> int:
     print(f"  gaps            : {len(result.gaps)}건")
     for gap in result.gaps:
         print(f"      - {gap}")
-    print(f"  리포트 길이     : {len(result.report):,}자")
+    obs = result.report.observations
+    print(f"  리포트 길이     : {len(render_text(result.report)):,}자")
+    print(
+        f"  관측값          : 타임라인 {len(obs.timeline)}분 / 노드 {len(obs.nodes)}개 / "
+        f"마스터로그 {obs.master_log_total}줄 / 상태 {len(obs.health)}건 / "
+        f"후보 {len(obs.candidates)}건"
+    )
+    print(f"  모델 판단       : {'구조화' if result.report.narrative else '평문'}")
 
     created = _snapshot_reports(report_dir) - before
     for path in sorted(created):

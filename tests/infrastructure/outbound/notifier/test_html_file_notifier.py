@@ -11,6 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from cluster_doctor.domain.model.diagnosis_report import (
+    DiagnosisReport,
+    Observations,
+    TimelineRow,
+)
 from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import (
     HtmlFileNotifier,
     _unique_path,
@@ -19,6 +24,19 @@ from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import (
 
 _KST = timezone(timedelta(hours=9))
 _AT = datetime(2026, 9, 10, 2, 5, 56, tzinfo=_KST)
+
+
+def _plain(text: str, observations: Observations | None = None) -> DiagnosisReport:
+    """모델이 평문만 남긴 리포트.
+
+    구조화 출력이 실패했을 때의 모양이고, 이 파일의 검증 대상인 정규식
+    파서가 도는 것도 그때다. 관측값을 주지 않으면 판단 섹션만 남는다.
+    """
+    return DiagnosisReport(
+        observations=observations or Observations(),
+        narrative=None,
+        narrative_text=text,
+    )
 
 _REPORT = """1. 인시던트 개요
 ──────────────────────────────
@@ -43,7 +61,7 @@ class TestFileOutput:
     async def test_지정_디렉터리에_파일을_만든다(self, tmp_path: Path):
         notifier = HtmlFileNotifier(output_dir=tmp_path / "reports")
 
-        await notifier.notify(_REPORT)
+        await notifier.notify(_plain(_REPORT))
 
         files = list((tmp_path / "reports").glob("report-*.html"))
         assert len(files) == 1
@@ -53,7 +71,7 @@ class TestFileOutput:
         target = tmp_path / "a" / "b" / "reports"
         assert not target.exists()
 
-        await HtmlFileNotifier(output_dir=target).notify(_REPORT)
+        await HtmlFileNotifier(output_dir=target).notify(_plain(_REPORT))
 
         assert target.is_dir()
 
@@ -71,8 +89,8 @@ class TestFileOutput:
     async def test_두_건을_보내면_둘_다_남는다(self, tmp_path: Path):
         notifier = HtmlFileNotifier(output_dir=tmp_path)
 
-        await notifier.notify("1. 첫 번째\n• 내용")
-        await notifier.notify("1. 두 번째\n• 내용")
+        await notifier.notify(_plain("1. 첫 번째\n• 내용"))
+        await notifier.notify(_plain("1. 두 번째\n• 내용"))
 
         bodies = [
             p.read_text(encoding="utf-8") for p in tmp_path.glob("report-*.html")
@@ -83,7 +101,7 @@ class TestFileOutput:
 
     async def test_파일명에_콜론을_쓰지_않는다(self, tmp_path: Path):
         """Windows에서 쓸 수 없는 문자다. 저장 자체가 실패한다."""
-        await HtmlFileNotifier(output_dir=tmp_path).notify(_REPORT)
+        await HtmlFileNotifier(output_dir=tmp_path).notify(_plain(_REPORT))
 
         assert ":" not in next(tmp_path.glob("report-*.html")).name
 
@@ -97,7 +115,7 @@ class TestFileOutput:
         blocked.write_text("여기 파일이 있어서 디렉터리를 만들 수 없다", encoding="utf-8")
 
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=blocked).notify(_REPORT)
+            await HtmlFileNotifier(output_dir=blocked).notify(_plain(_REPORT))
 
         assert "리포트 HTML 저장 실패" in caplog.text
         # 전문이 로그에 남아야 한다 — 이것이 유일한 사본이다.
@@ -105,47 +123,47 @@ class TestFileOutput:
 
     async def test_성공하면_저장_경로를_로그로_남긴다(self, tmp_path: Path, caplog):
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=tmp_path).notify(_REPORT)
+            await HtmlFileNotifier(output_dir=tmp_path).notify(_plain(_REPORT))
 
         assert "리포트 저장" in caplog.text
 
 
 class TestEscaping:
     def test_마크업이_주입되지_않는다(self):
-        html_out = render_report('1. 개요\n• <script>alert("x")</script>', _AT)
+        html_out = render_report(_plain('1. 개요\n• <script>alert("x")</script>'), _AT)
 
         assert "<script>alert" not in html_out
         assert "&lt;script&gt;" in html_out
 
     def test_쿼리_원문의_꺾쇠와_앰퍼샌드가_이스케이프된다(self):
-        html_out = render_report('1. 쿼리\n{"q":"a<b & c>d"}', _AT)
+        html_out = render_report(_plain('1. 쿼리\n{"q":"a<b & c>d"}'), _AT)
 
         assert "a&lt;b &amp; c&gt;d" in html_out
 
     def test_원문_블록도_이스케이프된다(self):
         """details 안의 원문은 사람이 읽는 사본이지만 같은 텍스트다."""
-        html_out = render_report("1. 개요\n• <img src=x onerror=1>", _AT)
+        html_out = render_report(_plain("1. 개요\n• <img src=x onerror=1>"), _AT)
 
         assert "<img src=x" not in html_out
 
 
 class TestStructure:
     def test_섹션_제목이_h2와_목차로_들어간다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert "발견된 문제점" in html_out
         assert 'id="sec-2"' in html_out
         assert 'href="#sec-2"' in html_out
 
     def test_불렛과_세부_항목이_중첩된다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert 'class="bullets"' in html_out
         assert 'class="subs"' in html_out
         assert "search_rejected=37" in html_out
 
     def test_심각도가_배지로_분리된다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
         body = html_out.split("<details")[0]
 
         assert 'class="sev sev-critical">Critical<' in body
@@ -156,7 +174,7 @@ class TestStructure:
         assert "es-data-02" in body
 
     def test_구분선은_버린다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert "──────" not in html_out.split("<details")[0]
 
@@ -164,9 +182,11 @@ class TestStructure:
         """모델은 긴 불렛을 들여쓴 다음 줄로 이어 쓴다. 떼어 놓으면 한 문장이
         불렛과 문단으로 쪼개져 읽는 순서가 무너진다."""
         html_out = render_report(
-            "1. 근본 원인\n"
-            "• 단일 계정의 wildcard 쿼리가 검색 큐를 포화시켰고, 그 결과\n"
-            "  샤드 재배치가 유발됐다.\n",
+            _plain(
+                "1. 근본 원인\n"
+                "• 단일 계정의 wildcard 쿼리가 검색 큐를 포화시켰고, 그 결과\n"
+                "  샤드 재배치가 유발됐다.\n"
+            ),
             _AT,
         )
         body = html_out.split("<details")[0]
@@ -176,7 +196,9 @@ class TestStructure:
 
     def test_들여쓴_세부_항목도_이어붙인다(self):
         html_out = render_report(
-            "1. 개요\n• 상위 항목\n  - 세부 내용이 길어서\n    다음 줄로 이어진다\n",
+            _plain(
+                "1. 개요\n• 상위 항목\n  - 세부 내용이 길어서\n    다음 줄로 이어진다\n"
+            ),
             _AT,
         )
         body = html_out.split("<details")[0]
@@ -186,7 +208,7 @@ class TestStructure:
     def test_쿼리_원문은_연속으로_삼키지_않는다(self):
         """들여쓴 JSON은 앞 불렛의 연속이 아니라 인용이다."""
         html_out = render_report(
-            '1. 쿼리\n• 문제 쿼리다\n  {"query":{"match_all":{}}}\n', _AT
+            _plain('1. 쿼리\n• 문제 쿼리다\n  {"query":{"match_all":{}}}\n'), _AT
         )
         body = html_out.split("<details")[0]
 
@@ -194,36 +216,70 @@ class TestStructure:
         assert "문제 쿼리다 {" not in body
 
     def test_쿼리_원문은_등폭_블록으로_그린다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert 'class="raw"' in html_out
 
     def test_원문을_항상_함께_싣는다(self):
         """파싱이 어긋나도 리포트가 손실되지 않게 하는 안전장치다."""
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
-        assert "리포트 원문" in html_out
+        assert "리포트 평문" in html_out
         assert html_out.count("es-data-02") >= 2  # 본문 + 원문
 
     def test_섹션_형식이_아니면_구조를_만들어내지_않는다(self):
-        html_out = render_report("특이사항 없음. 분석할 로그가 없었다.", _AT)
+        """형식을 어긴 평문은 쪼개지 않고 통째로 싣는다.
 
-        assert "리포트 전문" in html_out
+        관측값이 하나도 없으므로 이 리포트에 남는 것은 모델 평문뿐이고,
+        그것마저 섹션 형식이 아니면 구조를 지어내지 않는다.
+        """
+        html_out = render_report(_plain("특이사항 없음. 분석할 로그가 없었다."), _AT)
+
+        assert "모델 리포트 (평문)" in html_out
         assert 'class="bullets"' not in html_out
         assert "특이사항 없음" in html_out
 
     def test_분석_실패_구간이_있으면_배너를_띄운다(self):
+        """판정 근거가 본문 문자열이 아니라 관측값이다.
+
+        예전에는 본문에 "분석 실패"라는 말이 있는지로 판정했다. 그것은
+        모델이 그 말을 옮겨 적어 줘야만 성립하는 휴리스틱이었고, 반대로
+        본문이 그 말을 우연히 담으면 멀쩡한 리포트에 배너가 붙었다.
+        """
+        failed_minute = TimelineRow(
+            minute=datetime(2026, 9, 10, 2, 4, tzinfo=_KST),
+            counts={"es_query_log": 12},
+            failed=True,
+        )
         html_out = render_report(
-            "1. 개요\n• 02:04 구간은 [분석 실패]로 표시됐다", _AT
+            _plain("1. 개요\n• 내용", Observations(timeline=(failed_minute,))),
+            _AT,
         )
 
         assert 'class="banner"' in html_out
+        assert "분석하지 못한 구간이 있다" in html_out
+
+    def test_본문에_분석_실패라는_말이_있어도_배너를_띄우지_않는다(self):
+        """관측값이 온전하면 본문의 표현이 배너를 만들지 못한다."""
+        ok_minute = TimelineRow(
+            minute=datetime(2026, 9, 10, 2, 4, tzinfo=_KST),
+            counts={"es_query_log": 12},
+        )
+        html_out = render_report(
+            _plain(
+                "1. 개요\n• 지난 진단에서는 [분석 실패]가 있었다",
+                Observations(timeline=(ok_minute,)),
+            ),
+            _AT,
+        )
+
+        assert 'class="banner"' not in html_out
 
     def test_정상_리포트에는_배너가_없다(self):
-        assert 'class="banner"' not in render_report(_REPORT, _AT)
+        assert 'class="banner"' not in render_report(_plain(_REPORT), _AT)
 
     def test_완결된_HTML_문서다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert html_out.startswith("<!doctype html>")
         assert html_out.rstrip().endswith("</html>")
@@ -232,7 +288,7 @@ class TestStructure:
         assert "http://" not in html_out and "https://" not in html_out
 
     def test_생성_시각을_KST로_찍는다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert "2026-09-10 02:05:56" in html_out
         assert "KST" in html_out
@@ -247,9 +303,11 @@ class TestSubItemsWithoutABullet:
 
     def test_불렛_없이_시작하는_세부_줄도_목록이_된다(self):
         html_out = render_report(
-            "1. 인시던트 개요\n"
-            "   - 유입 관찰: 02:03:58 ~ 02:04:44\n"
-            "   - 분석 구간: 02:02:00 ~ 02:06:00\n",
+            _plain(
+                "1. 인시던트 개요\n"
+                "   - 유입 관찰: 02:03:58 ~ 02:04:44\n"
+                "   - 분석 구간: 02:02:00 ~ 02:06:00\n"
+            ),
             _AT,
         )
         body = html_out.split("<details")[0]
@@ -259,7 +317,7 @@ class TestSubItemsWithoutABullet:
         assert "유입 관찰" in body
 
     def test_승격된_불렛도_심각도_배지를_뗀다(self):
-        html_out = render_report("1. 문제점\n   - Critical: 노드 포화\n", _AT)
+        html_out = render_report(_plain("1. 문제점\n   - Critical: 노드 포화\n"), _AT)
         body = html_out.split("<details")[0]
 
         assert 'class="sev sev-critical">Critical<' in body
@@ -267,7 +325,7 @@ class TestSubItemsWithoutABullet:
 
     def test_불렛이_있으면_기존처럼_중첩된다(self):
         html_out = render_report(
-            "1. 문제점\n• 상위 항목\n  - 하위 세부\n", _AT
+            _plain("1. 문제점\n• 상위 항목\n  - 하위 세부\n"), _AT
         )
         body = html_out.split("<details")[0]
 
@@ -285,7 +343,7 @@ class TestFailureGuarantee:
         report = "1. 개요\n• 문제 노드: \ud800 포화"
 
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=tmp_path).notify(report)
+            await HtmlFileNotifier(output_dir=tmp_path).notify(_plain(report))
 
         files = list(tmp_path.glob("report-*.html"))
         assert len(files) == 1
@@ -295,7 +353,7 @@ class TestFailureGuarantee:
         assert "리포트 HTML 저장 실패" not in caplog.text
 
     def test_치환은_정상_문자를_건드리지_않는다(self):
-        html_out = render_report(_REPORT, _AT)
+        html_out = render_report(_plain(_REPORT), _AT)
 
         assert "es-data-02" in html_out
         assert "•" not in html_out.split("<details")[0]  # 불렛은 구조로 바뀐다
@@ -307,7 +365,7 @@ class TestFailureGuarantee:
         blocked.write_text("여기 파일이 있어 디렉터리를 만들 수 없다", encoding="utf-8")
 
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=blocked).notify(_REPORT)
+            await HtmlFileNotifier(output_dir=blocked).notify(_plain(_REPORT))
 
         assert "리포트 HTML 저장 실패" in caplog.text
         assert "es-data-02" in caplog.text
@@ -322,7 +380,7 @@ class TestGapAndFailureBanners:
     """
 
     def test_분석_실패는_붉은_배너로_경고한다(self):
-        html_out = render_report(_REPORT, _AT, analysis_failed=True)
+        html_out = render_report(_plain(_REPORT), _AT, analysis_failed=True)
 
         assert "banner-fail" in html_out
         assert "결론을 신뢰할 수 없다" in html_out
@@ -330,7 +388,7 @@ class TestGapAndFailureBanners:
 
     def test_누락된_근거를_목록으로_밝힌다(self):
         html_out = render_report(
-            _REPORT,
+            _plain(_REPORT),
             _AT,
             gaps=("es-data-02 노드 로그 SSH 수집 실패", "분석 호출 상한 도달"),
         )
@@ -340,25 +398,25 @@ class TestGapAndFailureBanners:
         assert "분석 호출 상한 도달" in html_out
 
     def test_누락_항목도_이스케이프된다(self):
-        html_out = render_report(_REPORT, _AT, gaps=("<script>x</script>",))
+        html_out = render_report(_plain(_REPORT), _AT, gaps=("<script>x</script>",))
 
         assert "<script>x" not in html_out
         assert "&lt;script&gt;" in html_out
 
     def test_둘_다_있으면_배너가_둘_다_나온다(self):
         html_out = render_report(
-            _REPORT, _AT, gaps=("노드 로그 실패",), analysis_failed=True
+            _plain(_REPORT), _AT, gaps=("노드 로그 실패",), analysis_failed=True
         )
 
         assert "banner-fail" in html_out
         assert "수집하지 못한 근거가 있다" in html_out
 
     def test_아무_문제가_없으면_배너가_없다(self):
-        assert 'class="banner' not in render_report(_REPORT, _AT)
+        assert 'class="banner' not in render_report(_plain(_REPORT), _AT)
 
     async def test_notify가_두_값을_리포트까지_전달한다(self, tmp_path):
         await HtmlFileNotifier(output_dir=tmp_path).notify(
-            _REPORT,
+            _plain(_REPORT),
             gaps=("es-data-02 노드 로그 SSH 수집 실패",),
             analysis_failed=True,
         )

@@ -1,6 +1,8 @@
 import logging
 
 from cluster_doctor.application.port.outbound.notifier import Notifier
+from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
+from cluster_doctor.infrastructure.outbound.notifier.report_text import render_text
 
 _logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ class StdoutNotifier(Notifier):
 
     async def notify(
         self,
-        message: str,
+        report: DiagnosisReport,
         *,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
@@ -23,4 +25,6 @@ class StdoutNotifier(Notifier):
             _logger.error("[분석 실패] 아래 리포트의 내용을 신뢰할 수 없다")
         if gaps:
             _logger.warning("수집하지 못한 근거: %s", " / ".join(gaps))
-        _logger.info("\n%s", message)
+        # HTML 쪽과 같은 render_text를 쓴다. 두 notifier가 각자 그리면 같은
+        # 관측값이 화면마다 다르게 보인다.
+        _logger.info("\n%s", render_text(report))
