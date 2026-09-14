@@ -14,7 +14,6 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
-    count_by_source,
     timeline_row,
 )
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
@@ -238,15 +237,6 @@ def make_synthesize(
         }
 
     return synthesize
-
-
-def _count_by_source(logs: list) -> dict[str, int]:
-    """observations.count_by_source로 위임한다.
-
-    세는 곳이 둘이면 언젠가 서로 다른 값을 말한다. 이름을 남겨 두는 것은
-    호출부를 건드리지 않기 위해서다.
-    """
-    return count_by_source(logs)
 
 
 def _format_findings(findings: list[MinuteFinding]) -> str:

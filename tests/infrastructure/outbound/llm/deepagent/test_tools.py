@@ -1030,3 +1030,66 @@ def test_미래_시각의_slowlog는_유입_구간을_미래로_벌리지_않는
 
     last_seen = datetime.strptime(result["last_seen"], "%Y-%m-%dT%H:%M:%S")
     assert last_seen <= now.replace(tzinfo=None) + timedelta(seconds=1)
+
+
+# --------------------------------------------------------------------------
+# SSH 폴백으로 온 마스터 로그도 구조를 갖는다
+#
+# 이쪽은 NodeLogEntry가 아니라 파일 원문 덩어리다. 레벨과 로거를 뽑지 않으면
+# 리포트가 사건별로 묶을 때 쓰는 키가 모든 줄에 대해 같아져, 실측 312줄이
+# 헤더 한 줄 + 본문 한 줄로 붕괴한다. 적재가 채워지는 중이라 이 폴백을 남겨
+# 둔 것인데 정작 그 상황에서 리포트가 가장 빈약해지는 셈이었다.
+# --------------------------------------------------------------------------
+
+_SSH_LOG = (
+    "[2026-08-27T18:31:02,415][WARN ][o.e.c.c.LagDetector      ] "
+    "[es-master-01] node [{RC17-08}{abc}] is lagging\n"
+    "[2026-08-27T18:31:03,001][ERROR][o.e.a.s.TransportSearchAction] "
+    "[es-master-01] all shards failed\n"
+    "        at org.elasticsearch.Foo.bar(Foo.java:42)\n"
+)
+
+
+def _analyze_with_ssh_master_logs(run_state):
+    """ClickHouse 조회가 실패해 SSH로 내려가는 경로."""
+    cluster = MagicMock()
+    cluster.node_info.return_value = {
+        "ip": "10.0.0.1", "log_path": "/var/log/es", "cluster_name": "prod"
+    }
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = _SSH_LOG
+
+    tool = _tools(
+        fetch_logs=MagicMock(return_value=_busy_logs(datetime(2026, 8, 27, 18, 31, tzinfo=KST))),
+        fetch_node_logs=MagicMock(side_effect=RuntimeError("테이블 준비 안 됨")),
+        cluster=cluster,
+        node_log_fetcher=node_log_fetcher,
+        run_state=run_state,
+    )["analyze_logs"]
+    tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
+    return list(run_state["observations"]["master_logs"].values())
+
+
+def test_ssh_폴백_로그에서_레벨과_로거를_뽑는다():
+    events = _analyze_with_ssh_master_logs({"degraded": False})
+
+    by_logger = {e.logger for e in events}
+    assert "o.e.c.c.LagDetector" in by_logger
+    assert "o.e.a.s.TransportSearchAction" in by_logger
+    assert {e.level for e in events} >= {"WARN", "ERROR"}
+
+
+def test_ssh_폴백_로그의_시각도_뽑는다():
+    events = _analyze_with_ssh_master_logs({"degraded": False})
+
+    stamped = [e for e in events if e.timestamp is not None]
+    assert len(stamped) == 2
+    assert stamped[0].timestamp == datetime(2026, 8, 27, 18, 31, 2, tzinfo=KST)
+
+
+def test_머리를_뽑지_못한_줄도_버리지_않는다():
+    # 스택 트레이스 연속 행. 값이 없다는 것과 줄이 없다는 것은 다르다.
+    events = _analyze_with_ssh_master_logs({"degraded": False})
+
+    assert any("org.elasticsearch.Foo.bar" in e.line for e in events)
+    assert len(events) == 3

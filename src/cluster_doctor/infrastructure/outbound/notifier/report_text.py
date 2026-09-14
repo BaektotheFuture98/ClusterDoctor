@@ -158,6 +158,11 @@ _MASTER_TARGETS_SHOWN = 6
 # (``cluster:monitor/nodes/stats[n]``) — 첫 ``]``에서 멈추면 ``stats[n``으로
 # 잘려 괄호가 깨지고, 서로 다른 두 action이 같은 이름으로 보인다(실측).
 # ES 로그 형식이 ``action [...], node [...]``이므로 뒤의 쉼표를 앵커로 쓴다.
+# action도 logger도 없는 줄이 모이는 자리. 묶음이 아니라 "묶지 못했다"는
+# 표시라, 대표 한 줄로 줄이지 않는다.
+_UNGROUPED = "\x00ungrouped"
+_MASTER_UNGROUPED_SHOWN = 10
+
 _ACTION_RE = re.compile(r"action \[(.+?)\],")
 # 대상 노드는 "node [{RC17-08}{...}]" 형태로 찍힌다.
 _TARGET_RE = re.compile(r"node \[\{([^}]+)\}")
@@ -169,11 +174,14 @@ def _event_kind(event: MasterEvent) -> str:
     action이 있으면 그것으로 묶는다 — 실측에서 24줄 중 20줄이
     ``internal:coordination/fault_detection/follower_check`` 하나였고, 대상
     노드와 시각만 달랐다. action이 없으면 logger로 묶는다.
+
+    둘 다 없는 줄은 ``_UNGROUPED``로 모은다. 묶은 것이 아니라 **묶지 못한
+    것**이라, 렌더러가 이 묶음만 다르게 다룬다(아래).
     """
     match = _ACTION_RE.search(event.line)
     if match:
         return match.group(1)
-    return event.logger or "(로거 없음)"
+    return event.logger or _UNGROUPED
 
 
 def _short_kind(kind: str) -> str:
@@ -195,6 +203,10 @@ def master_log_lines(events: tuple[MasterEvent, ...], total: int = 0) -> list[st
     **묶으면 더 잘 읽힌다** — "40초 동안 19대에 대해 20건"이 한눈에 들어온다.
 
     대표 줄은 원문 그대로 남긴다. 근거로 인용하려면 원문이어야 한다.
+
+    묶지 못한 줄(``_UNGROUPED``)은 예외다. 그 묶음의 구성원은 서로 다른
+    사건이므로 대표 한 줄로 줄이면 나머지가 통째로 사라진다 — SSH 폴백으로
+    받은 로그가 312줄에서 1줄로 붕괴한 것이 그 경우였다.
     """
     if not events:
         return []
@@ -214,7 +226,8 @@ def master_log_lines(events: tuple[MasterEvent, ...], total: int = 0) -> list[st
         span = ""
         if stamps:
             span = f"  {_hms(min(stamps))} ~ {_hms(max(stamps))}"
-        lines.append(f"[{_short_kind(kind)}] {len(items)}건{span}")
+        label = "묶이지 않은 줄" if kind == _UNGROUPED else _short_kind(kind)
+        lines.append(f"[{label}] {len(items)}건{span}")
 
         targets = Counter(
             match.group(1)
@@ -226,8 +239,13 @@ def master_log_lines(events: tuple[MasterEvent, ...], total: int = 0) -> list[st
             more = f" 외 {len(targets) - len(names)}대" if len(targets) > len(names) else ""
             lines.append(f"  대상 노드 {len(targets)}대: {', '.join(names)}{more}")
 
-        for event in items[:_MASTER_SAMPLE_PER_GROUP]:
+        shown = (
+            _MASTER_UNGROUPED_SHOWN if kind == _UNGROUPED else _MASTER_SAMPLE_PER_GROUP
+        )
+        for event in items[:shown]:
             lines.append(f"  {event.rendered}")
+        if len(items) > shown:
+            lines.append(f"  … 외 {len(items) - shown}건")
         lines.append("")
 
     return [line for line in lines[:-1]]
@@ -350,10 +368,22 @@ def overview_lines(obs: Observations) -> list[str]:
     return lines
 
 
-def _section(title: str, lines: list[str]) -> list[str]:
-    if not lines:
-        return []
-    return [title, "─" * 40, *lines, ""]
+_SEPARATOR = "─" * 40
+
+
+def scrub(text: str) -> str:
+    """UTF-8로 인코딩할 수 없는 문자를 치환한다.
+
+    provider 응답에 짝 없는 서로게이트가 섞여 오는 경우가 있다(JSON의
+    ``\\udXXX`` 이스케이프). 그대로 두면 두 경로가 동시에 무너진다 —
+    ``write_text``가 ``UnicodeEncodeError``로 실패하고, 폴백으로 전문을
+    로그에 남기려 해도 파일 핸들러가 같은 이유로 실패해 리포트가 통째로
+    사라진다. 글자 하나를 ``?``로 바꾸는 편이 진단을 잃는 것보다 낫다.
+
+    치환은 입력 시점에 한 번만 한다. 렌더 결과와 원문 블록, 폴백 로그가
+    모두 같은 문자열에서 나오므로 여기서 걸러야 전부 안전해진다.
+    """
+    return text.encode("utf-8", "replace").decode("utf-8")
 
 
 def render_text(report: DiagnosisReport) -> str:
@@ -361,23 +391,27 @@ def render_text(report: DiagnosisReport) -> str:
 
     ``StdoutNotifier``와 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
     함수들로 따로 조립하지만 내용은 같다.
+
+    섹션 번호는 코드가 센다. 예전에는 제목에 박아 두었는데, 빈 섹션 하나가
+    건너뛰어지면 6 다음이 8이 됐다. HTML 쪽(``_sections_from_report``)은 처음부터
+    다시 번호를 매기므로 같은 섹션이 두 출력에서 다른 번호로 불리기까지 했다.
     """
     obs = report.observations
     out: list[str] = []
+    numbered = [0]
 
-    out += _section("1. 인시던트 개요", overview_lines(obs))
-    out += _section(
-        "2. 분 단위 타임라인 (관측값)",
-        [timeline_line(row) for row in obs.timeline],
-    )
-    out += _section(
-        "3. 클러스터 상태 이력 (관측값)",
-        health_lines(obs.health, obs.requested),
-    )
-    out += _section("4. 노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
+    def add(title: str, lines: list[str]) -> None:
+        if not lines:
+            return
+        numbered[0] += 1
+        out.extend([f"{numbered[0]}. {title}", _SEPARATOR, *lines, ""])
 
-    out += _section(
-        "5. 마스터 노드 로그 (관측값)",
+    add("인시던트 개요", overview_lines(obs))
+    add("분 단위 타임라인 (관측값)", [timeline_line(row) for row in obs.timeline])
+    add("클러스터 상태 이력 (관측값)", health_lines(obs.health, obs.requested))
+    add("노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
+    add(
+        "마스터 노드 로그 (관측값)",
         master_log_lines(obs.master_events, obs.master_log_total),
     )
 
@@ -392,12 +426,11 @@ def render_text(report: DiagnosisReport) -> str:
             f"      {detail}"
             for detail in candidate_details(candidate, picks.get(candidate.candidate_id, ""))
         ]
-    out += _section("6. 느린 요청 후보 (관측값 + 모델 선정)", candidate_lines)
+    add("느린 요청 후보 (관측값 + 모델 선정)", candidate_lines)
 
     narrative = report.narrative
     if narrative is not None:
-        if narrative.headline:
-            out += _section("7. 결론", [narrative.headline, *narrative.context])
+        add("결론", [narrative.headline, *narrative.context] if narrative.headline else [])
         findings = []
         for finding in narrative.findings:
             # severity가 비면 모델이 분류하지 않은 것이다. ": 제목"으로
@@ -405,16 +438,16 @@ def render_text(report: DiagnosisReport) -> str:
             label = finding.severity or "(분류 없음)"
             findings.append(f"{label}: {finding.title}")
             findings += [f"    - {item}" for item in finding.evidence]
-        out += _section("8. 발견된 문제점", findings)
+        add("발견된 문제점", findings)
         cause = []
         if narrative.root_cause:
             cause.append(narrative.root_cause)
         cause += [f"근거: {item}" for item in narrative.supporting]
         cause += [f"반박 근거: {item}" for item in narrative.contradicting]
         cause += [f"확인하지 못한 것: {item}" for item in narrative.unverified]
-        out += _section("9. 근본 원인", cause)
-        out += _section("10. 권장 조치", list(narrative.recommendations))
+        add("근본 원인", cause)
+        add("권장 조치", list(narrative.recommendations))
     elif report.narrative_text:
-        out += _section("7. 모델 리포트 (평문)", report.narrative_text.splitlines())
+        add("모델 리포트 (평문)", report.narrative_text.splitlines())
 
     return "\n".join(out).rstrip() + "\n"

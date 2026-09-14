@@ -18,6 +18,7 @@ tool이 실패를 문자열로 삼킬 때 그 사실을 호출자에게 남기�
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import replace
@@ -26,6 +27,15 @@ from datetime import datetime, timezone, timedelta
 from langchain_core.tools import tool
 
 _KST = timezone(timedelta(hours=9))
+
+# ES 로그 한 줄의 머리: [시각][레벨][로거]. SSH 폴백은 파일 원문을 그대로
+# 받으므로 여기서 뽑지 않으면 레벨과 로거가 리포트에 도달하지 못한다.
+# 로거 이름은 오른쪽이 공백으로 채워져 있다(``[o.e.c.c.C          ]``).
+_ES_LOG_LINE_RE = re.compile(
+    r"^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})[,.]\d+\]"
+    r"\[([A-Z ]+)\]"
+    r"\[([^\]]+)\]"
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -377,8 +387,7 @@ def make_tools(
         {
             "timeline": {},          # dict[datetime, TimelineRow]
             "nodes": {},             # dict[str, NodeMetricRow]
-            "master_logs": {},       # dict[key, (정렬용 시각, 렌더된 줄)]
-            "master_log_total": 0,
+            "master_logs": {},       # dict[key, MasterEvent]
             "health": [],            # list[HealthPoint]
             "candidates": {},        # dict[내용키, SlowCandidate]
             "wait_seconds": 0.0,
@@ -405,19 +414,44 @@ def make_tools(
                     line=entry.line,
                     rendered=format_log_line(entry),
                 )
-        observations["master_log_total"] = len(store)
 
     def _record_master_text(text: str) -> None:
         """SSH 폴백으로 온 마스터 로그. 줄 자체가 키다.
 
-        이쪽은 NodeLogEntry가 아니라 문자열 덩어리라 timestamp를 뽑을 수 없다.
-        정렬 키를 None으로 두고, 렌더할 때 안정 정렬로 원래 순서를 유지한다.
+        ES 로그 줄에서 시각·레벨·로거를 뽑는다. 예전에는 세 칸을 전부 비워
+        두었는데, 그러면 리포트가 사건별로 묶을 때 쓰는 키(``_event_kind``)가
+        모든 줄에 대해 "(로거 없음)" 하나가 되어 **312줄이 헤더 한 줄 + 본문
+        한 줄로 붕괴했다.** ClickHouse 경로였다면 나왔을 근거가 SSH로 내려간
+        진단에서만 사라지는 셈이다 — 적재가 채워지는 중이라 이 폴백을 남겨
+        둔 것인데, 정작 그 상황에서 리포트가 가장 빈약해졌다.
+
+        뽑지 못한 줄(스택 트레이스 연속 행 등)은 버리지 않는다. 값이 없다는
+        것과 줄이 없다는 것은 다르고, 렌더러가 그런 줄을 따로 다룬다.
         """
         store = observations["master_logs"]
         for line in text.splitlines():
-            if line.strip() and line not in store:
-                store[line] = MasterEvent(timestamp=None, line=line, rendered=line)
-        observations["master_log_total"] = len(store)
+            if not line.strip() or line in store:
+                continue
+            timestamp = None
+            level = ""
+            logger_name = ""
+            match = _ES_LOG_LINE_RE.match(line)
+            if match:
+                level = match.group(2).strip()
+                logger_name = match.group(3).strip()
+                try:
+                    timestamp = datetime.fromisoformat(match.group(1)).replace(
+                        tzinfo=_KST
+                    )
+                except ValueError:
+                    timestamp = None
+            store[line] = MasterEvent(
+                timestamp=timestamp,
+                level=level,
+                logger=logger_name,
+                line=line,
+                rendered=line,
+            )
 
     def _record_candidates(entries: list[LogEntry]) -> None:
         """느린 요청 후보에 id를 붙여 기록한다.

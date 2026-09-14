@@ -274,7 +274,10 @@ state change, allocation 실패 등)가 slowlog 급증 시각과 겹치면 인�
 2. 분 단위 타임라인
    구간별 분석에 주어진 "건수:" 줄과 [METRIC] 근거를 그대로 옮긴다.
    분마다 한 줄, 시간순. 아래 key=value 형식을 그대로 쓴다:
-   HH:MM slowlog=<건수> took_max=<값> runtime_max=<값> jvm_heap_max=<%> rejected=<search>/<write> 특이사항=<...>
+   HH:MM 건수=<소스별로 그대로> took_max=<값> runtime_max=<값> jvm_heap_max=<%> rejected=<search>/<write> 특이사항=<...>
+   건수 칸은 소스마다 갈라 쓴다(slowlog=0 es_query_log=264 node_metric=57).
+   한 칸으로 뭉치지 마라 — 예전에는 slowlog=<건수> 한 칸이었고, 그래서
+   es_query_log 264건이 slowlog 건수로 실렸다(실측). 0인 소스도 0으로 쓴다.
    값이 없는 항목은 "-", 특이사항이 없으면 특이사항=없음. 판단어를 쓰지 않는다.
    건수는 위에 주어진 값을 쓴다. 로그 줄을 직접 세지 않는다.
    [분석 실패]로 표시된 분도 건수와 함께 그 사실을 적는다.
@@ -286,5 +289,7 @@ state change, allocation 실패 등)가 slowlog 급증 시각과 겹치면 인�
    상관을 주장하려면 양쪽의 시각을 함께 인용한다.
    시각이 겹치지 않으면 "시각이 겹치지 않음 — 상관관계 근거 없음"이라고 쓴다.
 6. 문제 쿼리 후보 (+ 사용자 정보 파악(user, company))
+   최종 리포트의 후보 목록은 코드가 id와 수치를 붙여 따로 싣는다. 여기서는
+   이 구간에서 무엇이 눈에 띄었는지만 쓴다.
 7. 권장 조치
 8. 클러스터 건강 상태"""
