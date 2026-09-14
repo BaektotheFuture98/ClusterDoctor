@@ -92,14 +92,23 @@ def _last_model_text(messages: list) -> str:
     "리포트가 비었다"로만 나타나 원인을 짚기 어렵다. 배제 목록은 그 반대로 —
     모르는 종류가 생기면 포함되는 쪽으로 틀린다.
 
-    tool 호출만 담긴 AIMessage는 content가 비어 있으므로 자연히 걸러진다.
+    **모델이 마지막으로 쓴 것 하나만 본다.** "본문이 있는 마지막 것"을 찾아
+    거슬러 올라가면 안 된다 — gemini 계열은 tool_call과 안내 문장을 한
+    AIMessage에 함께 싣는 일이 흔해서, 마지막 턴이 조용히 끝났을 때
+    "먼저 03:00~03:10 구간을 보겠습니다" 같은 **진행 안내문을 집어 리포트로
+    내보내게 된다.** recursion_limit 도달이나 중간 중단도 같은 모양이다.
+
+    tool_call을 달고 있는 메시지는 최종 답이 아니다. 모델이 아직 일하는
+    중이었다는 뜻이므로 빈 문자열을 돌려주고 폴백 3단으로 보낸다 — 코드가
+    모은 관측값만으로 리포트를 만드는 쪽이, 진행 안내문 한 줄을 진단이라고
+    내보내는 것보다 정직하다.
     """
     for message in reversed(messages or []):
         if str(getattr(message, "type", "")) in _NOT_MODEL_TEXT:
             continue
-        text = _text_of(message)
-        if text:
-            return text
+        if getattr(message, "tool_calls", None):
+            return ""
+        return _text_of(message)
     return ""
 
 
