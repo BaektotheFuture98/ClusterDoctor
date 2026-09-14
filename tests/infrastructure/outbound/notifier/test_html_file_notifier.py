@@ -424,3 +424,73 @@ class TestGapAndFailureBanners:
         body = next(tmp_path.glob("report-*.html")).read_text(encoding="utf-8")
         assert "banner-fail" in body
         assert "es-data-02 노드 로그 SSH 수집 실패" in body
+
+
+class TestObservationsAreNotFabricated:
+    """빈 칸이 그럴듯한 값으로 채워지지 않는지.
+
+    이 저장소가 두 번 당한 실패다 — es_query_log 264건이 slowlog 건수로 실렸고,
+    모델이 severity를 채우지 않자 기본값 "Info"가 25초 지연과 노드 19대
+    타임아웃에 붙었다. 둘 다 "비었다"가 "값이 있다"로 보이는 형태였다.
+    """
+
+    def test_분류하지_않은_문제에는_배지를_붙이지_않는다(self):
+        from cluster_doctor.domain.model.diagnosis_report import Finding, Narrative
+
+        report = _plain("")
+        report = DiagnosisReport(
+            observations=Observations(),
+            narrative=Narrative(
+                findings=(
+                    Finding(severity="", title="분류하지 않은 문제"),
+                    Finding(severity="Critical", title="분류한 문제"),
+                )
+            ),
+        )
+        html_out = render_report(report, _AT)
+
+        assert 'class="sev sev-critical">Critical<' in html_out
+        # 빈 severity가 빈 배지로 새어 나오면 안 된다.
+        assert 'class="sev sev-">' not in html_out
+
+    def test_상태_이력이_분석_구간_밖이면_그_사실을_밝힌다(self):
+        """cluster_health는 ES 실시간 API라 과거 상태를 모른다.
+
+        과거 사고를 분석하면 이 섹션의 시각은 사고 시각이 아니라 진단을 돌린
+        시각이다. 실측에서 9/10 15:27 사고 리포트에 "11:40 green"이 실렸고,
+        그대로 두면 운영자는 사고 당시가 green이었다고 읽는다.
+        """
+        from cluster_doctor.domain.model.diagnosis_report import HealthPoint
+
+        window = (
+            datetime(2026, 9, 10, 15, 20, tzinfo=_KST),
+            datetime(2026, 9, 10, 15, 30, tzinfo=_KST),
+        )
+        now = datetime(2026, 9, 14, 11, 40, tzinfo=_KST)
+        report = DiagnosisReport(
+            observations=Observations(
+                requested=(window,),
+                health=(HealthPoint(at=now, until=now, status="green"),),
+            )
+        )
+        html_out = render_report(report, now)
+
+        assert "과거 클러스터 상태를 보관하지 않는다" in html_out
+        assert "분석 구간이 아니다" not in html_out  # 문구가 바뀌면 알아채게
+
+    def test_상태_이력이_분석_구간_안이면_주의를_붙이지_않는다(self):
+        from cluster_doctor.domain.model.diagnosis_report import HealthPoint
+
+        window = (
+            datetime(2026, 9, 10, 15, 20, tzinfo=_KST),
+            datetime(2026, 9, 10, 15, 30, tzinfo=_KST),
+        )
+        inside = datetime(2026, 9, 10, 15, 25, tzinfo=_KST)
+        report = DiagnosisReport(
+            observations=Observations(
+                requested=(window,),
+                health=(HealthPoint(at=inside, until=inside, status="yellow"),),
+            )
+        )
+
+        assert "과거 클러스터 상태를 보관하지 않는다" not in render_report(report, _AT)

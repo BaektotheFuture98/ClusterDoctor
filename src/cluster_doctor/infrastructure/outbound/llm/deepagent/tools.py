@@ -34,7 +34,7 @@ from cluster_doctor.application.port.outbound.log_repository import (
     DEFAULT_NODE_LOG_LIMIT,
     clamp_node_log_limit,
 )
-from cluster_doctor.domain.model.diagnosis_report import HealthPoint
+from cluster_doctor.domain.model.diagnosis_report import HealthPoint, MasterEvent
 from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
 from cluster_doctor.domain.model.time_range import (
     MAX_TIME_RANGE_DURATION,
@@ -382,12 +382,24 @@ def make_tools(
     )
 
     def _record_master_logs(entries: list[NodeLogEntry]) -> None:
-        """ClickHouse에서 온 마스터 로그를 기록한다. 중복은 내용으로 거른다."""
+        """ClickHouse에서 온 마스터 로그를 기록한다. 중복은 내용으로 거른다.
+
+        렌더된 문자열이 아니라 구조로 담는다. 리포트가 같은 사건끼리 묶어야
+        하는데(실측 24줄 중 20줄이 같은 follower_check 타임아웃이었다), 묶으려면
+        logger가 값으로 있어야 한다.
+        """
         store = observations["master_logs"]
         for entry in entries:
             key = (entry.timestamp, entry.node, entry.line)
             if key not in store:
-                store[key] = (entry.timestamp, format_log_line(entry))
+                store[key] = MasterEvent(
+                    timestamp=entry.timestamp,
+                    node=entry.node,
+                    level=(entry.level or entry.detected_level or "").strip(),
+                    logger=(entry.logger or "").strip(),
+                    line=entry.line,
+                    rendered=format_log_line(entry),
+                )
         observations["master_log_total"] = len(store)
 
     def _record_master_text(text: str) -> None:
@@ -399,7 +411,7 @@ def make_tools(
         store = observations["master_logs"]
         for line in text.splitlines():
             if line.strip() and line not in store:
-                store[line] = (None, line)
+                store[line] = MasterEvent(timestamp=None, line=line, rendered=line)
         observations["master_log_total"] = len(store)
 
     def _record_candidates(entries: list[LogEntry]) -> None:
