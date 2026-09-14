@@ -37,6 +37,7 @@ from cluster_doctor.infrastructure.outbound.notifier.report_text import (
     candidate_line,
     health_lines,
     master_log_lines,
+    scrub,
     node_lines,
     overview_lines,
     render_text,
@@ -58,12 +59,12 @@ _DIVIDER_RE = re.compile(r"^[─━—–\-=_]{3,}$")
 # 줄 앞머리의 심각도 표기. 배지로 뽑아내 한눈에 보이게 한다.
 _SEVERITY_RE = re.compile(r"^(Critical|Warning|Info)\s*[:\-]?\s*", re.IGNORECASE)
 # 쿼리 원문·로그 줄처럼 그대로 보여야 하는 것. 등폭으로 그리고 줄바꿈을 살린다.
-_RAW_HINTS = (
-    '{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]",
-    # 분 단위 타임라인과 노드 상태 줄. 줄을 맞춰 위아래로 비교해야 하는
-    # 수치이므로 등폭이 아니면 읽을 수 없다.
-    "slowlog=", "jvm_heap", "rejected=",
-)
+#
+# **평문 폴백에서만 쓰인다.** 관측값 섹션은 mono=True로 명시 지정되므로
+# (``_mono_attr``) 힌트 매칭을 타지 않는다. 그래서 예전에 관측값 줄을 위해
+# 넣어 둔 "slowlog=" 같은 항목은 근거가 사라져 뺐다 — 남겨 두면 다음 사람이
+# 관측값 렌더링이 이 목록에 의존한다고 읽는다.
+_RAW_HINTS = ('{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]")
 
 _FILENAME_FORMAT = "report-%Y%m%d-%H%M%S"
 
@@ -89,7 +90,7 @@ class HtmlFileNotifier(Notifier):
         # 인코딩 불가 문자는 _e()가 걸러낸다. 리포트가 객체가 되면서 문자열이
         # 수십 곳에서 나오므로 진입부에서 한 번 치환하는 것으로는 부족하다.
         # 폴백 로그만 여기서 따로 치환한다 — 그쪽은 _e를 타지 않는다.
-        gaps = tuple(_scrub(gap) for gap in gaps)
+        gaps = tuple(scrub(gap) for gap in gaps)
 
         # 파일 쓰기는 짧지만 이벤트 루프에서 하지 않는다. 같은 루프가 Kafka를
         # 계속 소비하고 있고, 리포트는 수십 KB까지 자란다.
@@ -105,7 +106,7 @@ class HtmlFileNotifier(Notifier):
             # 리포트가 사라지고 이 폴백조차 타지 못한다.
             _logger.error("리포트 HTML 저장 실패(%s) — 전문을 로그로 남긴다", exc)
             try:
-                _logger.info("\n%s", _scrub(render_text(report)))
+                _logger.info("\n%s", scrub(render_text(report)))
             except Exception:  # noqa: BLE001
                 # 렌더링 자체가 실패한 경우다. 그때도 이 폴백이 죽으면 안 된다.
                 _logger.exception("리포트 평문 렌더링도 실패했다")
@@ -151,21 +152,6 @@ def _unique_path(output_dir: Path, now: datetime) -> Path:
 
 
 # ────────────────────────── 평문 → 구조 ──────────────────────────
-
-
-def _scrub(text: str) -> str:
-    """UTF-8로 인코딩할 수 없는 문자를 치환한다.
-
-    provider 응답에 짝 없는 서로게이트가 섞여 오는 경우가 있다(JSON의
-    ``\\udXXX`` 이스케이프). 그대로 두면 두 경로가 동시에 무너진다 —
-    ``write_text``가 ``UnicodeEncodeError``로 실패하고, 폴백으로 전문을
-    로그에 남기려 해도 파일 핸들러가 같은 이유로 실패해 리포트가 통째로
-    사라진다. 글자 하나를 ``?``로 바꾸는 편이 진단을 잃는 것보다 낫다.
-
-    치환은 입력 시점에 한 번만 한다. 렌더 결과와 원문 블록, 폴백 로그가
-    모두 같은 문자열에서 나오므로 여기서 걸러야 전부 안전해진다.
-    """
-    return text.encode("utf-8", "replace").decode("utf-8")
 
 
 def _make_bullet(text: str) -> dict:
@@ -275,7 +261,7 @@ def _e(text: str) -> str:
     치환하면 끝이었지만, 리포트가 객체가 되면서 문자열이 수십 곳에서 나온다.
     통로가 하나이므로 여기서 거는 것이 가장 적게 틀린다.
     """
-    return html.escape(_scrub(text), quote=True)
+    return html.escape(scrub(text), quote=True)
 
 
 def _mono_attr(text: str, mono: bool | None = None) -> str:
@@ -511,10 +497,15 @@ def render_report(
             f"<ul>{items}</ul>"
             "</div>"
         )
-    elif any(row.failed for row in report.observations.timeline):
+    if any(row.failed for row in report.observations.timeline):
         # 예전에는 본문에 "분석 실패"라는 문자열이 있는지로 판정했다. 그것은
         # 모델이 그 말을 옮겨 적어 줘야만 성립하는 휴리스틱이었다. 이제는
         # 코드가 그 사실을 정확히 안다 — 실패한 분의 row.failed가 곧 근거다.
+        #
+        # elif가 아니라 if다. row.failed가 참이면 analyze_logs의 _mark_gap이
+        # 반드시 gaps에도 남기므로, elif로 두면 이 배너가 **한 번도 뜨지
+        # 않는다.** 두 배너는 다른 말을 한다 — 위는 "무엇이 빠졌는가", 이쪽은
+        # "어느 구간을 믿을 수 없는가"다.
         banners.append(
             '<div class="banner">'
             "<b>이 리포트에는 분석하지 못한 구간이 있다.</b> "

@@ -26,9 +26,14 @@ from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 # "37.1s"와 "1m" 두 가지만 나왔지만, ES는 아래 단위를 모두 쓸 수 있으므로
 # 전부 받는다.
 #
-# **긴 접미사를 먼저 매칭해야 한다.** "ms"를 "m"으로 읽으면 500밀리초가
-# 500분이 되어 최댓값 비교가 통째로 뒤집힌다. 정규식 교대(|)는 왼쪽부터
-# 시도하므로 순서가 곧 규칙이다.
+# **긴 접미사가 먼저 와야 한다.** "ms"를 "m"으로 읽으면 500밀리초가 500분이
+# 되어 최댓값 비교가 통째로 뒤집힌다.
+#
+# 지금은 정규식이 ^…$로 완전히 앵커돼 있어 백트래킹이 결국 맞는 쪽을 찾아
+# 준다 — 순서를 뒤집어도 "500ms"는 500이 된다(확인). 그래도 순서를 지키는
+# 것은, 앵커를 푸는 순간(줄 안에서 찾는 형태로 바꾸는 등) 교대(|)가 왼쪽부터
+# 시도하는 성질이 그대로 드러나 조용히 틀리기 때문이다. 순서는 안전망이지
+# 현재 동작의 근거가 아니다.
 _DURATION_UNITS_MS: tuple[tuple[str, float], ...] = (
     ("nanos", 1e-6),
     ("micros", 1e-3),
@@ -57,7 +62,12 @@ def parse_duration_ms(text: str) -> int | None:
     amount = float(match.group(1))
     unit = match.group(2)
     factor = next(f for u, f in _DURATION_UNITS_MS if u == unit)
-    return int(amount * factor)
+    # round이지 int가 아니다. ms 해상도라 1ms 미만은 어느 쪽이든 0에 가깝지만,
+    # 잘라내면 0.9ms가 0이 되고 반올림하면 1이 된다 — 경계에서 두 값의 순서가
+    # 뒤집힌다. micros/nanos 단위가 0으로만 나오는 것은 표기의 한계이지 버그가
+    # 아니다. 중요한 것은 **0과 파싱 실패가 구별된다**는 것이고, 그쪽은
+    # slow_candidates의 정렬 키가 책임진다.
+    return round(amount * factor)
 
 
 def count_by_source(logs: list[LogEntry]) -> dict[str, int]:
@@ -205,7 +215,15 @@ def slow_candidates(logs: list[LogEntry], limit: int = 5) -> list[SlowCandidate]
 
     picked: list[SlowCandidate] = []
 
-    slowlogs.sort(key=lambda e: (parse_duration_ms(e.took) or -1), reverse=True)
+    # ``or -1``이면 안 된다. parse_duration_ms("0.4ms")는 0을 돌려주는데
+    # ``0 or -1``은 -1이라, 파싱에 성공한 0ms가 파싱 실패와 같은 취급을 받아
+    # 정렬 최하위로 밀린다. 바로 아래 run_time 쪽은 처음부터 is not None을
+    # 쓰고 있었다 — 같은 함수 안에서 규칙이 갈려 있었다.
+    def _took_key(entry: SlowlogEntry) -> float:
+        ms = parse_duration_ms(entry.took)
+        return ms if ms is not None else -1
+
+    slowlogs.sort(key=_took_key, reverse=True)
     for entry in slowlogs[:limit]:
         picked.append(
             SlowCandidate(

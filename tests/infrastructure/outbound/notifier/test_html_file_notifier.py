@@ -259,6 +259,32 @@ class TestStructure:
         assert 'class="banner"' in html_out
         assert "분석하지 못한 구간이 있다" in html_out
 
+    def test_실패한_분이_있으면_gaps와_함께_배너가_둘_다_뜬다(self):
+        """프로덕션에서 실제로 나오는 조합이다.
+
+        ``row.failed``가 참이면 ``analyze_logs``의 ``_mark_gap``이 반드시
+        gaps에도 남긴다. 그래서 이 배너를 ``elif``로 두면 **한 번도 뜨지
+        않는다** — 위 테스트는 gaps를 비운 채로 통과시켜 도달 불가능한 경로에
+        거짓 확신을 주고 있었다.
+
+        두 배너는 다른 말을 한다. 위는 "무엇이 빠졌는가", 아래는 "어느 구간을
+        믿을 수 없는가"다.
+        """
+        failed_minute = TimelineRow(
+            minute=datetime(2026, 9, 10, 2, 4, tzinfo=_KST),
+            counts={"es_query_log": 12},
+            failed=True,
+        )
+        html_out = render_report(
+            _plain("1. 개요\n• 내용", Observations(timeline=(failed_minute,))),
+            _AT,
+            gaps=("02:00 ~ 02:10 구간 중 1개 분의 분석이 실패했다(전체 3개 분).",),
+        )
+
+        assert html_out.count('class="banner"') == 2
+        assert "수집하지 못한 근거가 있다" in html_out
+        assert "분석하지 못한 구간이 있다" in html_out
+
     def test_본문에_분석_실패라는_말이_있어도_배너를_띄우지_않는다(self):
         """관측값이 온전하면 본문의 표현이 배너를 만들지 못한다."""
         ok_minute = TimelineRow(

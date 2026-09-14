@@ -45,7 +45,7 @@ from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
 )
 
 # 리포트에 싣는 마스터 로그 줄 수 상한. 수집 쪽 상한(_MASTER_LOG_MAX_LINES=80)은
-# analyze_logs 호출마다 걸리므로 최대 6회면 480줄까지 쌓인다. 한 줄이 380자까지
+# analyze_logs 호출마다 걸리므로 최대 6회면 480줄까지 쌓인다. 한 줄이 평균 524자
 # 가므로(실측) 그대로 실으면 HTML이 수백 KB가 된다.
 #
 # 잘린 사실은 master_log_total로 드러난다 — "N줄 중 M줄"이 헤더에 찍힌다.
@@ -117,8 +117,10 @@ def _make_structured_error_handler(limit: int = 2):
     그래서 상한을 넘으면 **평문으로 답하라고 안내한다.** 그 답은 폴백 사다리
     2단이 받아 리포트가 되므로, 재시도를 끊어도 진단은 남는다.
 
-    스키마가 초과 길이를 잘라내므로 여기까지 오는 것은 타입이 어긋난 경우뿐이고,
-    실측에서는 아직 본 적이 없다.
+    스키마는 길이를 제한하지 않는다(``report_schema`` 모듈 docstring 참고 —
+    한국어가 글자 단위로 끊겨 ``follower_check``가 갈린 뒤로 잘라내기를 없앴다).
+    그러므로 여기까지 오는 것은 타입이 어긋난 경우뿐이고, 실측에서는 아직 본
+    적이 없다.
     """
     state = {"count": 0}
 
