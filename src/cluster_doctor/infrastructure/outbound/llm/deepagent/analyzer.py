@@ -24,6 +24,7 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
     LlmAnalyzer,
     LlmResponseError,
 )
+from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport, Observations
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
@@ -38,6 +39,17 @@ from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
     complete,
     require_supported_provider,
 )
+
+# 리포트에 싣는 마스터 로그 줄 수 상한. 수집 쪽 상한(_MASTER_LOG_MAX_LINES=80)은
+# analyze_logs 호출마다 걸리므로 최대 6회면 480줄까지 쌓인다. 한 줄이 380자까지
+# 가므로(실측) 그대로 실으면 HTML이 수백 KB가 된다.
+#
+# 잘린 사실은 master_log_total로 드러난다 — "N줄 중 M줄"이 헤더에 찍힌다.
+_MASTER_LOG_REPORT_MAX = 120
+
+# 마스터 로그 정렬의 기준점. SSH 폴백으로 온 줄은 timestamp를 뽑을 수 없어
+# None인데, None과 datetime을 직접 비교하면 TypeError가 난다.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 _DENY_FILESYSTEM = FilesystemPermission(
     operations=["read", "write"],
@@ -151,10 +163,6 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 for block in content
                 if isinstance(block, dict) and block.get("type") == "text"
             )
-        if not content:
-            # 전달할 것이 아예 없는 유일한 경우다. 이것만 예외로 올린다.
-            raise LlmResponseError("agent가 빈 응답을 반환했습니다.")
-
         # 구간 커버리지는 실행이 끝난 뒤에만 판정할 수 있다. tool은 자기 호출만
         # 알고, 분할 호출이 정당한지는 요청 구간 전체의 합집합을 봐야 안다.
         run_state["gaps"].extend(coverage_gaps(run_state.get("observed", {})))
@@ -181,11 +189,78 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 " / ".join(run_state["gaps"]),
             )
 
+        observations = _build_observations(run_state)
+
+        # 폴백 사다리. 구조화 출력은 다음 단계에서 들어오므로 지금은 모델이
+        # 늘 평문을 쓴다 — narrative_text 자리가 그것이다.
+        #
+        # 모델이 아무 말도 남기지 못한 경우가 예전에는 곧 "전달할 것이 없다"
+        # 였다. 이제는 아니다. 코드가 모은 관측값이 있으면 그 시각에 무슨 일이
+        # 있었는지는 리포트에 남으므로, 판단이 비었다고 진단을 버리지 않는다.
+        if not content:
+            if observations.is_empty():
+                # 관측값도 판단도 없다. 여기까지 오는 것은 analyze_logs가 한
+                # 번도 성공하지 않은 실행뿐이고, 그때만 예외로 올린다.
+                raise LlmResponseError("agent가 빈 응답을 반환했고 관측값도 없습니다.")
+            _logger.error(
+                "agent가 빈 응답을 반환했다 — 관측값만으로 리포트를 만든다"
+            )
+            analysis_failed = True
+
         return DiagnosisResult(
-            report=content,
+            report=DiagnosisReport(
+                observations=observations,
+                narrative=None,
+                narrative_text=content or "",
+            ),
             analysis_failed=analysis_failed,
             gaps=tuple(run_state["gaps"]),
         )
+
+
+def _build_observations(run_state: dict) -> Observations:
+    """tool들이 ``run_state``에 쌓아 둔 관측값을 도메인 객체로 굳힌다.
+
+    수집 중에는 병합이 쉬운 dict로 들고 있다가 여기서 정렬된 tuple이 된다.
+    리포트에 실린 뒤에는 바뀌지 않아야 하므로 frozen 타입으로 옮긴다.
+    """
+    observed = run_state.get("observed", {})
+    raw = run_state.get("observations", {})
+
+    timeline_map = raw.get("timeline", {})
+    node_map = raw.get("nodes", {})
+    master_map = raw.get("master_logs", {})
+    candidate_map = raw.get("candidates", {})
+
+    # timestamp가 있는 줄을 먼저, 시간순으로. SSH 폴백 줄(timestamp 없음)은
+    # 뒤로 보내되 넣은 순서를 유지한다 — 원본 파일의 순서가 곧 시간순이다.
+    ordered_master = sorted(
+        enumerate(master_map.values()),
+        key=lambda pair: (pair[1][0] is None, pair[1][0] or _EPOCH, pair[0]),
+    )
+    master_lines = tuple(line for _index, (_ts, line) in ordered_master)
+
+    return Observations(
+        time_basis=observed.get("time_basis", ""),
+        first_seen=observed.get("first_seen"),
+        last_seen=observed.get("last_seen"),
+        requested=tuple(observed.get("requested") or ()),
+        total_wait_seconds=float(raw.get("wait_seconds", 0.0)),
+        wait_cap_reached=bool(raw.get("wait_cap_reached", False)),
+        timeline=tuple(timeline_map[minute] for minute in sorted(timeline_map)),
+        nodes=tuple(sorted(node_map.values(), key=lambda row: row.node)),
+        master_logs=master_lines[:_MASTER_LOG_REPORT_MAX],
+        master_log_total=len(master_lines),
+        health=tuple(raw.get("health") or ()),
+        # id는 C1, C2 … 순으로 붙었으므로 숫자로 정렬해야 발견 순서가 된다.
+        # 문자열 정렬이면 C10이 C2 앞에 온다.
+        candidates=tuple(
+            sorted(
+                candidate_map.values(),
+                key=lambda c: int(c.candidate_id[1:] or 0),
+            )
+        ),
+    )
 
 
 def _litellm_call(

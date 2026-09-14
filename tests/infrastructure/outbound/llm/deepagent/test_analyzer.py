@@ -174,7 +174,7 @@ def test_a_degraded_run_still_delivers_the_report():
 
     result = _run_analyze_with_tools(_degrading, agent_text="분석 실패 리포트")
 
-    assert result.report == "분석 실패 리포트"
+    assert result.report.narrative_text == "분석 실패 리포트"
     assert result.analysis_failed is True
 
 
@@ -187,7 +187,7 @@ def test_supplementary_gaps_do_not_fail_the_run():
 
     result = _run_analyze_with_tools(_with_gap, agent_text="정상 리포트")
 
-    assert result.report == "정상 리포트"
+    assert result.report.narrative_text == "정상 리포트"
     assert result.analysis_failed is False
     assert result.gaps == ("es-data-02 노드 로그 SSH 수집 실패",)
 
@@ -199,6 +199,6 @@ def test_a_clean_run_still_returns_the_report():
 
     result = _run_analyze_with_tools(_clean, agent_text="정상 리포트")
 
-    assert result.report == "정상 리포트"
+    assert result.report.narrative_text == "정상 리포트"
     assert result.analysis_failed is False
     assert result.gaps == ()
