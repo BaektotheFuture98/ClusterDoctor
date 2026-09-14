@@ -46,7 +46,12 @@ from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
     merge_node_rows,
     node_metric_summary,
     slow_candidates,
+    timeline_row,
 )
+# 후보 줄은 운영자용 렌더러와 **같은 함수**로 그린다. 여기서 따로 그리면
+# 모델이 보는 수치와 리포트에 실리는 수치가 갈리는데, 그 어긋남이 이 변경
+# 전체가 없애려던 실패다(es_query_log 264건이 slowlog로 실린 일).
+from cluster_doctor.infrastructure.outbound.notifier.report_text import candidate_line
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import format_log_line
 from cluster_doctor.application.port.outbound.llm_analyzer import (
     LlmApiError,
@@ -428,6 +433,73 @@ def make_tools(
                 continue
             store[key] = replace(candidate, candidate_id=f"C{len(store) + 1}")
 
+    def _record_logs_observations(entries: list[LogEntry]) -> None:
+        """LLM을 타지 않는 관측값을 거둔다. 여기서 예외가 새면 안 된다.
+
+        ``NodeMetricEntry``·``QueryLogEntry``의 필드가 전부 non-Optional이라
+        지금은 안전하지만, 어댑터가 ``None``을 하나 흘리면 ``max(int, None)``이
+        ``TypeError``가 된다. 이 함수는 tool 안에서 불리고 tool에서 샌 예외는
+        agent 실행 전체를 죽여 리포트까지 사라지게 하므로, 방어 비용이 세
+        줄이면 건다.
+        """
+        try:
+            merge_node_rows(observations["nodes"], node_metric_summary(entries))
+            _record_candidates(entries)
+        except Exception:
+            _logger.exception("[tool] 관측값 수집 실패 — 분석은 계속한다")
+
+    def _record_failed_timeline(entries: list[LogEntry]) -> None:
+        """분석이 실패한 구간의 타임라인을 실패 표식과 함께 채운다.
+
+        행 자체가 없으면 그 분이 타임라인에서 사라지고, "실패해서 못 봤다"가
+        "아무 일도 없었다"로 읽힌다 — ``state.py``가 ``row``를 도입하며 적어 둔
+        바로 그 실패이고, ``row.failed`` 배너도 행이 없으면 뜨지 않는다.
+
+        건수와 최대값은 ``logs``만으로 계산되므로 LLM이 실패해도 정확하다.
+        이미 성공한 분은 덮지 않는다 — 겹친 구간을 다시 부른 경우다.
+        """
+        if not entries:
+            return
+        try:
+            grouped: dict[datetime, list[LogEntry]] = {}
+            for entry in entries:
+                minute = entry.timestamp.replace(second=0, microsecond=0)
+                grouped.setdefault(minute, []).append(entry)
+            for minute, bucket in grouped.items():
+                if minute not in observations["timeline"]:
+                    observations["timeline"][minute] = timeline_row(
+                        minute, bucket, failed=True
+                    )
+        except Exception:
+            _logger.exception("[tool] 실패 구간 타임라인 기록 실패")
+
+    def _candidate_block() -> str:
+        """지금까지 모인 느린 요청 후보를 id와 함께 붙인다.
+
+        프롬프트는 "코드가 [C1] [C2] … 후보로 제시하므로 너는 id와 고른 이유만
+        쓴다"고 말하는데, **그 목록을 모델에게 보내는 경로가 없었다.**
+        ``_record_candidates``는 ``run_state``에만 쓰고 tool이 돌려주는 것은
+        종합 텍스트뿐이라, ``suspect_picks[].candidate_id``는 모델이 지어낸
+        값이었고 리포트의 조인(``picks.get``)은 100% 빈 문자열을 돌려줬다 —
+        "선정 이유"가 한 번도 렌더된 적이 없다.
+
+        누적분을 매번 다 싣는다. 후보는 호출당 상한이 있고 id가 한 번 붙으면
+        바뀌지 않아 분량이 폭주하지 않으며, 마지막 호출의 반환값만 보고
+        고르게 두면 앞 구간의 후보가 선택지에서 조용히 빠진다.
+        """
+        store = observations["candidates"]
+        if not store:
+            return ""
+        ordered = sorted(
+            store.values(),
+            key=lambda c: (len(c.candidate_id), c.candidate_id),
+        )
+        lines = "\n".join(candidate_line(c) for c in ordered)
+        return (
+            "\n\n느린 요청 후보 (코드가 고른 것 — id와 수치를 그대로 쓴다):\n"
+            f"{lines}"
+        )
+
     def _record_health(payload: dict) -> None:
         """클러스터 상태를 이력에 접어 넣는다.
 
@@ -547,7 +619,6 @@ def make_tools(
                 f"{start_iso} ~ {end_iso} 구간은 분석하지 못했다. "
                 "지금까지의 결과로 리포트를 작성하라."
             )
-        analyze_state["calls"] += 1
 
         start_dt, end_dt, time_error = _parse_window(start_iso, end_iso)
         if time_error:
@@ -555,6 +626,18 @@ def make_tools(
 
         if end_dt <= start_dt:
             return "오류: end_iso가 start_iso보다 이전이거나 같다."
+
+        # 같은 구간을 두 번 부르면 상한 6회를 헛되이 태운다. 실측으로
+        # 16:09~16:17이 연달아 두 번 요청됐다 — 반환값이 앞선 호출과 같으므로
+        # 새로 얻는 것은 없고, 조회와 분 단위 LLM 호출 비용만 그대로 다시 든다.
+        # 호출 수를 세기 **전에** 거른다. 거절된 요청은 분석이 아니다.
+        if (start_dt, end_dt) in observed["analyzed"]:
+            _logger.info("[tool] analyze_logs 중복 요청 — 호출하지 않는다")
+            return (
+                f"{start_iso} ~ {end_iso} 구간은 이미 분석했다. "
+                "앞선 호출의 결과를 그대로 쓰고, 필요하면 다른 구간을 요청하라."
+            )
+        analyze_state["calls"] += 1
 
         window_minutes = (end_dt - start_dt).total_seconds() / 60
         if window_minutes > _MAX_WINDOW_MINUTES:
@@ -571,10 +654,21 @@ def make_tools(
         # tool에서 예외가 새어 나가면 agent 실행 전체가 중단된다. 조회·분석
         # 실패는 관찰 결과로 돌려줘 agent가 구간을 좁혀 재시도할 수 있게 한다.
         # make_synthesize의 LLM 호출(nodes.py)은 자체 방어가 없어 여기서 받는다.
+        logs: list[LogEntry] = []
         try:
             logs = fetch_logs(time_range)
             if not logs:
                 return f"{start_iso} ~ {end_iso} 구간에 로그 없음"
+
+            # 로그를 손에 넣은 **직후에** 거둔다. 노드 메트릭과 후보는 LLM을
+            # 전혀 타지 않는 순수 함수가 만드는 값인데, 예전에는 이 수집이
+            # _graph.invoke 뒤에 있었다. 429로 분 단위 호출이 전부 실패하면
+            # synthesize가 예외를 올리고(nodes.py), 그러면 이 자리에 도달하지
+            # 못해 **조회에 성공한 구간이 리포트에서 통째로 빈칸이 됐다** —
+            # 운영자에게는 "아무 일도 없던 시간"으로 보인다. 429가 주 실패
+            # 모드라는 이 저장소의 전제대로라면 한 구간의 모든 분이 함께
+            # 실패하는 것이 가장 흔한 실패 형태다.
+            _record_logs_observations(logs)
 
             # 마스터 노드 로그를 같은 구간으로 수집해 synthesis 컨텍스트에 준다.
             # 실패해도 주 분석을 중단하지 않는다.
@@ -648,29 +742,29 @@ def make_tools(
             # 실패는 문자열로 돌려주지만, 그 사실은 호출자에게 남긴다.
             # 남기지 않으면 agent가 "분석하지 못했다"는 리포트를 정상 종료로
             # 써 내고 트리거 서비스가 그것을 성공으로 취급한다.
+            _record_failed_timeline(logs)
             return _mark_window_failed(
                 start_dt, end_dt, f"분석 실패({start_iso} ~ {end_iso}): {exc}"
             )
         except Exception as exc:
             _logger.exception("[tool] analyze_logs 조회/분석 오류")
+            _record_failed_timeline(logs)
             return _mark_window_failed(
                 start_dt, end_dt, f"조회/분석 오류({start_iso} ~ {end_iso}): {exc}"
             )
+
+        # 타임라인은 분석이 끝나야 채워진다. 종합 리포트(모델 출력)가 아니라
+        # 이쪽이 최종 리포트의 타임라인 섹션이 된다. 분을 키로 덮어쓰는 이유:
+        # 실패한 구간을 다시 불러 성공하면 그 분의 failed 표시가 사라져야
+        # 한다. 실패 갈래는 _record_failed_timeline이 같은 자리를 메운다.
+        for finding in state["findings"]:
+            if finding.row is not None:
+                observations["timeline"][finding.row.minute] = finding.row
 
         # 일부 분이 실패한 채 종합된 경우. synthesize는 전 구간이 실패했을
         # 때만 예외를 올리므로 여기까지 왔다면 리포트는 유효하지만 근거가
         # 빠져 있다. 종합 프롬프트에 [분석 실패]로 표기되긴 하나 그것을
         # 리포트에 옮기는 것은 모델 재량이었다.
-        # 관측값을 거둔다. 종합 리포트(모델 출력)가 아니라 이쪽이 최종
-        # 리포트의 타임라인·노드 섹션이 된다. 분을 키로 덮어쓰는 이유:
-        # 실패한 구간을 다시 불러 성공하면 그 분의 failed 표시가 사라져야
-        # 한다.
-        for finding in state["findings"]:
-            if finding.row is not None:
-                observations["timeline"][finding.row.minute] = finding.row
-        merge_node_rows(observations["nodes"], node_metric_summary(logs))
-        _record_candidates(logs)
-
         failed_minutes = [f for f in state["findings"] if f.failed]
         if failed_minutes:
             _mark_gap(
@@ -681,7 +775,7 @@ def make_tools(
         observed["analyzed"].append((start_dt, end_dt))
         report = state["report"]
         _logger.info("[tool] analyze_logs 종합 결과:\n%s", report)
-        return report
+        return report + _candidate_block()
 
     @tool
     def check_new_slowlogs() -> dict:
@@ -701,6 +795,22 @@ def make_tools(
             # 건수와 양 끝 시각만 돌려준다. 유입 판정과 구간 결정에 필요한 것은
             # 그뿐이고, 전량을 돌려주면 유입이 몰릴 때 수백 건이 프롬프트에 실린다.
             times = sorted(e.timestamp for e in entries)
+            # slowlog가 미래에 발생할 수는 없다. 노드 시계가 앞서 있으면
+            # timestamp가 지금보다 뒤인 값으로 들어오고, 그대로 쓰면 last_seen이
+            # 미래가 된다. first_seen은 _base_time이 clock skew를 잡아
+            # kafka_receive_time으로 눌러 둔 값이라 기준이 서로 달라지고, 유입
+            # 구간이 "수신 시각 ~ 미래"로 벌어진다 — 실측에서 13:14~16:16(3시간)이
+            # 되어 커버리지 판정이 "10,200초를 못 봤다"고 말했다.
+            now = datetime.now(_KST)
+            ahead = [t for t in times if t > now]
+            if ahead:
+                _logger.warning(
+                    "[tool] 발생 시각이 현재보다 미래인 slowlog %d건(최대 %s) — "
+                    "clock skew로 보고 현재 시각으로 눌러 쓴다",
+                    len(ahead),
+                    _fmt(max(ahead)),
+                )
+                times = sorted(min(t, now) for t in times)
             observed["zero_streak"] = 0
             # 재트리거로 실행된 경우 기준 시각이 실제 발생보다 늦을 수 있어,
             # 관측된 것이 더 이르면 그쪽으로 당긴다.
@@ -751,8 +861,15 @@ def make_tools(
         """
         _logger.info("[tool] cluster_health()")
         result = cluster.health()
-        _record_health(result)
-        _logger.info("[tool] cluster_health → status=%s", result.get("status"))
+        # 파싱이 tool 안에서 일어난다. payload가 dict가 아니거나 숫자 칸에
+        # 문자열이 오면 int()가 ValueError를 내고, tool에서 샌 예외는 agent
+        # 실행 전체를 죽인다 — 상태 이력 한 줄 때문에 진단을 잃지 않는다.
+        # 변경 전에는 cluster.health()만 예외원이었고 반환값을 파싱하지 않았다.
+        try:
+            _record_health(result)
+            _logger.info("[tool] cluster_health → status=%s", result.get("status"))
+        except Exception:
+            _logger.exception("[tool] 클러스터 상태 이력 기록 실패")
         return result
 
     @tool
