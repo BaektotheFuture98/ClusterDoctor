@@ -243,3 +243,68 @@ def test_관측값이_전혀_없어도_렌더링이_터지지_않는다():
     text = render_text(DiagnosisReport(observations=Observations()))
 
     assert isinstance(text, str)
+
+
+# ──────────────────────────── severity_line ────────────────────────────
+
+
+def test_코드_판정임을_줄에_밝힌다():
+    # 모델의 severity와 나란히 놓이면 운영자가 둘을 같은 것으로 읽는다.
+    from cluster_doctor.domain.model.diagnosis_report import MasterEvent
+    from cluster_doctor.infrastructure.outbound.notifier.report_text import severity_line
+
+    obs = Observations(
+        master_events=(MasterEvent(timestamp=None, level="ERROR", line="x", rendered="x"),)
+    )
+
+    line = severity_line(obs)
+
+    assert "코드 판정" in line
+    assert "Warning" in line
+
+
+def test_판정_근거를_반드시_붙인다():
+    from cluster_doctor.domain.model.diagnosis_report import MasterEvent
+    from cluster_doctor.infrastructure.outbound.notifier.report_text import severity_line
+
+    obs = Observations(
+        master_events=(MasterEvent(timestamp=None, level="WARN", line="x", rendered="x"),)
+    )
+
+    assert "마스터 로그 WARN 1건" in severity_line(obs)
+
+
+def test_신호가_없으면_없다고_말한다():
+    # 빈 줄로 두면 "측정하지 않았다"와 "이상이 없다"가 구별되지 않는다.
+    from cluster_doctor.infrastructure.outbound.notifier.report_text import severity_line
+
+    assert "없음" in severity_line(Observations())
+
+
+def test_개요에_심각도_줄이_들어간다():
+    from cluster_doctor.infrastructure.outbound.notifier.report_text import (
+        SEVERITY_PREFIX,
+        overview_lines,
+    )
+
+    lines = overview_lines(Observations(time_basis="slowlog_timestamp"))
+
+    assert any(line.startswith(SEVERITY_PREFIX) for line in lines)
+
+
+def test_모델이_분류하지_않은_문제는_그_사실을_적는다():
+    from cluster_doctor.domain.model.diagnosis_report import Finding, Narrative
+
+    report = DiagnosisReport(
+        observations=Observations(
+            timeline=(TimelineRow(minute=_at(4, 22), counts={"slowlog": 1}),),
+        ),
+        narrative=Narrative(
+            headline="노드 이탈",
+            findings=(Finding(severity="", title="RC6-09 응답 불능"),),
+        ),
+    )
+
+    text = render_text(report)
+
+    assert "(모델이 분류하지 않음): RC6-09 응답 불능" in text

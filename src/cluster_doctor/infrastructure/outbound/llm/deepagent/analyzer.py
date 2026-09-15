@@ -300,6 +300,22 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             # 1단. 정상.
             narrative = narrative_model.to_domain()
             content = ""
+            # 형식은 맞았는데 판단이 비어 있을 수 있다. 실측으로 같은 구간을
+            # 두 번 돌렸을 때 한 번은 9개 필드 중 8개, 한 번은 3개만 찼다 —
+            # 프롬프트에 "반드시 채운다"를 넣은 뒤에도 그렇다. 그때 리포트에는
+            # 결론도 발견된 문제점도 근본 원인도 없는데 analysis_failed는
+            # False라, 운영자는 "분석했더니 특별한 게 없었다"로 읽는다.
+            #
+            # 사다리는 이것을 잡을 수 없다. 구조화 출력은 성공했고 관측값도
+            # 온전하니 1단이 맞다. 그러니 등급을 바꾸는 대신 **사실을
+            # 남긴다** — gaps는 notifier가 배너로 그리므로 빠진 것이 운영자에게
+            # 반드시 도달한다. 관측값 쪽 빈칸을 다루는 방식과 같다.
+            if not (narrative.headline or narrative.findings or narrative.root_cause):
+                _logger.warning("모델이 판단 필드를 하나도 채우지 않았다")
+                run_state["gaps"].append(
+                    "모델이 결론·발견된 문제점·근본 원인을 하나도 쓰지 않았다. "
+                    "이 리포트에는 관측값만 있고 판단이 없다."
+                )
         elif content:
             # 2단. 모델이 tool을 부르지 않고 평문으로 끝냈다. 관측값은 온전하고
             # 판단만 형식을 어긴 것이므로 분석 실패가 아니다 — gaps로 남긴다.

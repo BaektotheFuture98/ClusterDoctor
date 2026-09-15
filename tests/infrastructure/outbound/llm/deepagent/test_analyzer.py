@@ -399,3 +399,77 @@ def test_메시지가_없으면_빈_문자열이다():
 
     assert _last_model_text([]) == ""
     assert _last_model_text(None) == ""
+
+
+def test_판단이_비어_있으면_그_사실을_gaps로_남긴다():
+    """구조화는 성공했는데 판단 필드가 전부 빈 경우.
+
+    실측으로 같은 구간을 두 번 돌렸을 때 한 번은 9개 필드 중 8개, 한 번은
+    3개만 찼다 — 프롬프트에 "반드시 채운다"를 넣은 뒤에도 그렇다. 그때
+    리포트에는 결론도 발견된 문제점도 근본 원인도 없는데 analysis_failed는
+    False라, 운영자는 "분석했더니 특별한 게 없었다"로 읽는다.
+
+    사다리는 이것을 잡을 수 없다 — 구조화 출력은 성공했고 관측값도 온전하니
+    1단이 맞다. 등급을 바꾸는 대신 사실을 남긴다.
+    """
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+        ReportNarrative,
+        SuspectPick,
+    )
+
+    empty_judgment = ReportNarrative(
+        headline="",
+        findings=[],
+        root_cause="",
+        suspect_picks=[SuspectPick(candidate_id="C1", reason="가장 느렸다")],
+        recommendations=["노드 점검"],
+    )
+
+    with (
+        patch(
+            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.ChatLiteLLM"
+        ),
+        patch(
+            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.create_deep_agent"
+        ) as create_deep_agent,
+        patch(
+            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.make_tools",
+            side_effect=lambda **kwargs: [],
+        ),
+    ):
+        agent = MagicMock()
+        response = _make_agent_response("", structured=False)
+        response["structured_response"] = empty_judgment
+        agent.invoke.return_value = response
+        create_deep_agent.return_value = agent
+
+        from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+            DeepAgentAnalyzer,
+        )
+
+        analyzer = DeepAgentAnalyzer(
+            api_key="test-key",
+            default_model="gemini-2.5-flash",
+            cluster=MagicMock(),
+            fetch_logs=MagicMock(),
+            drain_pending=MagicMock(),
+            node_log_fetcher=MagicMock(),
+            fetch_node_logs=MagicMock(return_value=[]),
+        )
+        result = analyzer.analyze(
+            datetime(2026, 8, 27, 3, 0, tzinfo=_UTC),
+            datetime(2026, 8, 27, 3, 0, 5, tzinfo=_UTC),
+        )
+
+    assert any("판단이 없다" in gap for gap in result.gaps)
+    # 권장 조치는 살아 있으므로 리포트 자체는 버리지 않는다.
+    assert result.report.narrative.recommendations == ("노드 점검",)
+
+
+def test_판단이_하나라도_있으면_gaps에_남기지_않는다():
+    def _tools(**kwargs):
+        return []
+
+    result = _run_analyze_with_tools(_tools, agent_text="노드 이탈")
+
+    assert not any("판단이 없다" in gap for gap in result.gaps)

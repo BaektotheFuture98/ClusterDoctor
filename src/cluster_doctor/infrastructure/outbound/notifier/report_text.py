@@ -23,6 +23,7 @@ from cluster_doctor.domain.model.diagnosis_report import (
     NodeMetricRow,
     Observations,
     SlowCandidate,
+    observed_severity,
     TimelineRow,
 )
 
@@ -365,7 +366,29 @@ def overview_lines(obs: Observations) -> list[str]:
     lines.append(f"사용한 시각 기준: {obs.time_basis or '-'}")
     cap = " (대기 상한 도달)" if obs.wait_cap_reached else ""
     lines.append(f"총 대기 시간: {obs.total_wait_seconds:.0f}초{cap}")
+    lines.append(severity_line(obs))
     return lines
+
+
+# HTML 쪽이 이 줄을 골라 배지를 붙인다. 위치로 찾으면 개요에 줄이 하나
+# 늘어날 때 조용히 엉뚱한 줄이 배지를 받는다.
+SEVERITY_PREFIX = "관측된 이상 신호"
+
+
+def severity_line(obs: Observations) -> str:
+    """관측값에서 따라 나온 심각도 한 줄. **모델 판단과 구분해 적는다.**
+
+    "코드 판정"이라고 못 박는 이유: 이 값은 판단이 아니라 측정의 결과다.
+    모델의 severity와 나란히 놓이면 운영자가 둘을 같은 것으로 읽는데, 둘이
+    어긋나는 경우가 오히려 읽을 거리다.
+
+    근거를 반드시 붙인다. 근거 없는 등급은 그 자체로 이 저장소가 없애려는
+    "숫자를 옮겨 적은 판단"과 같은 것이 된다.
+    """
+    level, reasons = observed_severity(obs)
+    if not level:
+        return f"{SEVERITY_PREFIX}: 없음 (코드 판정)"
+    return f"{SEVERITY_PREFIX}: {level} (코드 판정) — {', '.join(reasons)}"
 
 
 _SEPARATOR = "─" * 40
@@ -434,8 +457,9 @@ def render_text(report: DiagnosisReport) -> str:
         findings = []
         for finding in narrative.findings:
             # severity가 비면 모델이 분류하지 않은 것이다. ": 제목"으로
-            # 그리면 빈 앞머리가 오타처럼 보이므로 표식을 붙인다.
-            label = finding.severity or "(분류 없음)"
+            # 그리면 빈 앞머리가 오타처럼 보이므로 표식을 붙인다. 코드가
+            # 대신 채우지 않는 이유는 Finding docstring에 있다.
+            label = finding.severity or "(모델이 분류하지 않음)"
             findings.append(f"{label}: {finding.title}")
             findings += [f"    - {item}" for item in finding.evidence]
         add("발견된 문제점", findings)

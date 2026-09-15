@@ -191,12 +191,91 @@ class Observations:
         return not (self.timeline or self.nodes or self.master_events or self.health)
 
 
+def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
+    """관측값만으로 심각도를 판정한다. 근거를 함께 돌려준다.
+
+    **모델의 severity를 대신하지 않는다.** 이것은 판단이 아니라 측정에서
+    기계적으로 따라 나오는 값이고, 리포트에도 "코드 판정"으로 따로 실린다.
+    두 값이 어긋나면 그것 자체가 읽을 거리다 — 모델이 Info라고 한 구간에서
+    코드가 rejected를 셌다면 모델의 판단을 의심할 근거가 된다.
+
+    필요한 이유는 실측이다. 모델이 ``severity``를 채우지 않는 일이 반복됐고
+    (프롬프트에 "반드시 고른다"를 두 군데 넣은 뒤에도 그랬다), 그래서 노드
+    이탈과 GREEN→YELLOW 전환이 분류 없이 리포트에 실렸다. 기본값을
+    ``"Info"``로 되돌리는 것은 이미 실패한 길이다 — 25초 지연과 노드 19대
+    타임아웃이 전부 Info로 나왔었다. 빈칸을 그럴듯한 값으로 채우는 대신,
+    **코드가 아는 사실로 말한다.**
+
+    판정 규칙은 전부 구조화된 필드에서 온다. 모델이 쓴 문장을 읽지 않는다 —
+    읽기 시작하면 모델 산문 파싱이 되고, 그것이 정확히 이 저장소가 두 번
+    당한 실패다.
+
+      Critical  rejected > 0        요청이 실제로 거절됐다. 사용자가 받은 오류다
+      Warning   마스터 ERROR        클러스터 이벤트가 오류 수준으로 찍혔다
+                분석 실패한 분      그 시각의 근거가 리포트에 없다
+      Info      마스터 WARN         임계값 초과 경고. 흔하지만 무시할 값은 아니다
+      (없음)    위 어느 것도 아님
+
+    **클러스터 상태(health)는 규칙에 넣지 않는다.** ``cluster_health``는 ES
+    실시간 API라 과거를 모르고, 과거 사고를 분석하면 그 값은 진단을 돌린
+    시점의 상태다(리포트도 그렇게 경고한다). 분석 구간 안에 들어오는 관측만
+    센다 — 밖의 값으로 심각도를 매기면 사고와 무관한 시각의 green이 "정상"
+    판정을 만든다.
+    """
+    reasons: list[str] = []
+    level = ""
+
+    rejected = sum(
+        row.search_rejected_max + row.write_rejected_max for row in obs.nodes
+    ) or sum(
+        row.search_rejected_max + row.write_rejected_max for row in obs.timeline
+    )
+    if rejected:
+        level = "Critical"
+        reasons.append(f"search/write rejected {rejected}건")
+
+    errors = sum(1 for e in obs.master_events if e.level.upper() == "ERROR")
+    warns = sum(1 for e in obs.master_events if e.level.upper() == "WARN")
+    failed_minutes = sum(1 for row in obs.timeline if row.failed)
+
+    if errors:
+        level = level or "Warning"
+        reasons.append(f"마스터 로그 ERROR {errors}건")
+    if failed_minutes:
+        level = level or "Warning"
+        reasons.append(f"분석하지 못한 분 {failed_minutes}개")
+    if warns:
+        level = level or "Info"
+        reasons.append(f"마스터 로그 WARN {warns}건")
+
+    for point in obs.health:
+        if point.status and point.status.lower() != "green" and _inside(point, obs):
+            level = "Critical" if point.status.lower() == "red" else (level or "Warning")
+            reasons.append(f"클러스터 상태 {point.status}")
+            break
+
+    return level, tuple(reasons)
+
+
+def _inside(point: HealthPoint, obs: Observations) -> bool:
+    """상태 관측이 분석 구간 안에서 일어났는가."""
+    if not obs.requested:
+        return False
+    start = min(s for s, _e in obs.requested)
+    end = max(e for _s, e in obs.requested)
+    return start <= point.at <= end
+
+
 @dataclass(frozen=True)
 class Finding:
     """모델이 지목한 문제 하나.
 
     ``severity``가 필드인 것이 요점이다. 예전에는 모델이 ``"Critical: …"``로
     쓰고 notifier가 정규식으로 앞머리를 떼어 배지를 붙였다. 이제는 값으로 온다.
+
+    비어 있을 수 있다. 그때는 렌더러가 "모델이 분류하지 않음"으로 그린다 —
+    코드가 대신 채우지 않는다. 이 필드는 **모델의 판단**이고, 관측값에서
+    따라 나오는 심각도는 ``observed_severity``가 따로 낸다.
     """
 
     severity: str
