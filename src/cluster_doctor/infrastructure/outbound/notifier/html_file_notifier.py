@@ -31,16 +31,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cluster_doctor.application.port.outbound.notifier import Notifier
-from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
+from cluster_doctor.domain.model.diagnosis_report import (
+    DiagnosisReport,
+    Observations,
+    observed_severity,
+)
 from cluster_doctor.infrastructure.outbound.notifier.report_text import (
+    SEVERITY_PREFIX,
     candidate_details,
     candidate_line,
     health_lines,
     master_log_lines,
-    scrub,
     node_lines,
     overview_lines,
     render_text,
+    scrub,
     timeline_line,
 )
 
@@ -324,6 +329,22 @@ def _render_items(items: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _overview_block(obs: Observations) -> list[dict]:
+    """개요 불렛. 코드 판정 심각도 줄만 배지를 받는다.
+
+    배지를 붙이는 이유는 눈에 띄어야 해서다 — 모델이 severity를 채우지 않는
+    일이 반복돼 노드 이탈이 분류 없이 나갔고, 그때 리포트에서 심각도를 말하는
+    것은 이 줄뿐이다. 판정 근거는 줄 안에 이미 적혀 있다.
+    """
+    level, _reasons = observed_severity(obs)
+    return [
+        _bullet(line, severity=level or None)
+        if line.startswith(SEVERITY_PREFIX)
+        else _bullet(line)
+        for line in overview_lines(obs)
+    ]
+
+
 def _bullet(
     text: str,
     *,
@@ -370,7 +391,7 @@ def _sections_from_report(report: DiagnosisReport) -> list[_Section]:
     """
     obs = report.observations
     blocks: list[tuple[str, list[dict]]] = [
-        ("인시던트 개요", [_bullet(line) for line in overview_lines(obs)]),
+        ("인시던트 개요", _overview_block(obs)),
         (
             "분 단위 타임라인 (관측값)",
             _raw_block([timeline_line(row) for row in obs.timeline]),

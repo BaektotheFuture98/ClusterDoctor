@@ -207,7 +207,10 @@ headline, findings, root_cause, supporting **이 넷은 비워 두지 않는다.
 
   headline         한 문장 결론. (필수)
   findings         근거를 댈 수 있는 문제. severity를 **반드시 고른다**
-                   (Critical/Warning/Info). 비워 두면 "분류 없음"으로 실린다.
+                   (Critical/Warning/Info). 비우면 "모델이 분류하지 않음"으로
+                   실린다. 코드도 관측값에서 심각도를 따로 내지만 그것은
+                   rejected 건수·로그 레벨 같은 측정에서 기계적으로 나온
+                   값이고, 무엇이 왜 심각한지는 네가 판단해야 한다.
                    evidence에는 로그 원문이나 수치를 시각과 함께 짧게 인용한다.
                    근거를 댈 수 없는 항목은 쓰지 않는다. 문제가 없으면 Info로
                    "특이사항 없음"을 하나 남긴다. (필수)
