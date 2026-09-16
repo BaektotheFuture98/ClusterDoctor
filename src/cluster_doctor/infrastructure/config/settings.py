@@ -86,9 +86,9 @@ class Settings(BaseSettings):
     def _require_gemini_key_when_selected(cls, v: str, info) -> str:
         """선택된 provider의 키만 요구한다.
 
-        예전에는 provider와 무관하게 Gemini 키를 요구했다. 쓰지 않는 키를
-        강제하는 한편, 정작 쓰는 키가 비어 있으면 통과시켜 진단 요청 한 건을
-        통째로 날린 뒤에야 알게 됐다.
+        provider와 무관하게 한쪽 키를 요구하면 쓰지 않는 키를 강제하면서,
+        정작 쓰는 키가 비어 있어도 통과시킨다. 그러면 진단 요청 한 건을 통째로
+        날린 뒤에야 알게 된다.
 
         필드 단위 검증기를 쓰는 이유는 그대로다: model_validator(mode="after")는
         ValidationError.__str__ 안에 input_value=<모델 전체 dict>를 담아
@@ -125,8 +125,9 @@ class Settings(BaseSettings):
     def llm_api_key(self) -> str:
         """선택된 provider의 API 키.
 
-        호출부가 provider를 분기하지 않게 한다. 예전에는 dependencies가
-        gemini_api_key를 직접 읽어, .env에 NVIDIA 설정을 넣어도 Gemini로 갔다.
+        호출부가 provider를 분기하지 않게 한다. 조립부가 특정 provider의 키를
+        직접 읽으면 ``.env``에 무엇을 적어도 그쪽으로 가고, 어디에도 오류가
+        남지 않는다.
 
         dict 조회가 KeyError를 낼 수 없다 — _require_known_provider가
         통과시킨 값만 여기 도달한다.

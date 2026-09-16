@@ -9,13 +9,12 @@
    간격으로 최대 4회 연속 실행하므로(``_MAX_CONSECUTIVE_RETRIGGERS=3``) 증폭이
    한 번 더 곱해진다.
 
-   주의: 예전에는 ``max_retries=1``이었다. ``langchain_google_genai``에서 0은
-   "Google SDK 기본값을 쓰라"(5회 재시도)로 해석되는 특수값이었기 때문이다.
-   ``ChatLiteLLM``에는 그 해석이 없으므로 0이 곧 재시도 없음이다.
+   주의: ``langchain_google_genai``에서 0은 "Google SDK 기본값을 쓰라"(5회
+   재시도)로 해석되는 특수값이다. ``ChatLiteLLM``에는 그 해석이 없으므로 0이
+   곧 재시도 없음이다.
 
-2. provider와 모델이 코드에 박히지 않고 주입된 값을 쓴다는 것. 예전에는
-   Gemini 전용 ``ChatGoogleGenerativeAI``였고 provider가 하드코딩돼 있어,
-   ``.env``에 무엇을 적어도 Gemini로 갔다.
+2. provider와 모델이 코드에 박히지 않고 주입된 값을 쓴다는 것. provider를
+   하드코딩하면 ``.env``에 무엇을 적어도 그쪽으로 간다.
 
 둘 다 예외 없이 조용히 어긋나므로 인자 자체를 고정해 두지 않으면 아무도
 못 알아챈다.
@@ -183,9 +182,9 @@ def _run_analyze_with_tools(
 
 
 def test_a_degraded_run_still_delivers_the_report():
-    # 예전에는 여기서 LlmApiError를 던졌고, 그러면 _run_agent이 notify를
-    # 건너뛰어 리포트가 통째로 사라졌다 — 운영자는 logs/app.log를 뒤져야
-    # 실패를 알 수 있었다. 이제 본문은 전달하고 재트리거만 막는다.
+    # 여기서 예외를 던지면 _run_agent이 notify를 건너뛰어 리포트가 통째로
+    # 사라지고, 운영자는 logs/app.log를 뒤져야 실패를 알 수 있다. 본문은
+    # 전달하고 재트리거만 막는다.
     def _degrading(**kwargs):
         # analyze_logs가 실패 문자열을 돌려줄 때 하는 일과 같다.
         kwargs["run_state"]["degraded"] = True
@@ -267,8 +266,8 @@ def test_근거_없는_평문은_정상_진단으로_나가지_않는다():
 
     관측값이 비었다는 것은 analyze_logs가 한 번도 성공하지 않았다는 뜻이다.
     429 직후 모델이 "로그를 확인할 수 없습니다" 한 줄로 끝내면 이 갈래에
-    떨어지는데, 예전에는 그것이 analysis_failed=False로 나가 재트리거까지
-    허용됐다 — 근거가 하나도 없는 판단이 정상 진단으로 보였다.
+    떨어진다. 그것을 analysis_failed=False로 내보내면 근거가 하나도 없는
+    판단이 정상 진단으로 보이고 재트리거까지 허용된다.
 
     평문은 그대로 싣는다. 예외를 올리면 "리포트는 항상 전달된다"가 깨진다.
     """
@@ -284,9 +283,8 @@ def test_근거_없는_평문은_정상_진단으로_나가지_않는다():
 def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든다():
     """폴백 사다리 3단과 4단.
 
-    예전에는 빈 응답이 곧 LlmResponseError였다. 그것은 "전달할 것이 없다"가
-    참이었을 때의 판단이고, 이제는 코드가 모은 관측값이 있다. 관측값마저
-    비었을 때만 예외를 올린다.
+    빈 응답이 곧 "전달할 것이 없다"는 아니다. 코드가 모은 관측값이 있으므로
+    관측값마저 비었을 때만 예외를 올린다.
     """
     from datetime import datetime as _dt
 
