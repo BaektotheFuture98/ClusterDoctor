@@ -135,10 +135,10 @@ def test_a_failed_analysis_that_is_never_retried_is_a_failed_diagnosis():
 def test_a_failure_that_a_retry_resolved_is_not_a_failed_diagnosis():
     """일시 오류 뒤 같은 구간 재호출이 성공하면 진단은 성립한 것이다.
 
-    예전에는 첫 실패가 run_state["degraded"]를 박고 아무것도 그것을 되돌리지
-    않았다. 실측(13:54 status=529 실패 → 14:00 같은 구간 재호출 → 14:04 성공)에서
-    리포트에 붉은 "분석 실패" 배너가 붙고 재트리거까지 막혔다. 거짓 배너는
-    배너 전체의 신뢰를 깎는다.
+    첫 실패가 run_state["degraded"]를 박으면 되돌릴 방법이 없다. 실측
+    (13:54 status=529 실패 → 14:00 같은 구간 재호출 → 14:04 성공)에서 리포트에
+    붉은 "분석 실패" 배너가 붙고 재트리거까지 막혔다. 거짓 배너는 배너 전체의
+    신뢰를 깎는다.
     """
     from cluster_doctor.domain.model.log_entry import SlowlogEntry
     from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
@@ -324,10 +324,9 @@ def test_check_new_slowlogs_reports_an_empty_queue_as_zero():
 # --------------------------------------------------------------------------
 # ES 조회는 ClusterRepository 포트를 거친다.
 #
-# 이전에는 raw Elasticsearch 클라이언트를 그대로 주입받아 tool 안에서
-# es_client.cluster.health()를 직접 불렀다. 포트와 어댑터가 정의돼 있는데도
-# 아무도 조립하지 않아, 어댑터의 health()와 tool 본문이 같은 코드로 중복돼
-# 있었고 실행되는 쪽은 tool이었다.
+# raw Elasticsearch 클라이언트를 그대로 주입받으면 tool이 es_client를 직접
+# 부르게 된다. 포트와 어댑터가 정의돼 있어도 아무도 조립하지 않으면 어댑터의
+# health()와 tool 본문이 같은 코드로 중복되고, 실행되는 쪽은 tool이다.
 # --------------------------------------------------------------------------
 
 def test_cluster_health_tool_goes_through_the_port():
@@ -683,10 +682,10 @@ def test_get_node_info_is_gone():
 # --------------------------------------------------------------------------
 # 유입 구간의 관측과 커버리지
 #
-# 예전에는 프롬프트가 agent에게 first_seen·last_seen·zero_streak를 "계속
-# 갱신할 값"으로 시켰다. check_new_slowlogs가 호출분만 돌려주고 누적을 하지
-# 않으므로, 여러 호출에 걸친 값을 모델이 기억으로 들고 있는 구조였다.
-# 틀려도 검증이 없었고, 구간이 좁아지면 근거가 조용히 사라졌다.
+# first_seen·last_seen·zero_streak의 누적을 모델에게 맡기면 안 된다.
+# check_new_slowlogs가 호출분만 돌려주고 누적을 하지 않으므로, 여러 호출에
+# 걸친 값을 모델이 기억으로 들고 있게 된다. 틀려도 검증이 없고, 구간이
+# 좁아지면 근거가 조용히 사라진다.
 #
 # 커버리지 판정에서 가장 조심할 것은 오경보다. 없는 문제를 보고하면 배너가
 # 잡음이 되고, 잡음이 된 배너는 읽히지 않는다.
@@ -795,10 +794,10 @@ def test_two_empty_checks_settle_the_inflow_and_one_does_not():
 # 분석이 실패해도 코드가 아는 관측값은 살아남는다
 #
 # timeline_row·node_metric_summary·slow_candidates는 LLM을 전혀 타지 않는
-# 순수 함수다. 예전에는 이 수집이 _graph.invoke **뒤에** 있어서, 429로 분
-# 단위 호출이 전부 실패하면(synthesize가 LlmApiError를 올린다) 조회에
-# 성공한 구간이 리포트에서 통째로 빈칸이 됐다 — 운영자에게는 "아무 일도
-# 없던 시간"으로 보인다. 429가 주 실패 모드라는 전제대로라면 한 구간의 모든
+# 순수 함수다. 이 수집이 _graph.invoke **뒤에** 있으면, 429로 분 단위 호출이
+# 전부 실패할 때(synthesize가 LlmApiError를 올린다) 조회에 성공한 구간이
+# 리포트에서 통째로 빈칸이 된다 — 운영자에게는 "아무 일도 없던 시간"으로
+# 보인다. 429가 주 실패 모드라는 전제대로라면 한 구간의 모든
 # 분이 함께 실패하는 것이 가장 흔한 실패 형태다.
 # --------------------------------------------------------------------------
 

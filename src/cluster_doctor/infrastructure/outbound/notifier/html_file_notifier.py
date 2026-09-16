@@ -262,9 +262,9 @@ def _parse(message: str) -> list[_Section]:
 def _e(text: str) -> str:
     """이 모듈에서 텍스트가 HTML로 들어가는 유일한 통로.
 
-    여기서 ``_scrub``을 함께 건다. 예전에는 ``notify`` 진입부에서 문자열 하나를
-    치환하면 끝이었지만, 리포트가 객체가 되면서 문자열이 수십 곳에서 나온다.
-    통로가 하나이므로 여기서 거는 것이 가장 적게 틀린다.
+    여기서 ``scrub``을 함께 건다. 리포트가 객체라 문자열이 수십 곳에서 나오므로
+    진입부에서 한 번 치환하는 것으로는 부족하다. 통로가 하나이니 여기서 거는
+    것이 가장 적게 틀린다.
     """
     return html.escape(scrub(text), quote=True)
 
@@ -519,9 +519,9 @@ def render_report(
             "</div>"
         )
     if any(row.failed for row in report.observations.timeline):
-        # 예전에는 본문에 "분석 실패"라는 문자열이 있는지로 판정했다. 그것은
-        # 모델이 그 말을 옮겨 적어 줘야만 성립하는 휴리스틱이었다. 이제는
-        # 코드가 그 사실을 정확히 안다 — 실패한 분의 row.failed가 곧 근거다.
+        # 본문에 "분석 실패"라는 문자열이 있는지로 판정하지 않는다. 그것은
+        # 모델이 그 말을 옮겨 적어 줘야만 성립하는 휴리스틱이다 — 코드는
+        # 실패한 분의 row.failed로 그 사실을 정확히 안다.
         #
         # elif가 아니라 if다. row.failed가 참이면 analyze_logs의 _mark_gap이
         # 반드시 gaps에도 남기므로, elif로 두면 이 배너가 **한 번도 뜨지

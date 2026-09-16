@@ -74,10 +74,9 @@ def test_close_clickhouse_client_closes_the_cached_client(monkeypatch):
 def test_selected_provider_reaches_the_analyzer(monkeypatch):
     """provider 선택이 analyzer까지 도달해야 .env 설정이 의미를 갖는다.
 
-    예전에는 이 조립 함수가 s.gemini_api_key/s.gemini_model을 직접 읽었다.
-    .env에 NVIDIA 설정을 넣어도 Gemini로 갔고, extra="ignore" 때문에 경고조차
-    없었다 — MICRO_BATCH_SECONDS 때 겪은 "문서화된 설정이 조용히 무시된다"와
-    같은 모양의 사고다.
+    이 조립 함수가 s.gemini_api_key/s.gemini_model을 직접 읽으면 .env에 NVIDIA
+    설정을 넣어도 Gemini로 가고, extra="ignore" 때문에 경고조차 없다 —
+    "문서화된 설정이 조용히 무시된다"는 실측 사고와 같은 모양이다.
     """
     monkeypatch.setattr(dependencies, "_get_es_client", lambda: MagicMock())
     monkeypatch.setattr(dependencies, "_get_log_repository", lambda: MagicMock())

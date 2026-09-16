@@ -31,11 +31,10 @@ class StdoutNotifier(Notifier):
         # HTML 쪽과 같은 render_text를 쓴다. 두 notifier가 각자 그리면 같은
         # 관측값이 화면마다 다르게 보인다.
         #
-        # 렌더링을 notify 안에서 하게 되면서 실패 갈래가 생겼다. 예전에는
-        # 완성된 문자열을 로그에 넣을 뿐이었다. 짝 없는 서로게이트가 섞이면
-        # 로그 핸들러의 인코딩이 터지고, 그 예외가 새면 _run_agent의
-        # succeeded가 False로 남아 리포트도 잃고 재트리거까지 막힌다 —
-        # HtmlFileNotifier가 통째로 코드를 들여 막고 있는 그 사고다.
+        # 렌더링이 notify 안에서 일어나므로 실패 갈래가 있다. 짝 없는
+        # 서로게이트가 섞이면 로그 핸들러의 인코딩이 터지고, 그 예외가 새면
+        # _run_agent의 succeeded가 False로 남아 리포트도 잃고 재트리거까지
+        # 막힌다 — HtmlFileNotifier가 통째로 코드를 들여 막는 그 사고다.
         try:
             _logger.info("\n%s", scrub(render_text(report)))
         except Exception:  # noqa: BLE001

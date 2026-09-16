@@ -274,10 +274,9 @@ class DeepAgentAnalyzer(LlmAnalyzer):
         unresolved = unresolved_failure(run_state.get("observed", {}))
         analysis_failed = run_state["degraded"] or unresolved is not None
 
-        # 분석이 실패해도 본문은 전달한다. 예전에는 여기서 LlmApiError를
-        # 던졌는데, 그러면 notify가 호출되지 않아 리포트가 사라졌다 —
-        # 운영자는 logs/app.log를 뒤져야 실패를 알 수 있었다. 재트리거를
-        # 막는 목적은 analysis_failed가 그대로 담당한다.
+        # 분석이 실패해도 본문은 전달한다. 여기서 예외를 던지면 notify가
+        # 호출되지 않아 리포트가 사라지고, 운영자는 logs/app.log를 뒤져야
+        # 실패를 알 수 있다. 재트리거를 막는 목적은 analysis_failed가 담당한다.
         if analysis_failed:
             _logger.error(
                 "분석이 실패한 채 리포트가 작성되었다 — 재트리거하지 않는다%s",
@@ -342,9 +341,8 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             # 성공하지 않은 실행뿐이고, 그때만 예외로 올린다.
             raise LlmResponseError("agent가 빈 응답을 반환했고 관측값도 없습니다.")
         else:
-            # 3단. 모델이 아무 말도 남기지 못했다. 예전에는 이것이 곧 "전달할 것이
-            # 없다"였지만, 이제는 코드가 모은 관측값이 있다. 그 시각에 무슨 일이
-            # 있었는지는 리포트에 남는다.
+            # 3단. 모델이 아무 말도 남기지 못했다. 그래도 코드가 모은 관측값이
+            # 있으므로 그 시각에 무슨 일이 있었는지는 리포트에 남는다.
             _logger.error("agent가 빈 응답을 반환했다 — 관측값만으로 리포트를 만든다")
             analysis_failed = True
 
