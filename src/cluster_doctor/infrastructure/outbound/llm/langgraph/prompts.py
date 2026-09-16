@@ -127,10 +127,10 @@ def build_minute_prompt(minute_logs: list[LogEntry], minute_label: str) -> str:
     이 그래프의 존재 이유다.
 
     응답 *형식*은 지시하지 않는다. 이 호출에는 ``response_format=MinuteOutput``이
-    걸려 있어 스키마가 형식을 강제하기 때문이다. 예전에는 여기서 "요약:/근거:
-    형식으로 답하라"고 시켰는데, 모순된 형식 계약 두 개가 동시에 전달되는
-    상태였다 — 스키마 쪽이 이기므로 그 지시는 효과 없이 구간마다 토큰만
-    축냈다. 형식 대신 각 필드가 무엇을 담아야 하는지만 말한다.
+    걸려 있어 스키마가 형식을 강제하기 때문이다. 여기에 "요약:/근거: 형식으로
+    답하라"를 더하면 모순된 형식 계약 두 개가 동시에 전달된다 — 스키마 쪽이
+    이기므로 그 지시는 효과 없이 구간마다 토큰만 축낸다. 형식 대신 각 필드가
+    무엇을 담아야 하는지만 말한다.
     """
     grouped: dict[str, list[LogEntry]] = {}
     for log in minute_logs:
@@ -276,8 +276,7 @@ state change, allocation 실패 등)가 slowlog 급증 시각과 겹치면 인�
    분마다 한 줄, 시간순. 아래 key=value 형식을 그대로 쓴다:
    HH:MM 건수=<소스별로 그대로> took_max=<값> runtime_max=<값> jvm_heap_max=<%> rejected=<search>/<write> 특이사항=<...>
    건수 칸은 소스마다 갈라 쓴다(slowlog=0 es_query_log=264 node_metric=57).
-   한 칸으로 뭉치지 마라 — 예전에는 slowlog=<건수> 한 칸이었고, 그래서
-   es_query_log 264건이 slowlog 건수로 실렸다(실측). 0인 소스도 0으로 쓴다.
+   한 칸으로 뭉치지 마라. 0인 소스도 0으로 쓴다.
    값이 없는 항목은 "-", 특이사항이 없으면 특이사항=없음. 판단어를 쓰지 않는다.
    건수는 위에 주어진 값을 쓴다. 로그 줄을 직접 세지 않는다.
    [분석 실패]로 표시된 분도 건수와 함께 그 사실을 적는다.

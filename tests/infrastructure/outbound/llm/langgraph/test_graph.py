@@ -110,10 +110,9 @@ def _run(llm, logs, time_range=TR):
 def test_build_graph_requires_a_structured_minute_caller():
     """텍스트 전용 모드는 없다.
 
-    예전에는 call_llm_minute을 생략하면 분별 호출에 response_format이 걸리지
-    않은 호출자가 쓰였고, 응답을 텍스트로만 파싱했다. 프로덕션은 그 경로를
-    쓴 적이 없는데 테스트만 그쪽을 검증하고 있었다. 생략을 막아 두 갈래가
-    다시 갈라지지 않게 한다.
+    call_llm_minute 생략을 허용하면 response_format이 걸리지 않은 호출자가
+    쓰이고 응답을 텍스트로만 파싱하는 갈래가 생긴다. 프로덕션은 그 경로를 쓰지
+    않으면서 테스트만 그쪽을 검증하게 되므로, 생략 자체를 막는다.
     """
     with pytest.raises(TypeError):
         build_graph(_Recorder())

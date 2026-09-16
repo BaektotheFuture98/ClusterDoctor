@@ -56,8 +56,8 @@ def _ymd_hms(moment: datetime) -> str:
 def timeline_line(row: TimelineRow) -> str:
     """분 한 칸. 소스마다 칸이 따로 있는 것이 요점이다.
 
-    예전에는 ``slowlog=<건수>`` 한 칸에 세 소스가 뭉개졌고, 그래서
-    es_query_log 264건이 slowlog 건수로 리포트에 실렸다(실측).
+    ``slowlog=<건수>`` 한 칸에 세 소스를 뭉치면 실측으로 es_query_log 264건이
+    slowlog 건수로 리포트에 실린다.
     """
     counts = " ".join(
         f"{label}={row.counts.get(key, 0)}" for key, label in _SOURCE_ORDER
@@ -415,9 +415,9 @@ def render_text(report: DiagnosisReport) -> str:
     ``StdoutNotifier``와 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
     함수들로 따로 조립하지만 내용은 같다.
 
-    섹션 번호는 코드가 센다. 예전에는 제목에 박아 두었는데, 빈 섹션 하나가
-    건너뛰어지면 6 다음이 8이 됐다. HTML 쪽(``_sections_from_report``)은 처음부터
-    다시 번호를 매기므로 같은 섹션이 두 출력에서 다른 번호로 불리기까지 했다.
+    섹션 번호는 코드가 센다. 제목에 박아 두면 빈 섹션 하나가 건너뛰어질 때
+    6 다음이 8이 되고, HTML 쪽(``_sections_from_report``)은 처음부터 다시 번호를
+    매기므로 같은 섹션이 두 출력에서 다른 번호로 불린다.
     """
     obs = report.observations
     out: list[str] = []

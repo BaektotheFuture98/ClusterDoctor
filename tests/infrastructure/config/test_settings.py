@@ -67,9 +67,8 @@ def test_provider_defaults_to_gemini(monkeypatch):
 def test_selecting_nvidia_switches_key_and_model(monkeypatch):
     """provider를 바꾸면 키와 모델이 함께 그쪽으로 간다.
 
-    호출부가 provider를 분기하지 않게 하려고 프로퍼티로 묶었다. 예전에는
-    dependencies가 s.gemini_api_key를 직접 읽어, .env에 NVIDIA 설정을 넣어도
-    Gemini로 갔다.
+    호출부가 provider를 분기하지 않게 하려고 프로퍼티로 묶었다. 조립부가
+    s.gemini_api_key를 직접 읽으면 .env에 NVIDIA 설정을 넣어도 Gemini로 간다.
     """
     for k, v in REQUIRED.items():
         monkeypatch.setenv(k, v)
@@ -84,8 +83,8 @@ def test_selecting_nvidia_switches_key_and_model(monkeypatch):
 def test_nvidia_selected_without_its_key_is_rejected(monkeypatch):
     """쓰는 키가 비어 있으면 기동을 막는다.
 
-    예전에는 provider와 무관하게 Gemini 키만 요구했다. 정작 쓰는 키가 비어도
-    통과해, 첫 진단 요청을 통째로 날린 뒤에야 알게 됐다.
+    provider와 무관하게 한쪽 키만 요구하면 정작 쓰는 키가 비어도 통과해,
+    첫 진단 요청을 통째로 날린 뒤에야 알게 된다.
     """
     for k, v in REQUIRED.items():
         monkeypatch.setenv(k, v)
@@ -178,9 +177,9 @@ def broken_settings(monkeypatch):
 def test_get_settings_converts_validation_failure_to_configuration_error(broken_settings):
     """가드는 부팅 경로가 아니라 get_settings 안에 있어야 한다.
 
-    이전에는 main.py의 lifespan에만 있어서, Settings()나 get_settings()를
-    직접 부르는 스크립트·테스트 헬퍼는 그대로 raw ValidationError를 받았고
-    거기에 실린 API 키가 출력됐다(실제로 발생).
+    가드가 main.py의 부팅 경로에만 있으면, Settings()나 get_settings()를 직접
+    부르는 스크립트·테스트 헬퍼는 raw ValidationError를 그대로 받고 거기에
+    실린 API 키가 출력된다(실측으로 발생).
     """
     with pytest.raises(ConfigurationError) as excinfo:
         get_settings()
@@ -238,7 +237,7 @@ def test_env_example_documents_only_settings_the_code_reads():
 
 
 def test_micro_batch_seconds_is_configurable(monkeypatch):
-    # .env에 적어둔 값이 실제로 동작에 반영돼야 한다. 예전에는
+    # .env에 적어둔 값이 실제로 동작에 반영돼야 한다. 실측으로
     # FLUSH_INTERVAL_SECONDS가 문서에만 있고 코드에는 없어, 설정해도
     # 하드코딩된 10초로 동작하면서 아무 경고가 없었다.
     monkeypatch.setenv("GEMINI_API_KEY", "k")

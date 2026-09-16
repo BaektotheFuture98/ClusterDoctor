@@ -61,8 +61,8 @@ def test_all_three_are_log_entries():
 
 
 def test_source_is_fixed_per_type_not_passed_in():
-    # 예전에는 source를 생성자에 매번 넘겨야 했다 — 오타 한 번이면
-    # build_minute_prompt의 소스별 묶기가 조용히 어긋난다.
+    # source를 생성자로 받으면 오타 한 번에 build_minute_prompt의 소스별
+    # 묶기가 조용히 어긋난다.
     assert SlowlogEntry.source == "slowlog"
     assert QueryLogEntry.source == "es_query_log"
     assert NodeMetricEntry.source == "node_metric"

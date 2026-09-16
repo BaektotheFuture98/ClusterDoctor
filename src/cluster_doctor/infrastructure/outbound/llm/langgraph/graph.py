@@ -51,9 +51,9 @@ def build_graph(call_llm: LlmCaller, call_llm_minute: LlmCaller):
     누구에게 묻는지 모른다 — 그 결정은 조립 시점(``analyzer.py``)에 끝난다.
 
     ``call_llm_minute``은 분 단위 분석용으로, ``response_format``이 걸려
-    structured output(JSON)을 돌려주는 호출자다. 필수 인자다 — 예전에는
-    생략하면 텍스트 파싱 모드로 갈라졌는데, 프로덕션은 그 갈래를 쓴 적이
-    없으면서 테스트만 그쪽을 검증하고 있었다. 응답이 JSON이 아닐 때의 대비는
+    structured output(JSON)을 돌려주는 호출자다. **필수 인자다.** 생략을
+    허용하면 텍스트 파싱 갈래가 생기는데, 프로덕션은 그쪽을 쓰지 않으면서
+    테스트만 그것을 검증하게 된다. 응답이 JSON이 아닐 때의 대비는
     ``analyze_minute`` 안의 폴백이 담당한다.
     """
     builder = StateGraph(GraphState)

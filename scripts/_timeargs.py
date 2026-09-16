@@ -17,10 +17,9 @@ def force_utf8_console() -> None:
 
     Windows Python은 stdout 인코딩을 콘솔 코드페이지가 아니라 **로케일**로
     정한다. 한국어 Windows에서는 cp949라, 콘솔이 이미 UTF-8(chcp 65001)
-    이어도 한글이 깨져 나온다(실측). 예전에는 실행할 때마다
-    ``$env:PYTHONIOENCODING = "utf-8"``을 치게 안내했는데, 그것은 파이썬이
-    뜨기 전에 정해져야 하는 값이라 .env로는 해결되지 않고, 빠뜨리면
-    조용히 깨진 글자만 남는다.
+    이어도 한글이 깨져 나온다(실측). ``$env:PYTHONIOENCODING = "utf-8"``을
+    치게 안내하는 것으로는 부족하다 — 파이썬이 뜨기 전에 정해져야 하는 값이라
+    .env로는 해결되지 않고, 빠뜨리면 조용히 깨진 글자만 남는다.
 
     ``errors="replace"``를 주는 이유는 html_file_notifier._scrub과 같다 —
     인코딩할 수 없는 문자 하나가 출력 전체를 죽이면 안 된다.

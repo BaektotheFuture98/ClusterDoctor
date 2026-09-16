@@ -82,9 +82,9 @@ def count_by_source(logs: list[LogEntry]) -> dict[str, int]:
 def timeline_row(minute: datetime, logs: list[LogEntry], *, failed: bool = False) -> TimelineRow:
     """분 한 칸의 관측값을 만든다.
 
-    ``counts``가 소스별로 갈려 있는 것이 요점이다. 예전에는 프롬프트가 이 값을
-    ``slowlog=<건수>`` 한 칸으로 뭉개라고 시켰고, 그래서 es_query_log 264건이
-    slowlog 건수로 리포트에 실렸다(실측).
+    ``counts``가 소스별로 갈려 있는 것이 요점이다. 한 칸으로 뭉치면 모델이
+    비어 있지 않은 숫자를 그 칸에 넣는다 — 실측으로 es_query_log 264건이
+    slowlog 건수로 리포트에 실렸다.
     """
     took_max = ""
     took_max_ms: int | None = None

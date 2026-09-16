@@ -1,9 +1,8 @@
 """StdoutNotifier도 렌더링 실패에 리포트를 잃지 않는다.
 
-예전에는 완성된 문자열을 로그에 넣을 뿐이라 실패 갈래가 없었다. 리포트가
-객체가 되면서 ``notify`` 안에서 렌더링이 일어나는데, ``HtmlFileNotifier``가
-모듈 docstring과 ``except Exception``으로 명시적으로 막아 둔 실패(짝 없는
-서로게이트로 인한 인코딩 실패 등)를 이쪽은 하나도 막지 않고 있었다.
+리포트가 객체라 ``notify`` 안에서 렌더링이 일어나고, 그래서 실패 갈래가 있다.
+``HtmlFileNotifier``가 모듈 docstring과 ``except Exception``으로 명시적으로 막는
+실패(짝 없는 서로게이트로 인한 인코딩 실패 등)를 이쪽도 막아야 한다.
 
 예외가 새면 ``_run_agent``의 ``succeeded``가 False로 남아 **리포트도 잃고
 재트리거까지 막힌다** — HTML 쪽이 통째로 코드를 들여 막고 있는 그 사고다.
