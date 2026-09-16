@@ -1,4 +1,3 @@
-import pytest
 
 from cluster_doctor.application.port.outbound.llm_analyzer import (
     LlmAnalyzer,

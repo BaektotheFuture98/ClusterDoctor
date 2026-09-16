@@ -1,4 +1,4 @@
-﻿"""그래프 노드. 각 노드는 상태 일부를 받아 상태 일부를 돌려준다.
+"""그래프 노드. 각 노드는 상태 일부를 받아 상태 일부를 돌려준다.
 
 노드는 LLM 호출 방법을 모른다. ``LlmCaller``(부분 적용된 ``complete``)를
 받아 쓴다. 덕분에 테스트가 litellm을 몽키패치하지 않고 노드 로직만 검증할 수
@@ -8,10 +8,14 @@
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from dataclasses import replace
+from datetime import datetime
 
 from pydantic import BaseModel
 
+from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
+    timeline_row,
+)
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
     build_minute_prompt,
     build_synthesis_prompt,
@@ -114,7 +118,11 @@ def make_analyze_minute(call_llm: LlmCaller):
 
     def analyze_minute(bucket: MinuteBucket) -> dict:
         label = bucket.minute.strftime(_MINUTE_FORMAT)
-        counts = _count_by_source(bucket.logs)
+        # 관측값을 먼저 만든다. LLM 호출이 실패해도 이 값은 유효하다 —
+        # 실패한 분이 타임라인에서 빈칸으로 보이면 그 시각에 아무 일도
+        # 없었던 것처럼 읽힌다.
+        row = timeline_row(bucket.minute, bucket.logs)
+        counts = row.counts
         prompt = build_minute_prompt(bucket.logs, label)
         try:
             text = call_llm(
@@ -129,6 +137,7 @@ def make_analyze_minute(call_llm: LlmCaller):
                         summary=f"이 구간은 분석하지 못했습니다 ({exc}).",
                         failed=True,
                         counts=counts,
+                        row=replace(row, failed=True),
                     )
                 ]
             }
@@ -164,6 +173,7 @@ def make_analyze_minute(call_llm: LlmCaller):
                     summary=summary,
                     evidence=evidence,
                     counts=counts,
+                    row=row,
                 )
             ]
         }
@@ -227,13 +237,6 @@ def make_synthesize(
         }
 
     return synthesize
-
-
-def _count_by_source(logs: list) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for log in logs:
-        counts[log.source] = counts.get(log.source, 0) + 1
-    return counts
 
 
 def _format_findings(findings: list[MinuteFinding]) -> str:
