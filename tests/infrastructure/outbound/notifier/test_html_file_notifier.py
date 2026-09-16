@@ -9,7 +9,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
 
 from cluster_doctor.domain.model.diagnosis_report import (
     DiagnosisReport,

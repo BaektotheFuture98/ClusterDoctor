@@ -27,7 +27,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
 from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
     ReportNarrative,
 )

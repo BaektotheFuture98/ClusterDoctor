@@ -48,7 +48,7 @@ Once triggered:
    places").
 5. **Report** — `HtmlFileNotifier` writes one HTML file per diagnosis into `REPORT_DIR`.
 
-Everything the agent can do is one of eight tools: `analyze_logs`, `check_new_slowlogs`,
+Everything the agent can do is one of seven tools: `analyze_logs`, `check_new_slowlogs`,
 `sleep`, `cluster_health`, `explain_unassigned_shards`,
 `search_node_logs`, `get_node_logs`. Filesystem access is denied outright.
 

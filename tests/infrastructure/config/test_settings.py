@@ -1,4 +1,4 @@
-﻿import traceback
+import traceback
 from pathlib import Path
 
 import pytest

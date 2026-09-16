@@ -1,4 +1,4 @@
-﻿"""그래프 노드. 각 노드는 상태 일부를 받아 상태 일부를 돌려준다.
+"""그래프 노드. 각 노드는 상태 일부를 받아 상태 일부를 돌려준다.
 
 노드는 LLM 호출 방법을 모른다. ``LlmCaller``(부분 적용된 ``complete``)를
 받아 쓴다. 덕분에 테스트가 litellm을 몽키패치하지 않고 노드 로직만 검증할 수
@@ -9,7 +9,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pydantic import BaseModel
 
