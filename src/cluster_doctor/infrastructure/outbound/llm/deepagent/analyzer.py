@@ -33,7 +33,7 @@ from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
     make_tools,
     unresolved_failure,
 )
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.outbound.llm.deepagent.prompts import SYSTEM_PROMPT
 from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
     ReportNarrative,

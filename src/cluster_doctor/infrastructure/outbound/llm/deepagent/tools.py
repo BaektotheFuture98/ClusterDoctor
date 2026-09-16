@@ -69,7 +69,10 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
 )
 from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
 from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import LlmCaller
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.application.port.outbound.node_log_fetcher import (
+    DEFAULT_HOST_LOG_LINES,
+    NodeLogFetcher,
+)
 
 
 def _parse_kst(iso: str) -> datetime:
@@ -927,7 +930,7 @@ def make_tools(
         start_iso: str,
         end_iso: str,
         keyword: str = "",
-        max_lines: int = 300,
+        max_lines: int = DEFAULT_HOST_LOG_LINES,
     ) -> str:
         """ES 노드 ID로 해당 노드에 SSH 접속해 지정 구간의 ES 로그를 가져온다.
 
