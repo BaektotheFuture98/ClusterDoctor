@@ -6,7 +6,6 @@ check_new_slowlogs의 sorted()가 TypeError로 터져 agent 실행이 통째로
 naive 값에 대해서는 호스트 로컬 시간대를 가정해 구간을 9시간 어긋나게 한다.
 """
 
-from datetime import timezone
 
 import pytest
 

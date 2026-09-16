@@ -27,15 +27,30 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+    ReportNarrative,
+)
 
 _UTC = timezone.utc
 
 
-def _make_agent_response(text: str = "리포트"):
+def _make_agent_response(text: str = "리포트", *, structured=True):
+    """agent.invoke의 반환을 흉내낸다.
+
+    ``structured=True``가 정상 경로다 — ToolStrategy가 스키마를 tool로
+    바인딩하고, 모델이 그것을 부르면 결과가 structured_response로 온다.
+    ``False``는 모델이 그 tool을 부르지 않고 평문으로 끝낸 경우이며,
+    폴백 사다리 2단이 받는 자리다.
+    """
     message = MagicMock()
     message.content = text
-    return {"messages": [message]}
+    message.type = "ai"
+    # 실제 AIMessage는 tool_call이 없으면 빈 리스트다. MagicMock에 맡기면
+    # 자동 생성된 속성이 늘 truthy라, "아직 일하는 중인 메시지"를 걸러내는
+    # _last_model_text의 판정이 모든 메시지에 걸린다.
+    message.tool_calls = []
+    narrative = ReportNarrative(headline=text) if structured else None
+    return {"messages": [message], "structured_response": narrative}
 
 
 def _orchestrator_kwargs(provider="gemini", default_model="gemini-3.5-flash-lite"):
@@ -127,7 +142,9 @@ def test_unsupported_provider_is_rejected_at_construction():
 # analyze()가 그것을 실패로 승격해 재실행 경로를 끊는다.
 # --------------------------------------------------------------------------
 
-def _run_analyze_with_tools(make_tools_impl, agent_text: str = "분석 실패 리포트"):
+def _run_analyze_with_tools(
+    make_tools_impl, agent_text: str = "분석 실패 리포트", *, structured: bool = True
+):
     log_time = datetime(2026, 8, 27, 3, 0, 0, tzinfo=_UTC)
     kafka_receive_time = log_time + timedelta(seconds=5)
 
@@ -144,7 +161,9 @@ def _run_analyze_with_tools(make_tools_impl, agent_text: str = "분석 실패 �
         ),
     ):
         agent = MagicMock()
-        agent.invoke.return_value = _make_agent_response(agent_text)
+        agent.invoke.return_value = _make_agent_response(
+            agent_text, structured=structured
+        )
         create_deep_agent.return_value = agent
 
         from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
@@ -174,7 +193,7 @@ def test_a_degraded_run_still_delivers_the_report():
 
     result = _run_analyze_with_tools(_degrading, agent_text="분석 실패 리포트")
 
-    assert result.report == "분석 실패 리포트"
+    assert result.report.narrative.headline == "분석 실패 리포트"
     assert result.analysis_failed is True
 
 
@@ -187,7 +206,7 @@ def test_supplementary_gaps_do_not_fail_the_run():
 
     result = _run_analyze_with_tools(_with_gap, agent_text="정상 리포트")
 
-    assert result.report == "정상 리포트"
+    assert result.report.narrative.headline == "정상 리포트"
     assert result.analysis_failed is False
     assert result.gaps == ("es-data-02 노드 로그 SSH 수집 실패",)
 
@@ -199,6 +218,257 @@ def test_a_clean_run_still_returns_the_report():
 
     result = _run_analyze_with_tools(_clean, agent_text="정상 리포트")
 
-    assert result.report == "정상 리포트"
+    assert result.report.narrative.headline == "정상 리포트"
+    assert result.report.narrative_text == ""
     assert result.analysis_failed is False
     assert result.gaps == ()
+
+
+def _seed_observation(run_state) -> None:
+    """관측값이 하나라도 있는 상태를 만든다.
+
+    ``analyze_logs``가 한 번이라도 성공한 실행과 같은 모양이다. 2단 폴백의
+    판정이 관측값 유무로 갈리므로 두 갈래를 나눠 검증하려면 이 씨앗이 필요하다.
+    """
+    from datetime import datetime as _dt
+
+    from cluster_doctor.domain.model.diagnosis_report import TimelineRow
+
+    minute = _dt(2026, 8, 27, 3, 0, tzinfo=timezone.utc)
+    run_state.setdefault("observations", {})["timeline"] = {
+        minute: TimelineRow(minute=minute, counts={"slowlog": 3})
+    }
+
+
+def test_구조화_실패는_평문으로_떨어지되_진단을_버리지_않는다():
+    """폴백 사다리 2단 — 관측값이 온전한 경우.
+
+    ToolStrategy는 스키마를 평범한 tool 하나로 바인딩할 뿐이라, 모델이
+    그것을 부르지 않고 평문으로 끝내는 갈래가 열려 있다. 그때도 관측값은
+    온전하므로 분석 실패가 아니다 — 빠진 사실만 gaps로 남긴다.
+    """
+
+    def _with_observation(**kwargs):
+        _seed_observation(kwargs["run_state"])
+        return []
+
+    result = _run_analyze_with_tools(
+        _with_observation, agent_text="평문 리포트", structured=False
+    )
+
+    assert result.report.narrative is None
+    assert result.report.narrative_text == "평문 리포트"
+    assert result.analysis_failed is False
+    assert any("구조화 리포트를 제출하지 않아" in gap for gap in result.gaps)
+
+
+def test_근거_없는_평문은_정상_진단으로_나가지_않는다():
+    """폴백 사다리 2단 — 관측값이 하나도 없는 경우.
+
+    관측값이 비었다는 것은 analyze_logs가 한 번도 성공하지 않았다는 뜻이다.
+    429 직후 모델이 "로그를 확인할 수 없습니다" 한 줄로 끝내면 이 갈래에
+    떨어지는데, 예전에는 그것이 analysis_failed=False로 나가 재트리거까지
+    허용됐다 — 근거가 하나도 없는 판단이 정상 진단으로 보였다.
+
+    평문은 그대로 싣는다. 예외를 올리면 "리포트는 항상 전달된다"가 깨진다.
+    """
+    result = _run_analyze_with_tools(
+        lambda **kwargs: [], agent_text="로그를 확인할 수 없습니다", structured=False
+    )
+
+    assert result.report.narrative_text == "로그를 확인할 수 없습니다"
+    assert result.report.observations.is_empty()
+    assert result.analysis_failed is True
+
+
+def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든다():
+    """폴백 사다리 3단과 4단.
+
+    예전에는 빈 응답이 곧 LlmResponseError였다. 그것은 "전달할 것이 없다"가
+    참이었을 때의 판단이고, 이제는 코드가 모은 관측값이 있다. 관측값마저
+    비었을 때만 예외를 올린다.
+    """
+    from datetime import datetime as _dt
+
+    from cluster_doctor.application.port.outbound.llm_analyzer import (
+        LlmResponseError,
+    )
+    from cluster_doctor.domain.model.diagnosis_report import TimelineRow
+
+    def _with_observations(**kwargs):
+        kwargs["run_state"]["observations"] = {
+            "timeline": {
+                _dt(2026, 9, 10, 15, 27, tzinfo=_UTC): TimelineRow(
+                    minute=_dt(2026, 9, 10, 15, 27, tzinfo=_UTC),
+                    counts={"es_query_log": 264},
+                )
+            },
+            "nodes": {},
+            "master_logs": {},
+            "master_log_total": 0,
+            "health": [],
+            "candidates": {},
+            "wait_seconds": 0.0,
+            "wait_cap_reached": False,
+        }
+        return []
+
+    # 3단 — 관측값이 있으면 리포트가 나온다
+    result = _run_analyze_with_tools(_with_observations, agent_text="", structured=False)
+    assert result.report.observations.timeline
+    assert result.analysis_failed is True
+
+    # 4단 — 관측값도 없으면 그때만 예외
+    with pytest.raises(LlmResponseError):
+        _run_analyze_with_tools(lambda **kwargs: [], agent_text="", structured=False)
+
+
+# --------------------------------------------------------------------------
+# _last_model_text — 진행 안내문을 리포트로 집지 않는다
+#
+# gemini 계열은 tool_call과 안내 문장을 한 AIMessage에 함께 싣는 일이 흔하다.
+# "본문이 있는 마지막 메시지"를 찾아 거슬러 올라가면, 마지막 턴이 조용히
+# 끝났을 때 중간 안내문이 리포트가 되어 나간다.
+# --------------------------------------------------------------------------
+
+def _msg(text: str, *, kind: str = "ai", tool_calls=()):
+    message = MagicMock()
+    message.content = text
+    message.type = kind
+    message.tool_calls = list(tool_calls)
+    return message
+
+
+def test_마지막_모델_메시지의_본문을_쓴다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    messages = [_msg("먼저 구간을 보겠습니다", tool_calls=[{"name": "analyze_logs"}]),
+                _msg("도구 결과", kind="tool"),
+                _msg("최종 리포트입니다")]
+
+    assert _last_model_text(messages) == "최종 리포트입니다"
+
+
+def test_구조화_tool_안내문은_리포트가_되지_않는다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    # ToolStrategy가 스키마를 tool로 바인딩하므로 마지막 메시지는
+    # ToolMessage("Returning structured response: …")가 된다(실측).
+    messages = [_msg("평문 리포트"),
+                _msg("Returning structured response: ...", kind="tool")]
+
+    assert _last_model_text(messages) == "평문 리포트"
+
+
+def test_아직_일하는_중인_메시지는_리포트로_집지_않는다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    # recursion_limit 도달이나 중간 중단으로 끝난 모양. 안내문을 집으면
+    # 운영자가 "먼저 …구간을 보겠습니다" 한 줄짜리 진단을 받는다.
+    messages = [_msg("이전 턴의 요약"),
+                _msg("도구 결과", kind="tool"),
+                _msg("이제 16:09 구간을 보겠습니다",
+                     tool_calls=[{"name": "analyze_logs"}])]
+
+    assert _last_model_text(messages) == ""
+
+
+def test_사람과_시스템_메시지는_모델이_쓴_것이_아니다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    messages = [_msg("모델이 쓴 것"),
+                _msg("지시문", kind="system"),
+                _msg("사용자 입력", kind="human")]
+
+    assert _last_model_text(messages) == "모델이 쓴 것"
+
+
+def test_메시지가_없으면_빈_문자열이다():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        _last_model_text,
+    )
+
+    assert _last_model_text([]) == ""
+    assert _last_model_text(None) == ""
+
+
+def test_판단이_비어_있으면_그_사실을_gaps로_남긴다():
+    """구조화는 성공했는데 판단 필드가 전부 빈 경우.
+
+    실측으로 같은 구간을 두 번 돌렸을 때 한 번은 9개 필드 중 8개, 한 번은
+    3개만 찼다 — 프롬프트에 "반드시 채운다"를 넣은 뒤에도 그렇다. 그때
+    리포트에는 결론도 발견된 문제점도 근본 원인도 없는데 analysis_failed는
+    False라, 운영자는 "분석했더니 특별한 게 없었다"로 읽는다.
+
+    사다리는 이것을 잡을 수 없다 — 구조화 출력은 성공했고 관측값도 온전하니
+    1단이 맞다. 등급을 바꾸는 대신 사실을 남긴다.
+    """
+    from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+        ReportNarrative,
+        SuspectPick,
+    )
+
+    empty_judgment = ReportNarrative(
+        headline="",
+        findings=[],
+        root_cause="",
+        suspect_picks=[SuspectPick(candidate_id="C1", reason="가장 느렸다")],
+        recommendations=["노드 점검"],
+    )
+
+    with (
+        patch(
+            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.ChatLiteLLM"
+        ),
+        patch(
+            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.create_deep_agent"
+        ) as create_deep_agent,
+        patch(
+            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.make_tools",
+            side_effect=lambda **kwargs: [],
+        ),
+    ):
+        agent = MagicMock()
+        response = _make_agent_response("", structured=False)
+        response["structured_response"] = empty_judgment
+        agent.invoke.return_value = response
+        create_deep_agent.return_value = agent
+
+        from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+            DeepAgentAnalyzer,
+        )
+
+        analyzer = DeepAgentAnalyzer(
+            api_key="test-key",
+            default_model="gemini-2.5-flash",
+            cluster=MagicMock(),
+            fetch_logs=MagicMock(),
+            drain_pending=MagicMock(),
+            node_log_fetcher=MagicMock(),
+            fetch_node_logs=MagicMock(return_value=[]),
+        )
+        result = analyzer.analyze(
+            datetime(2026, 8, 27, 3, 0, tzinfo=_UTC),
+            datetime(2026, 8, 27, 3, 0, 5, tzinfo=_UTC),
+        )
+
+    assert any("판단이 없다" in gap for gap in result.gaps)
+    # 권장 조치는 살아 있으므로 리포트 자체는 버리지 않는다.
+    assert result.report.narrative.recommendations == ("노드 점검",)
+
+
+def test_판단이_하나라도_있으면_gaps에_남기지_않는다():
+    def _tools(**kwargs):
+        return []
+
+    result = _run_analyze_with_tools(_tools, agent_text="노드 이탈")
+
+    assert not any("판단이 없다" in gap for gap in result.gaps)

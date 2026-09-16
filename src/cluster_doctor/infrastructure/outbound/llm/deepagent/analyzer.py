@@ -15,6 +15,7 @@ _KST = timezone(timedelta(hours=9))
 
 _logger = logging.getLogger(__name__)
 
+from langchain.agents.structured_output import ToolStrategy
 from langchain_litellm import ChatLiteLLM
 from deepagents import create_deep_agent, FilesystemPermission
 
@@ -24,6 +25,7 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
     LlmAnalyzer,
     LlmResponseError,
 )
+from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport, Observations
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
@@ -33,17 +35,117 @@ from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
 )
 from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.outbound.llm.deepagent.prompts import SYSTEM_PROMPT
+from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+    ReportNarrative,
+)
 from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import MinuteOutput
 from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
     complete,
     require_supported_provider,
 )
 
+# 리포트에 싣는 마스터 로그 줄 수 상한. 수집 쪽 상한(_MASTER_LOG_MAX_LINES=80)은
+# analyze_logs 호출마다 걸리므로 최대 6회면 480줄까지 쌓인다. 한 줄이 평균 524자
+# 가므로(실측) 그대로 실으면 HTML이 수백 KB가 된다.
+#
+# 잘린 사실은 master_log_total로 드러난다 — "N줄 중 M줄"이 헤더에 찍힌다.
+_MASTER_LOG_REPORT_MAX = 120
+
+# 마스터 로그 정렬의 기준점. SSH 폴백으로 온 줄은 timestamp를 뽑을 수 없어
+# None인데, None과 datetime을 직접 비교하면 TypeError가 난다.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
 _DENY_FILESYSTEM = FilesystemPermission(
     operations=["read", "write"],
     paths=["/**"],
     mode="deny",
 )
+
+
+def _text_of(message) -> str:
+    """메시지에서 텍스트를 꺼낸다. 멀티모달 블록도 평탄화한다."""
+    content = getattr(message, "content", "")
+    if isinstance(content, list):
+        return "\n".join(
+            block["text"]
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip()
+    return str(content or "").strip()
+
+
+# 모델이 쓴 것이 아닌 메시지. langchain 메시지의 ``type``은 공개 속성이고
+# 값이 고정돼 있다("ai" / "tool" / "human" / "system").
+_NOT_MODEL_TEXT = frozenset({"tool", "human", "system"})
+
+
+def _last_model_text(messages: list) -> str:
+    """모델이 마지막으로 쓴 평문을 찾는다.
+
+    ``messages[-1]``을 보면 안 된다. ``ToolStrategy``가 구조화 출력을 tool로
+    바인딩하므로, 모델이 그 tool을 부르면 마지막 메시지는
+    ``ToolMessage("Returning structured response: …")``가 된다(실측). 그 문자열을
+    리포트로 쓰면 안내문이 리포트가 된다.
+
+    **"AIMessage인 것"이 아니라 "모델이 쓴 것이 아닌 것"을 배제한다.** 타입 이름이나
+    클래스로 좁히면 메시지 구현이 바뀔 때 조용히 아무것도 못 찾고, 그때 증상은
+    "리포트가 비었다"로만 나타나 원인을 짚기 어렵다. 배제 목록은 그 반대로 —
+    모르는 종류가 생기면 포함되는 쪽으로 틀린다.
+
+    **모델이 마지막으로 쓴 것 하나만 본다.** "본문이 있는 마지막 것"을 찾아
+    거슬러 올라가면 안 된다 — gemini 계열은 tool_call과 안내 문장을 한
+    AIMessage에 함께 싣는 일이 흔해서, 마지막 턴이 조용히 끝났을 때
+    "먼저 03:00~03:10 구간을 보겠습니다" 같은 **진행 안내문을 집어 리포트로
+    내보내게 된다.** recursion_limit 도달이나 중간 중단도 같은 모양이다.
+
+    tool_call을 달고 있는 메시지는 최종 답이 아니다. 모델이 아직 일하는
+    중이었다는 뜻이므로 빈 문자열을 돌려주고 폴백 3단으로 보낸다 — 코드가
+    모은 관측값만으로 리포트를 만드는 쪽이, 진행 안내문 한 줄을 진단이라고
+    내보내는 것보다 정직하다.
+    """
+    for message in reversed(messages or []):
+        if str(getattr(message, "type", "")) in _NOT_MODEL_TEXT:
+            continue
+        if getattr(message, "tool_calls", None):
+            return ""
+        return _text_of(message)
+    return ""
+
+
+def _make_structured_error_handler(limit: int = 2):
+    """구조화 출력 검증 실패를 몇 번까지 되돌려 볼지 정한다.
+
+    ``handle_errors=True``(기본값)는 **횟수 제한이 없다.** 실패할 때마다 오류
+    ToolMessage를 붙여 다시 시키고, deepagents의 ``recursion_limit``이 9,999라
+    프레임워크도 막지 않는다. 이 저장소는 429를 최우선 제약으로 다뤄 재시도를
+    일부러 0으로 둔 곳이라, 그 결정을 스키마가 우회하게 둘 수 없다.
+
+    ``handle_errors=False``도 답이 아니다. 예외가 그대로 올라와 agent 실행이
+    통째로 죽고, 그러면 코드가 모아 둔 관측값까지 함께 잃는다.
+
+    그래서 상한을 넘으면 **평문으로 답하라고 안내한다.** 그 답은 폴백 사다리
+    2단이 받아 리포트가 되므로, 재시도를 끊어도 진단은 남는다.
+
+    스키마는 길이를 제한하지 않는다(``report_schema`` 모듈 docstring 참고 —
+    한국어가 글자 단위로 끊겨 ``follower_check``가 갈린 뒤로 잘라내기를 없앴다).
+    그러므로 여기까지 오는 것은 타입이 어긋난 경우뿐이고, 실측에서는 아직 본
+    적이 없다.
+    """
+    state = {"count": 0}
+
+    def handle(exc: Exception) -> str:
+        state["count"] += 1
+        _logger.warning(
+            "구조화 리포트 검증 실패 %d/%d: %s", state["count"], limit, exc
+        )
+        if state["count"] >= limit:
+            return (
+                "구조화 리포트 제출이 계속 실패했다. 더 시도하지 말고 "
+                "지금까지의 분석을 평문으로 작성해 답하라."
+            )
+        return f"리포트 형식이 스키마와 맞지 않는다: {exc}. 형식을 고쳐 다시 제출하라."
+
+    return handle
 
 
 class DeepAgentAnalyzer(LlmAnalyzer):
@@ -124,11 +226,26 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             kafka_receive_time=kafka_receive_time,
         )
 
+        # 구조화 출력을 건다. langchain은 이 모델(ChatLiteLLM + nvidia_nim/gemini)에
+        # 대해 native json_schema를 쓰지 않고 ToolStrategy로 떨어진다 — 스키마가
+        # **평범한 tool 하나로** 바인딩된다는 뜻이다(실측 확인).
+        #
+        # 그래서 두 가지가 따라온다. 첫째, 모델이 그 tool을 부르지 않고 평문으로
+        # 끝낼 수 있다. 둘째, 결과가 result["structured_response"]로 가고
+        # messages[-1]은 ToolMessage가 된다. 아래 폴백 사다리가 둘 다 받는다.
+        #
+        # ToolStrategy를 명시적으로 만드는 이유는 handle_errors 때문이다. 기본값은
+        # 무제한 재시도이고, 이 저장소의 "재시도하지 않는다" 결정과 정면으로
+        # 어긋난다.
         agent = create_deep_agent(
             model=llm,
             tools=tools,
             system_prompt=SYSTEM_PROMPT,
             permissions=[_DENY_FILESYSTEM],
+            response_format=ToolStrategy(
+                schema=ReportNarrative,
+                handle_errors=_make_structured_error_handler(),
+            ),
         )
 
         log_time_kst = log_time.astimezone(_KST)
@@ -144,16 +261,8 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 ),
             )]
         })
-        content = result["messages"][-1].content
-        if isinstance(content, list):
-            content = "\n".join(
-                block["text"]
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            )
-        if not content:
-            # 전달할 것이 아예 없는 유일한 경우다. 이것만 예외로 올린다.
-            raise LlmResponseError("agent가 빈 응답을 반환했습니다.")
+        narrative_model = result.get("structured_response")
+        content = _last_model_text(result.get("messages"))
 
         # 구간 커버리지는 실행이 끝난 뒤에만 판정할 수 있다. tool은 자기 호출만
         # 알고, 분할 호출이 정당한지는 요청 구간 전체의 합집합을 봐야 안다.
@@ -181,11 +290,126 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 " / ".join(run_state["gaps"]),
             )
 
+        observations = _build_observations(run_state)
+
+        # ── 폴백 사다리 ────────────────────────────────────────────────
+        # 구조화 출력은 실패 갈래를 늘린다. "리포트는 항상 전달된다"를 지키려면
+        # 각 단이 무엇을 남기는지 명시해야 한다.
+        narrative = None
+        if narrative_model is not None:
+            # 1단. 정상.
+            narrative = narrative_model.to_domain()
+            content = ""
+            # 형식은 맞았는데 판단이 비어 있을 수 있다. 실측으로 같은 구간을
+            # 두 번 돌렸을 때 한 번은 9개 필드 중 8개, 한 번은 3개만 찼다 —
+            # 프롬프트에 "반드시 채운다"를 넣은 뒤에도 그렇다. 그때 리포트에는
+            # 결론도 발견된 문제점도 근본 원인도 없는데 analysis_failed는
+            # False라, 운영자는 "분석했더니 특별한 게 없었다"로 읽는다.
+            #
+            # 사다리는 이것을 잡을 수 없다. 구조화 출력은 성공했고 관측값도
+            # 온전하니 1단이 맞다. 그러니 등급을 바꾸는 대신 **사실을
+            # 남긴다** — gaps는 notifier가 배너로 그리므로 빠진 것이 운영자에게
+            # 반드시 도달한다. 관측값 쪽 빈칸을 다루는 방식과 같다.
+            if not (narrative.headline or narrative.findings or narrative.root_cause):
+                _logger.warning("모델이 판단 필드를 하나도 채우지 않았다")
+                run_state["gaps"].append(
+                    "모델이 결론·발견된 문제점·근본 원인을 하나도 쓰지 않았다. "
+                    "이 리포트에는 관측값만 있고 판단이 없다."
+                )
+        elif content:
+            # 2단. 모델이 tool을 부르지 않고 평문으로 끝냈다. 관측값은 온전하고
+            # 판단만 형식을 어긴 것이므로 분석 실패가 아니다 — gaps로 남긴다.
+            _logger.warning(
+                "모델이 구조화 리포트를 제출하지 않았다 — 평문을 그대로 싣는다"
+            )
+            run_state["gaps"].append(
+                "모델이 구조화 리포트를 제출하지 않아 판단 부분을 평문으로 실었다."
+            )
+            if observations.is_empty():
+                # 관측값이 하나도 없는데 평문만 있다면 analyze_logs가 한 번도
+                # 성공하지 않았다는 뜻이다. 429 직후 모델이 "로그를 확인할 수
+                # 없습니다" 한 줄로 끝내는 형태가 실제로 이 갈래에 떨어진다.
+                # 그것은 근거가 하나도 없는 판단이므로 정상 진단으로 내보내면
+                # 안 된다 — "숫자는 코드가 세고 모델은 판단만 쓴다"의 이면이다.
+                # 예외까지는 올리지 않는다. 평문은 남기되 배너를 붙여, 운영자가
+                # 무엇을 근거로 읽어야 할지 알게 한다.
+                _logger.error(
+                    "관측값이 하나도 없다 — 평문을 싣되 분석 실패로 표시한다"
+                )
+                analysis_failed = True
+        elif observations.is_empty():
+            # 4단. 관측값도 판단도 없다. 여기까지 오는 것은 analyze_logs가 한 번도
+            # 성공하지 않은 실행뿐이고, 그때만 예외로 올린다.
+            raise LlmResponseError("agent가 빈 응답을 반환했고 관측값도 없습니다.")
+        else:
+            # 3단. 모델이 아무 말도 남기지 못했다. 예전에는 이것이 곧 "전달할 것이
+            # 없다"였지만, 이제는 코드가 모은 관측값이 있다. 그 시각에 무슨 일이
+            # 있었는지는 리포트에 남는다.
+            _logger.error("agent가 빈 응답을 반환했다 — 관측값만으로 리포트를 만든다")
+            analysis_failed = True
+
         return DiagnosisResult(
-            report=content,
+            report=DiagnosisReport(
+                observations=observations,
+                narrative=narrative,
+                narrative_text=content,
+            ),
             analysis_failed=analysis_failed,
             gaps=tuple(run_state["gaps"]),
         )
+
+
+def _build_observations(run_state: dict) -> Observations:
+    """tool들이 ``run_state``에 쌓아 둔 관측값을 도메인 객체로 굳힌다.
+
+    수집 중에는 병합이 쉬운 dict로 들고 있다가 여기서 정렬된 tuple이 된다.
+    리포트에 실린 뒤에는 바뀌지 않아야 하므로 frozen 타입으로 옮긴다.
+    """
+    observed = run_state.get("observed", {})
+    raw = run_state.get("observations", {})
+
+    timeline_map = raw.get("timeline", {})
+    node_map = raw.get("nodes", {})
+    master_map = raw.get("master_logs", {})
+    candidate_map = raw.get("candidates", {})
+
+    # timestamp가 있는 줄을 먼저, 시간순으로. SSH 폴백 줄(timestamp 없음)은
+    # 뒤로 보내되 넣은 순서를 유지한다 — 원본 파일의 순서가 곧 시간순이다.
+    ordered_master = sorted(
+        enumerate(master_map.values()),
+        key=lambda pair: (
+            pair[1].timestamp is None,
+            pair[1].timestamp or _EPOCH,
+            pair[0],
+        ),
+    )
+    master_events = tuple(event for _index, event in ordered_master)
+
+    return Observations(
+        time_basis=observed.get("time_basis", ""),
+        first_seen=observed.get("first_seen"),
+        last_seen=observed.get("last_seen"),
+        requested=tuple(observed.get("requested") or ()),
+        total_wait_seconds=float(raw.get("wait_seconds", 0.0)),
+        wait_cap_reached=bool(raw.get("wait_cap_reached", False)),
+        timeline=tuple(timeline_map[minute] for minute in sorted(timeline_map)),
+        nodes=tuple(sorted(node_map.values(), key=lambda row: row.node)),
+        master_events=master_events[:_MASTER_LOG_REPORT_MAX],
+        master_log_total=len(master_events),
+        health=tuple(raw.get("health") or ()),
+        # id는 C1, C2 … 순으로 붙었으므로 발견 순서로 정렬하려면 숫자 부분을
+        # 봐야 한다. 문자열 정렬이면 C10이 C2 앞에 온다. 다만 int()로 파싱하지
+        # 않는다 — 이 함수는 tool이 아니라 analyze() 안이라 예외가 나면
+        # _run_agent의 generic handler로 가서 notify를 건너뛰고, "리포트는 항상
+        # 전달된다"가 그대로 깨진다. 길이를 먼저 보면 파싱 없이 같은 순서가
+        # 나오고 어떤 문자열이 와도 터지지 않는다.
+        candidates=tuple(
+            sorted(
+                candidate_map.values(),
+                key=lambda c: (len(c.candidate_id), c.candidate_id),
+            )
+        ),
+    )
 
 
 def _litellm_call(

@@ -31,6 +31,23 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cluster_doctor.application.port.outbound.notifier import Notifier
+from cluster_doctor.domain.model.diagnosis_report import (
+    DiagnosisReport,
+    Observations,
+    observed_severity,
+)
+from cluster_doctor.infrastructure.outbound.notifier.report_text import (
+    SEVERITY_PREFIX,
+    candidate_details,
+    candidate_line,
+    health_lines,
+    master_log_lines,
+    node_lines,
+    overview_lines,
+    render_text,
+    scrub,
+    timeline_line,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -47,14 +64,12 @@ _DIVIDER_RE = re.compile(r"^[─━—–\-=_]{3,}$")
 # 줄 앞머리의 심각도 표기. 배지로 뽑아내 한눈에 보이게 한다.
 _SEVERITY_RE = re.compile(r"^(Critical|Warning|Info)\s*[:\-]?\s*", re.IGNORECASE)
 # 쿼리 원문·로그 줄처럼 그대로 보여야 하는 것. 등폭으로 그리고 줄바꿈을 살린다.
-_RAW_HINTS = (
-    '{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]",
-    # 분 단위 타임라인과 노드 상태 줄. 줄을 맞춰 위아래로 비교해야 하는
-    # 수치이므로 등폭이 아니면 읽을 수 없다.
-    "slowlog=", "jvm_heap", "rejected=",
-)
-
-_FAILED_MARKER = "분석 실패"
+#
+# **평문 폴백에서만 쓰인다.** 관측값 섹션은 mono=True로 명시 지정되므로
+# (``_mono_attr``) 힌트 매칭을 타지 않는다. 그래서 예전에 관측값 줄을 위해
+# 넣어 둔 "slowlog=" 같은 항목은 근거가 사라져 뺐다 — 남겨 두면 다음 사람이
+# 관측값 렌더링이 이 목록에 의존한다고 읽는다.
+_RAW_HINTS = ('{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]")
 
 _FILENAME_FORMAT = "report-%Y%m%d-%H%M%S"
 
@@ -72,21 +87,21 @@ class HtmlFileNotifier(Notifier):
 
     async def notify(
         self,
-        message: str,
+        report: DiagnosisReport,
         *,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
     ) -> None:
-        # 인코딩 불가 문자를 먼저 걸러낸다. 파일과 폴백 로그가 같은 문자열을
-        # 쓰므로, 여기서 한 번 치환하면 두 경로가 함께 안전해진다.
-        message = _scrub(message)
-        gaps = tuple(_scrub(gap) for gap in gaps)
+        # 인코딩 불가 문자는 _e()가 걸러낸다. 리포트가 객체가 되면서 문자열이
+        # 수십 곳에서 나오므로 진입부에서 한 번 치환하는 것으로는 부족하다.
+        # 폴백 로그만 여기서 따로 치환한다 — 그쪽은 _e를 타지 않는다.
+        gaps = tuple(scrub(gap) for gap in gaps)
 
         # 파일 쓰기는 짧지만 이벤트 루프에서 하지 않는다. 같은 루프가 Kafka를
         # 계속 소비하고 있고, 리포트는 수십 KB까지 자란다.
         try:
             path = await asyncio.to_thread(
-                self._write, message, gaps, analysis_failed
+                self._write, report, gaps, analysis_failed
             )
         except Exception as exc:  # noqa: BLE001
             # OSError만 잡으면 보장이 깨진다. 렌더링·인코딩 실패도 여기로
@@ -95,14 +110,18 @@ class HtmlFileNotifier(Notifier):
             # 그것이 새어 나가면 _run_agent의 succeeded가 False로 남아
             # 리포트가 사라지고 이 폴백조차 타지 못한다.
             _logger.error("리포트 HTML 저장 실패(%s) — 전문을 로그로 남긴다", exc)
-            _logger.info("\n%s", message)
+            try:
+                _logger.info("\n%s", scrub(render_text(report)))
+            except Exception:  # noqa: BLE001
+                # 렌더링 자체가 실패한 경우다. 그때도 이 폴백이 죽으면 안 된다.
+                _logger.exception("리포트 평문 렌더링도 실패했다")
             return
 
         _logger.info("리포트 저장: %s", path)
 
     def _write(
         self,
-        message: str,
+        report: DiagnosisReport,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
     ) -> Path:
@@ -111,7 +130,7 @@ class HtmlFileNotifier(Notifier):
         path = _unique_path(self._output_dir, now)
         path.write_text(
             render_report(
-                message,
+                report,
                 generated_at=now,
                 gaps=gaps,
                 analysis_failed=analysis_failed,
@@ -138,21 +157,6 @@ def _unique_path(output_dir: Path, now: datetime) -> Path:
 
 
 # ────────────────────────── 평문 → 구조 ──────────────────────────
-
-
-def _scrub(text: str) -> str:
-    """UTF-8로 인코딩할 수 없는 문자를 치환한다.
-
-    provider 응답에 짝 없는 서로게이트가 섞여 오는 경우가 있다(JSON의
-    ``\\udXXX`` 이스케이프). 그대로 두면 두 경로가 동시에 무너진다 —
-    ``write_text``가 ``UnicodeEncodeError``로 실패하고, 폴백으로 전문을
-    로그에 남기려 해도 파일 핸들러가 같은 이유로 실패해 리포트가 통째로
-    사라진다. 글자 하나를 ``?``로 바꾸는 편이 진단을 잃는 것보다 낫다.
-
-    치환은 입력 시점에 한 번만 한다. 렌더 결과와 원문 블록, 폴백 로그가
-    모두 같은 문자열에서 나오므로 여기서 걸러야 전부 안전해진다.
-    """
-    return text.encode("utf-8", "replace").decode("utf-8")
 
 
 def _make_bullet(text: str) -> dict:
@@ -256,18 +260,29 @@ def _parse(message: str) -> list[_Section]:
 
 
 def _e(text: str) -> str:
-    """이 모듈에서 텍스트가 HTML로 들어가는 유일한 통로."""
-    return html.escape(text, quote=True)
+    """이 모듈에서 텍스트가 HTML로 들어가는 유일한 통로.
+
+    여기서 ``_scrub``을 함께 건다. 예전에는 ``notify`` 진입부에서 문자열 하나를
+    치환하면 끝이었지만, 리포트가 객체가 되면서 문자열이 수십 곳에서 나온다.
+    통로가 하나이므로 여기서 거는 것이 가장 적게 틀린다.
+    """
+    return html.escape(scrub(text), quote=True)
 
 
-def _mono_attr(text: str) -> str:
+def _mono_attr(text: str, mono: bool | None = None) -> str:
     """수치·로그 원문이 실린 줄은 등폭으로 그린다.
 
     ``pre.raw``는 불렛이 아닌 줄에만 적용된다. 그런데 분 단위 타임라인과
     노드 상태는 불렛으로 오고, 거기 실리는 것은 줄을 맞춰 읽어야 하는
     수치다 — 비례 폭으로 그리면 분마다의 jvm_heap이나 rejected를 위아래로
     비교할 수 없다. 근거로 인용된 로그 원문도 같다.
+
+    ``mono``를 명시하면 그것이 이긴다. 관측값 섹션은 코드가 만드는 줄이라
+    등폭이어야 한다는 것을 이미 알고 있고, 그것을 문자열 힌트 매칭이라는
+    우연에 맡길 이유가 없다. 힌트 매칭은 평문 폴백 경로를 위해 남는다.
     """
+    if mono is not None:
+        return ' class="mono"' if mono else ""
     return ' class="mono"' if any(hint in text for hint in _RAW_HINTS) else ""
 
 
@@ -294,7 +309,8 @@ def _render_items(items: list[dict]) -> str:
                 subs = f'<ul class="subs">{sub_rows}</ul>'
             rows.append(
                 f"<li>{badge}"
-                f'<span{_mono_attr(bullet["text"])}>{_e(bullet["text"])}</span>'
+                f'<span{_mono_attr(bullet["text"], bullet.get("mono"))}>'
+                f'{_e(bullet["text"])}</span>'
                 f"{subs}</li>"
             )
         out.append(f'<ul class="bullets">{"".join(rows)}</ul>')
@@ -313,13 +329,165 @@ def _render_items(items: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _overview_block(obs: Observations) -> list[dict]:
+    """개요 불렛. 코드 판정 심각도 줄만 배지를 받는다.
+
+    배지를 붙이는 이유는 눈에 띄어야 해서다 — 모델이 severity를 채우지 않는
+    일이 반복돼 노드 이탈이 분류 없이 나갔고, 그때 리포트에서 심각도를 말하는
+    것은 이 줄뿐이다. 판정 근거는 줄 안에 이미 적혀 있다.
+    """
+    level, _reasons = observed_severity(obs)
+    return [
+        _bullet(line, severity=level or None)
+        if line.startswith(SEVERITY_PREFIX)
+        else _bullet(line)
+        for line in overview_lines(obs)
+    ]
+
+
+def _bullet(
+    text: str,
+    *,
+    severity: str | None = None,
+    subs: list[str] | None = None,
+    mono: bool | None = None,
+) -> dict:
+    """``_render_items``가 먹는 불렛 항목을 직접 만든다.
+
+    ``_make_bullet``을 쓰지 않는 이유: 그 함수의 존재 이유는 평문에서
+    ``"Critical: …"`` 앞머리를 정규식으로 떼어내는 것인데, 관측값과 구조화
+    narrative에서는 ``severity``가 값으로 온다. 정규식을 다시 태우면 본문에
+    우연히 들어간 "Info"가 배지로 승격될 수 있다.
+    """
+    return {
+        "kind": "bullet",
+        "text": text,
+        "severity": severity,
+        "subs": subs or [],
+        "mono": mono,
+    }
+
+
+def _raw_block(lines: list[str]) -> list[dict]:
+    """여러 줄을 등폭 블록 하나로 묶는다.
+
+    줄마다 항목을 만들지 않는 이유: 타임라인·노드 표는 **줄을 맞춰 위아래로
+    비교**하는 것이 용도다. 항목이 나뉘면 사이에 여백이 들어가 그 정렬이
+    깨진다.
+    """
+    return [{"kind": "raw", "text": "\n".join(lines)}] if lines else []
+
+
+def _sections_from_report(report: DiagnosisReport) -> list[_Section]:
+    """``DiagnosisReport``를 기존 ``_Section`` 표현으로 옮긴다.
+
+    렌더러를 새로 쓰지 않는 이유: ``_render_items``·``_e``·``_CSS``·TOC·배너가
+    전부 그대로 쓸 수 있고, 새로 쓰면 다크모드·인쇄·``sev-*`` 배지가 전부
+    회귀 대상이 된다. 어댑터 하나로 끝나는 일이다.
+
+    관측값을 앞에, 판단을 뒤에 둔다. 프롬프트가 지시하던 *"2번과 3번은
+    관찰값만 적는 섹션이다. 판단은 4번부터"* 를 구조로 고정하는 것이다 —
+    지시는 어길 수 있지만 구조는 어길 수 없다.
+    """
+    obs = report.observations
+    blocks: list[tuple[str, list[dict]]] = [
+        ("인시던트 개요", _overview_block(obs)),
+        (
+            "분 단위 타임라인 (관측값)",
+            _raw_block([timeline_line(row) for row in obs.timeline]),
+        ),
+        (
+            "클러스터 상태 이력 (관측값)",
+            _raw_block(health_lines(obs.health, obs.requested)),
+        ),
+        ("노드별 구간 최대값 (관측값)", _raw_block(node_lines(obs.nodes))),
+    ]
+
+    blocks.append(
+        (
+            "마스터 노드 로그 (관측값)",
+            _raw_block(master_log_lines(obs.master_events, obs.master_log_total)),
+        )
+    )
+
+    picks = {
+        pick.candidate_id: pick.reason
+        for pick in (report.narrative.suspect_picks if report.narrative else ())
+    }
+    candidates = [
+        _bullet(
+            candidate_line(candidate),
+            subs=candidate_details(candidate, picks.get(candidate.candidate_id, "")),
+            mono=True,
+        )
+        for candidate in obs.candidates
+    ]
+    blocks.append(("느린 요청 후보 (관측값 + 모델 선정)", candidates))
+
+    narrative = report.narrative
+    if narrative is not None:
+        conclusion = [_bullet(narrative.headline)] if narrative.headline else []
+        conclusion += [_bullet(line) for line in narrative.context]
+        blocks.append(("결론", conclusion))
+
+        blocks.append(
+            (
+                "발견된 문제점",
+                [
+                    _bullet(
+                        finding.title,
+                        severity=finding.severity or None,
+                        subs=list(finding.evidence),
+                    )
+                    for finding in narrative.findings
+                ],
+            )
+        )
+
+        cause = [_bullet(narrative.root_cause)] if narrative.root_cause else []
+        cause += [_bullet(f"근거: {item}") for item in narrative.supporting]
+        cause += [_bullet(f"반박 근거: {item}") for item in narrative.contradicting]
+        cause += [_bullet(f"확인하지 못한 것: {item}") for item in narrative.unverified]
+        blocks.append(("근본 원인", cause))
+
+        blocks.append(
+            ("권장 조치", [_bullet(item) for item in narrative.recommendations])
+        )
+
+    sections: list[_Section] = []
+
+    def add(title: str, items: list[dict]) -> None:
+        if not items:
+            return
+        index = len(sections) + 1
+        section = _Section(number=str(index), title=title, index=index)
+        section.items = items
+        sections.append(section)
+
+    for title, items in blocks:
+        add(title, items)
+
+    # 구조화 출력이 실패했을 때의 자리. 모델이 평문은 남겼으므로 기존 정규식
+    # 파서로 그린다 — 이 경로 때문에 _parse를 지우지 않는다.
+    if narrative is None and report.narrative_text:
+        parsed = _parse(report.narrative_text)
+        if parsed:
+            for section in parsed:
+                add(section.title, section.items)
+        else:
+            # 섹션 제목조차 없는 응답. 구조를 지어내지 않고 전문을 싣는다.
+            add("모델 리포트 (평문)", [{"kind": "raw", "text": report.narrative_text}])
+
+    return sections
+
+
 def render_report(
-    message: str,
+    report: DiagnosisReport,
     generated_at: datetime | None = None,
     gaps: tuple[str, ...] = (),
     analysis_failed: bool = False,
 ) -> str:
-    """리포트 평문을 완결된 HTML 문서 한 장으로 만든다.
+    """리포트를 완결된 HTML 문서 한 장으로 만든다.
 
     ``generated_at``은 테스트가 시각을 고정할 수 있게 열어 뒀다.
 
@@ -328,7 +496,8 @@ def render_report(
     모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이 배너는 반드시 남는다.
     """
     now = generated_at or datetime.now(_KST)
-    sections = _parse(message)
+    sections = _sections_from_report(report)
+    source = render_text(report)
 
     banners = []
     if analysis_failed:
@@ -349,7 +518,15 @@ def render_report(
             f"<ul>{items}</ul>"
             "</div>"
         )
-    elif _FAILED_MARKER in message:
+    if any(row.failed for row in report.observations.timeline):
+        # 예전에는 본문에 "분석 실패"라는 문자열이 있는지로 판정했다. 그것은
+        # 모델이 그 말을 옮겨 적어 줘야만 성립하는 휴리스틱이었다. 이제는
+        # 코드가 그 사실을 정확히 안다 — 실패한 분의 row.failed가 곧 근거다.
+        #
+        # elif가 아니라 if다. row.failed가 참이면 analyze_logs의 _mark_gap이
+        # 반드시 gaps에도 남기므로, elif로 두면 이 배너가 **한 번도 뜨지
+        # 않는다.** 두 배너는 다른 말을 한다 — 위는 "무엇이 빠졌는가", 이쪽은
+        # "어느 구간을 믿을 수 없는가"다.
         banners.append(
             '<div class="banner">'
             "<b>이 리포트에는 분석하지 못한 구간이 있다.</b> "
@@ -357,6 +534,9 @@ def render_report(
             "남은 구간만 근거로 한다."
             "</div>"
         )
+    # 구조화 출력이 실패한 사실은 여기서 배너로 그리지 않는다. 그것은 gaps
+    # 항목이고, 위 gaps 배너가 이미 그린다. 여기 따로 두면 "리포트가 온전한가"를
+    # 두 곳에서 판정하게 되고, 두 판정은 언젠가 어긋난다.
     banner = "\n".join(banners)
 
     if sections:
@@ -374,12 +554,13 @@ def render_report(
             for s in sections
         )
     else:
-        # 형식을 어긴 응답. 구조를 만들어내지 않고 전문만 보여준다.
+        # 관측값도 판단도 하나도 없다. 여기까지 오는 것은 analyze_logs가 한 번도
+        # 성공하지 않은 실행뿐이다.
         toc = ""
         body = (
             '<section><h2><span class="n"></span>리포트 전문</h2>'
-            '<p class="hint">정해진 섹션 형식이 아니어서 원문 그대로 싣는다.</p>'
-            f'<pre class="raw">{_e(message)}</pre></section>'
+            '<p class="hint">그릴 수 있는 관측값도 판단도 없다.</p>'
+            f'<pre class="raw">{_e(source)}</pre></section>'
         )
 
     return _DOCUMENT.format(
@@ -387,7 +568,7 @@ def render_report(
         banner=banner,
         toc=toc,
         body=body,
-        source=_e(message),
+        source=_e(source),
         css=_CSS,
     )
 
@@ -496,7 +677,7 @@ _DOCUMENT = """<!doctype html>
 {toc}
 {body}
 <details class="source">
-  <summary>리포트 원문 (모델이 출력한 평문 그대로)</summary>
+  <summary>리포트 평문 (관측값 + 모델 판단)</summary>
   <pre>{source}</pre>
 </details>
 </div>
