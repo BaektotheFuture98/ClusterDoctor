@@ -1,4 +1,4 @@
-﻿"""StateGraph 조립.
+"""StateGraph 조립.
 
     split_by_minute
          │
