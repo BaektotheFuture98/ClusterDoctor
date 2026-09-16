@@ -25,6 +25,8 @@ suggested_windows가 전부 실제와 같이 흐른다.
     uv run python scripts/run_diagnosis.py --at "2026-08-27T14:00:00" --count 5 --span 3m
 """
 import argparse
+import json
+import pathlib
 import asyncio
 import time
 from datetime import datetime, timezone
@@ -59,6 +61,10 @@ from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import _base_tim
 # 실측으로 남기려고 litellm 콜백을 건다.
 _llm_calls: list[dict] = []
 
+# --dump-context가 켜졌을 때만 채운다. 기본적으로 들고 있지 않는 이유는
+# 부피다 — 오케스트레이터 한 턴이 1만 토큰이고 턴은 7회까지 간다.
+_capture_messages = False
+
 
 def _record_llm_call(kwargs, response, start_time, end_time) -> None:
     """litellm success 콜백. 어떤 실패도 진단을 막아서는 안 된다.
@@ -77,10 +83,77 @@ def _record_llm_call(kwargs, response, start_time, end_time) -> None:
                 # 종합은 도구 없이 프롬프트만 보낸다.
                 "has_tools": bool(kwargs.get("tools")),
                 "max_tokens": kwargs.get("max_tokens"),
+                # 실제로 보낸 것. 토큰 수는 "얼마나 쌓였나"만 말하고 "무엇이
+                # 쌓였나"는 말하지 않는다.
+                "messages": kwargs.get("messages") if _capture_messages else None,
+                "tools": kwargs.get("tools") if _capture_messages else None,
             }
         )
     except Exception:
         pass
+
+
+def _dump_context(path: pathlib.Path) -> None:
+    """오케스트레이터가 매 턴 실제로 받은 것을 파일로 떨군다.
+
+    로그에는 tool이 **돌려준 값**이 남지만 조립된 메시지 배열은 남지 않는다.
+    SYSTEM_PROMPT가 매 턴 재전송된다는 것도, ToolMessage가 어떤 모양으로
+    포장되는지도 여기서만 보인다.
+
+    JSON은 기계용이고, 옆에 사람이 읽을 요약을 함께 쓴다 — 턴마다 역할별
+    글자 수를 세어 두면 어디서 컨텍스트가 불어나는지 바로 보인다.
+    """
+    calls = sorted(_llm_calls, key=lambda c: c["end"] or 0)
+    if not calls or not calls[0].get("messages"):
+        print("  (컨텍스트를 붙들지 못했다 — --dump-context 없이 실행했거나 호출이 없다)")
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [
+        {
+            "call": i,
+            # 도구 정의가 실린 호출이 오케스트레이터, 아닌 것이 분 단위
+            # 분석과 종합이다. 둘을 함께 남겨야 한 진단의 전모가 보인다.
+            "kind": "orchestrator" if c["has_tools"] else "pipeline",
+            "completion_tokens": c["completion"],
+            "max_tokens": c["max_tokens"],
+            "prompt_tokens": c["prompt"],
+            "tool_count": len(c["tools"] or []),
+            # tool 스키마도 남긴다. 매 턴 재전송되므로 이것도 컨텍스트이고,
+            # 실측에서 우리가 정의하지 않은 것이 절반을 넘었다.
+            "tools": c["tools"],
+            "messages": c["messages"],
+        }
+        for i, c in enumerate(calls, 1)
+    ]
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    print("\n-- LLM 호출 전문 -------------------------------------------")
+    print(f"  전문: {path}")
+    tool_names = [
+        (t.get("function") or {}).get("name", "?")
+        for t in (next((c["tools"] for c in calls if c["tools"]), []) or [])
+    ]
+    print(f"  tool 정의 {len(tool_names)}개: {', '.join(tool_names)}")
+    print()
+    print("  호출  구분            입력토큰  출력상한  메시지  역할별 글자 수")
+    for i, call in enumerate(calls, 1):
+        per_role: dict[str, int] = {}
+        for message in call["messages"] or []:
+            role = str(message.get("role", "?"))
+            size = len(str(message.get("content") or ""))
+            for tc in message.get("tool_calls") or []:
+                size += len(json.dumps(tc, ensure_ascii=False))
+            per_role[role] = per_role.get(role, 0) + size
+        shape = "  ".join(f"{r}={n:,}" for r, n in sorted(per_role.items()))
+        kind = "오케스트레이터" if call["has_tools"] else "파이프라인"
+        print(
+            f"  {i:4d}  {kind:12}  {_fmt_int(call['prompt']):>8}  "
+            f"{_fmt_int(call['max_tokens']):>8}  "
+            f"{len(call['messages'] or []):5d}   {shape}"
+        )
 
 
 def _install_probe() -> bool:
@@ -217,6 +290,16 @@ def main() -> int:
         ),
     )
     _timeargs.add_arguments(parser)
+    parser.add_argument(
+        "--dump-context",
+        metavar="PATH",
+        nargs="?",
+        const="context-dump.json",
+        help=(
+            "오케스트레이터가 매 턴 실제로 받은 메시지 배열을 JSON으로 남긴다. "
+            "SYSTEM_PROMPT와 tool 정의 원문이 들어가므로 저장소에 올리지 말 것."
+        ),
+    )
     args = parser.parse_args()
 
     moments = _timeargs.resolve(args)
@@ -243,8 +326,16 @@ def main() -> int:
     if not _install_probe():
         print("  (litellm 콜백을 걸지 못했다 — 토큰 측정 없이 진행한다)")
 
+    if args.dump_context:
+        global _capture_messages
+        _capture_messages = True
+        print(f"  컨텍스트 전문을 {args.dump_context}에 남긴다.")
+
     try:
-        return run(moments)
+        code = run(moments)
+        if args.dump_context:
+            _dump_context(pathlib.Path(args.dump_context))
+        return code
     except KeyboardInterrupt:
         print("\n중단했다.")
         _print_measurements()
