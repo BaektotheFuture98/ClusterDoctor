@@ -115,9 +115,8 @@ class SlowlogTriggerService:
                 len(result.gaps),
             )
             # 리포트는 항상 전달한다. 분석이 실패했더라도 agent가 쓴 본문이
-            # 있으면 운영자가 읽을 수 있어야 한다 — 예전에는 실패가 예외로
-            # 올라와 notify를 건너뛰었고, 그때는 logs/app.log를 뒤져야
-            # 실패를 알 수 있었다.
+            # 있으면 운영자가 읽을 수 있어야 한다. 실패를 예외로 올려 notify를
+            # 건너뛰면 운영자는 logs/app.log를 뒤져야 한다.
             await self._notifier.notify(
                 result.report,
                 gaps=result.gaps,

@@ -55,8 +55,8 @@ class SlowlogEntry(LogEntry):
 class NodeLogEntry(LogEntry):
     """ES 노드가 남긴 로그 한 줄.
 
-    예전에는 이 정보를 노드에 SSH로 붙어 파일에서 긁어왔다. 같은 내용이
-    ClickHouse에 적재되면서 조회로 바뀌었고, 덕분에 세 가지가 달라졌다.
+    같은 내용을 SSH로도 가져올 수 있지만(데이터 노드는 아직 그 경로뿐이다),
+    ClickHouse 조회가 세 가지에서 낫다.
 
       - ``node_role``이 있어 마스터 노드를 이름 없이 지목할 수 있다.
         SSH 경로는 ES에 ``_master``를 물어 IP를 얻는 왕복이 필요했다.
