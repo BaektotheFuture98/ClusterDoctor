@@ -6,6 +6,11 @@ from datetime import datetime, timedelta, timezone
 
 import paramiko
 
+from cluster_doctor.application.port.outbound.node_log_fetcher import (
+    DEFAULT_HOST_LOG_LINES,
+    NodeLogFetcher,
+)
+
 _logger = logging.getLogger(__name__)
 _KST = timezone(timedelta(hours=9))
 
@@ -26,8 +31,13 @@ _SEVERITY_PATTERN = (
 )
 
 
-class NodeLogFetcher:
-    """SSH로 ES 노드에 접속해 메인 로그 파일을 읽는 어댑터."""
+class SshNodeLogFetcher(NodeLogFetcher):
+    """SSH로 ES 노드에 접속해 메인 로그 파일을 읽는 어댑터.
+
+    이름에 기술을 밝히는 것은 다른 어댑터와 같은 규칙이다
+    (``ClickHouseLogAdapter``, ``ElasticsearchClusterAdapter``,
+    ``HtmlFileNotifier``).
+    """
 
     def __init__(self, ssh_user: str, ssh_password: str, ssh_port: int = 22) -> None:
         self._user = ssh_user
@@ -42,7 +52,7 @@ class NodeLogFetcher:
         start_dt: datetime,
         end_dt: datetime,
         keyword: str = "",
-        max_lines: int = 300,
+        max_lines: int = DEFAULT_HOST_LOG_LINES,
     ) -> str:
         """메인 ES 로그에서 start_dt ~ end_dt 구간의 라인을 반환한다.
 
