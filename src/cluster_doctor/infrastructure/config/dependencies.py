@@ -10,7 +10,9 @@ from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter im
 from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import ElasticsearchClusterAdapter
 from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import DeepAgentAnalyzer
 from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import (
+    SshNodeLogFetcher,
+)
 from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
 
@@ -97,7 +99,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
         fetch_logs=_get_log_repository().fetch_logs,
         fetch_node_logs=_get_log_repository().fetch_node_logs,
         drain_pending=drain_pending,
-        node_log_fetcher=NodeLogFetcher(
+        node_log_fetcher=SshNodeLogFetcher(
             ssh_user=s.ssh_user,
             ssh_password=s.ssh_password,
             ssh_port=s.ssh_port,
