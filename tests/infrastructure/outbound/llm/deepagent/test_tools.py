@@ -9,35 +9,35 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import _parse_kst
+from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import parse_kst
 
 KST = timezone(timedelta(hours=9))
 
 
 def test_naive_iso_is_read_as_kst_wall_clock():
     # 프롬프트가 지시하는 정상 경로. 오프셋이 없으면 KST 벽시계로 읽는다.
-    assert _parse_kst("2026-08-27T18:33:00") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
+    assert parse_kst("2026-08-27T18:33:00") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
 
 
 def test_utc_designator_is_converted_not_overwritten():
     # "...Z"는 UTC 09:33 = KST 18:33. replace()로 덮어쓰면 KST 09:33이 되어
     # 9시간 어긋난다.
-    assert _parse_kst("2026-08-27T09:33:00Z") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
+    assert parse_kst("2026-08-27T09:33:00Z") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
 
 
 def test_utc_offset_is_converted_not_overwritten():
-    assert _parse_kst("2026-08-27T09:33:00+00:00") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
+    assert parse_kst("2026-08-27T09:33:00+00:00") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
 
 
 def test_kst_offset_passes_through_unchanged():
-    assert _parse_kst("2026-08-27T18:33:00+09:00") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
+    assert parse_kst("2026-08-27T18:33:00+09:00") == datetime(2026, 8, 27, 18, 33, tzinfo=KST)
 
 
 def test_result_is_always_timezone_aware():
     # naive가 새어 나가면 ClickHouse 바인딩이 서버 tz 변환을 건너뛰고,
     # TimeRange가 aware/naive 혼재를 InvalidTimeRangeError로 거부한다.
     for iso in ("2026-08-27T18:33:00", "2026-08-27T09:33:00Z", "2026-08-27T18:33:00+09:00"):
-        assert _parse_kst(iso).utcoffset() == timedelta(hours=9), iso
+        assert parse_kst(iso).utcoffset() == timedelta(hours=9), iso
 
 
 _LOG_TIME = datetime(2026, 8, 27, 18, 30, tzinfo=timezone(timedelta(hours=9)))

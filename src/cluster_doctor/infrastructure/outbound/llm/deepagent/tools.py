@@ -22,11 +22,9 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 
 from langchain_core.tools import tool
-
-_KST = timezone(timedelta(hours=9))
 
 # ES 로그 한 줄의 머리: [시각][레벨][로거]. SSH 폴백은 파일 원문을 그대로
 # 받으므로 여기서 뽑지 않으면 레벨과 로거가 리포트에 도달하지 못한다.
@@ -73,37 +71,12 @@ from cluster_doctor.application.port.outbound.node_log_fetcher import (
     DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )
-
-
-def _parse_kst(iso: str) -> datetime:
-    """agent가 준 ISO 문자열을 KST-aware datetime으로 만든다.
-
-    ``replace(tzinfo=_KST)``를 쓰면 안 된다. 그것은 변환이 아니라 덮어쓰기라
-    ``"...Z"``나 ``"+00:00"``이 붙어 온 순간을 같은 벽시계의 KST로 재해석해
-    정확히 9시간 어긋난 구간을 조회한다. 프롬프트가 KST를 지시하더라도
-    모델이 지시를 어길 수 있고, 이 오류는 조회가 성공하고 결과만 틀리므로
-    어디에서도 드러나지 않는다.
-    """
-    parsed = datetime.fromisoformat(iso)
-    if parsed.utcoffset() is None:
-        return parsed.replace(tzinfo=_KST)
-    return parsed.astimezone(_KST)
-
-
-def _parse_window(start_iso: str, end_iso: str):
-    """두 ISO 문자열을 KST 구간으로 만든다. ``(start, end, 오류문자열)``.
-
-    세 tool이 같은 6줄을 각자 들고 있었다. 오류 문구까지 복붙돼 있어서, 한
-    곳만 고치면 나머지 둘이 다른 말을 하게 되는 상태였다.
-
-    실패를 예외가 아니라 세 번째 항목으로 돌려주는 이유: 호출자는 어차피
-    문자열을 반환해야 한다. tool에서 예외가 새면 agent 실행 전체가 중단되므로
-    각 tool이 반드시 잡아야 하는데, 그러면 잡는 코드가 다시 세 벌이 된다.
-    """
-    try:
-        return _parse_kst(start_iso), _parse_kst(end_iso), None
-    except ValueError as exc:
-        return None, None, f"시각 파싱 오류: {exc}"
+from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import (
+    KST as _KST,
+    fmt as _fmt,
+    merge_intervals as _merge,
+    parse_window as _parse_window,
+)
 
 
 def _render_entries(entries: list[NodeLogEntry]) -> str:
@@ -234,11 +207,6 @@ def _base_time(
     return log_time, "slowlog_timestamp"
 
 
-def _fmt(moment: datetime) -> str:
-    """프롬프트로 나가는 시각 표기. analyze_logs가 받는 형식과 같다."""
-    return moment.astimezone(_KST).strftime("%Y-%m-%dT%H:%M:%S")
-
-
 def _suggest_windows(first_seen: datetime, last_seen: datetime) -> list[dict]:
     """관측된 유입을 감싸는 분석 구간을 제안한다.
 
@@ -265,16 +233,6 @@ def _suggest_windows(first_seen: datetime, last_seen: datetime) -> list[dict]:
         windows.append({"start_iso": _fmt(cursor), "end_iso": _fmt(chunk_end)})
         cursor = chunk_end
     return windows
-
-
-def _merge(intervals: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
-    merged: list[tuple[datetime, datetime]] = []
-    for start, end in sorted(intervals):
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-    return merged
 
 
 def unresolved_failure(observed: dict) -> str | None:
