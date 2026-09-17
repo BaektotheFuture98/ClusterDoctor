@@ -242,15 +242,14 @@ def _collect_master_logs(
             start_dt=start_dt,
             end_dt=end_dt,
         )
+        state.record_master_text(text)
+        _logger.info(
+            "[tool] analyze_logs 마스터 로그 %d줄 (SSH 폴백)",
+            text.count("\n") + 1 if text else 0,
+        )
     except Exception as exc:
         _logger.warning("[tool] analyze_logs master log 수집 실패: %s", exc)
         return ""
-
-    state.record_master_text(text)
-    _logger.info(
-        "[tool] analyze_logs 마스터 로그 %d줄 (SSH 폴백)",
-        text.count("\n") + 1 if text else 0,
-    )
     return text
 
 
