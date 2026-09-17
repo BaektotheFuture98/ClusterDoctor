@@ -184,6 +184,73 @@ def _suggest_windows(first_seen: datetime, last_seen: datetime) -> list[dict]:
     return windows
 
 
+def _collect_master_logs(
+    start_dt: datetime,
+    end_dt: datetime,
+    *,
+    cluster: ClusterRepository,
+    fetch_node_logs: Callable[..., list[NodeLogEntry]],
+    node_log_fetcher: NodeLogFetcher,
+    state: DiagnosisState,
+) -> str:
+    """구간의 마스터 노드 로그를 모아 synthesis 컨텍스트로 쓸 텍스트를 만든다.
+
+    실패해도 예외를 올리지 않는다 — 이것은 보조 근거이고, 주 분석은 이것 없이도
+    성립한다.
+
+    ClickHouse를 먼저 시도하고 **실패일 때만** SSH로 내려간다. 조회가 SSH보다
+    나은 이유는 셋이다 — 노드 IP를 얻는 ES 왕복이 없고, severity 정규식 대신
+    level 컬럼을 쓰고, 접속 실패라는 실패 갈래 자체가 없다.
+
+    0건에서는 내려가지 않는다. 로거를 좁혀 뒀으므로 건강한 창에서 0건은
+    정상이고, 그때마다 SSH로 내려가면 analyze_logs 호출마다(최대 6회) ES 왕복 +
+    새 SSH 접속을 치른다. 대가는 적재 지연으로 0건인 경우를 SSH가 메워 주지
+    않는 것인데, 0건만 보고는 "사건 없음"과 "적재 안 됨"을 구별할 수 없으므로
+    접속 6회 비용이 더 크다고 본다.
+    """
+    try:
+        entries = fetch_node_logs(
+            start_dt,
+            end_dt,
+            node_role=_MASTER_ROLE,
+            levels=_MASTER_LOG_LEVELS,
+            loggers=_MASTER_EVENT_LOGGERS,
+            limit=_MASTER_LOG_MAX_LINES,
+        )
+    except Exception as exc:
+        _logger.warning(
+            "[tool] analyze_logs 마스터 로그 조회 실패, SSH로 폴백: %s", exc
+        )
+    else:
+        state.record_master_logs(entries)
+        _logger.info(
+            "[tool] analyze_logs 마스터 로그 %d줄 (ClickHouse)", len(entries)
+        )
+        return _render_entries(entries)
+
+    try:
+        info = cluster.node_info("_master")
+        if not info or not info.get("ip"):
+            return ""
+        text = node_log_fetcher.fetch(
+            info["ip"],
+            info["log_path"],
+            info["cluster_name"],
+            start_dt=start_dt,
+            end_dt=end_dt,
+        )
+    except Exception as exc:
+        _logger.warning("[tool] analyze_logs master log 수집 실패: %s", exc)
+        return ""
+
+    state.record_master_text(text)
+    _logger.info(
+        "[tool] analyze_logs 마스터 로그 %d줄 (SSH 폴백)",
+        text.count("\n") + 1 if text else 0,
+    )
+    return text
+
+
 def make_tools(
     cluster: ClusterRepository,
     fetch_logs: Callable[[TimeRange], list[LogEntry]],
@@ -283,59 +350,14 @@ def make_tools(
 
             # 마스터 노드 로그를 같은 구간으로 수집해 synthesis 컨텍스트에 준다.
             # 실패해도 주 분석을 중단하지 않는다.
-            #
-            # ClickHouse를 먼저 시도하고, 빈 결과나 실패일 때만 SSH로 내려간다.
-            # 조회가 SSH보다 나은 이유는 셋이다 — 노드 IP를 얻는 ES 왕복이
-            # 없고, severity 정규식 대신 level 컬럼을 쓰고, 접속 실패라는
-            # 실패 갈래 자체가 없다. SSH를 남겨 두는 것은 적재가 아직 채워지는
-            # 중이라서다. 테이블이 안정되면 이 폴백은 지워도 된다.
-            master_logs = ""
-            # "0건"과 "조회 실패"를 구별한다. 로거를 좁히고 상한을 80으로
-            # 내렸으니 건강한 창에서 0건은 정상이고, 그때마다 SSH로 내려가면
-            # analyze_logs 호출마다(최대 6회) ES 왕복 + 새 SSH 접속을 치른다 —
-            # 이 전환으로 없앤 실패 갈래를 정상 경로에 다시 들여놓는 셈이다.
-            #
-            # 대가는 적재 지연으로 0건인 경우를 SSH가 메워 주지 않는 것이다.
-            # 0건만 보고는 "사건 없음"과 "적재 안 됨"을 구별할 수 없으므로,
-            # 접속 6회 비용이 더 크다고 보고 실패에서만 내려간다.
-            master_query_failed = False
-            try:
-                master_entries = fetch_node_logs(
-                    start_dt,
-                    end_dt,
-                    node_role=_MASTER_ROLE,
-                    levels=_MASTER_LOG_LEVELS,
-                    loggers=_MASTER_EVENT_LOGGERS,
-                    limit=_MASTER_LOG_MAX_LINES,
-                )
-                master_logs = _render_entries(master_entries)
-                state.record_master_logs(master_entries)
-                _logger.info(
-                    "[tool] analyze_logs 마스터 로그 %d줄 (ClickHouse)",
-                    len(master_entries),
-                )
-            except Exception as m_exc:
-                master_query_failed = True
-                _logger.warning(
-                    "[tool] analyze_logs 마스터 로그 조회 실패, SSH로 폴백: %s", m_exc
-                )
-
-            if master_query_failed:
-                try:
-                    m_info = cluster.node_info("_master")
-                    if m_info and m_info.get("ip"):
-                        master_logs = node_log_fetcher.fetch(
-                            m_info["ip"], m_info["log_path"], m_info["cluster_name"],
-                            start_dt=start_dt,
-                            end_dt=end_dt,
-                        )
-                        state.record_master_text(master_logs)
-                        _logger.info(
-                            "[tool] analyze_logs 마스터 로그 %d줄 (SSH 폴백)",
-                            master_logs.count("\n") + 1 if master_logs else 0,
-                        )
-                except Exception as m_exc:
-                    _logger.warning("[tool] analyze_logs master log 수집 실패: %s", m_exc)
+            master_logs = _collect_master_logs(
+                start_dt,
+                end_dt,
+                cluster=cluster,
+                fetch_node_logs=fetch_node_logs,
+                node_log_fetcher=node_log_fetcher,
+                state=state,
+            )
 
             state_graph = _graph.invoke(
                 {
