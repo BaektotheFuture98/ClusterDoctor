@@ -96,3 +96,67 @@ def test_mark_window_failed_does_not_set_degraded():
     state.mark_window_failed(TRIGGER, end, "분석 실패")
     assert state.failed == [(TRIGGER, end)]
     assert state.degraded is False
+
+
+def test_unresolved_failure_is_none_when_retry_covered_it():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    end = TRIGGER + timedelta(minutes=5)
+    state.mark_window_failed(TRIGGER, end, "실패")
+    state.analyzed.append((TRIGGER, end))
+    assert state.unresolved_failure() is None
+
+
+def test_unresolved_failure_reports_leftover_window():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    end = TRIGGER + timedelta(minutes=5)
+    state.mark_window_failed(TRIGGER, end, "실패")
+    assert "2026-09-17T03:00:00" in state.unresolved_failure()
+
+
+def test_coverage_gaps_is_silent_without_last_seen():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    assert state.coverage_gaps() == []
+
+
+def test_coverage_gaps_accepts_split_windows():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    state.last_seen = TRIGGER + timedelta(minutes=20)
+    state.requested = [
+        (TRIGGER, TRIGGER + timedelta(minutes=10)),
+        (TRIGGER + timedelta(minutes=10), TRIGGER + timedelta(minutes=20)),
+    ]
+    assert state.coverage_gaps() == []
+
+
+def test_coverage_gaps_reports_uncovered_seconds():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    state.last_seen = TRIGGER + timedelta(minutes=20)
+    state.requested = [(TRIGGER, TRIGGER + timedelta(minutes=5))]
+    gaps = state.coverage_gaps()
+    assert len(gaps) == 1
+    assert "900초" in gaps[0]
+
+
+def test_coverage_gaps_reports_when_never_analyzed():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    state.last_seen = TRIGGER + timedelta(minutes=5)
+    assert "analyze_logs가 호출되지 않았다" in state.coverage_gaps()[0]
+
+
+def test_to_observations_sorts_master_events_with_ssh_lines_last():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    state.record_master_logs([_node_log("later", TRIGGER + timedelta(minutes=1))])
+    state.record_master_logs([_node_log("earlier", TRIGGER)])
+    state.record_master_text("timestamp 없는 줄")
+    observations = state.to_observations()
+    assert [event.line for event in observations.master_events] == [
+        "earlier",
+        "later",
+        "timestamp 없는 줄",
+    ]
+    assert observations.master_log_total == 3
+
+
+def test_to_observations_carries_time_basis():
+    state = DiagnosisState(TRIGGER, TRIGGER)
+    assert state.to_observations().time_basis == "slowlog_timestamp"
