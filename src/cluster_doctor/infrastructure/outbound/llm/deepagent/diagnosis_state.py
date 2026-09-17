@@ -18,17 +18,22 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from cluster_doctor.domain.model.diagnosis_report import (
     HealthPoint,
     MasterEvent,
     NodeMetricRow,
+    Observations,
     SlowCandidate,
     TimelineRow,
 )
 from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
-from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import KST
+from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import (
+    KST,
+    fmt,
+    merge_intervals,
+)
 from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
     candidate_key,
     merge_node_rows,
@@ -57,6 +62,20 @@ _CANDIDATES_PER_CALL = 5
 
 # 파이프라인 지연을 의심하는 문턱.
 _PIPELINE_DELAY_LIMIT = timedelta(minutes=30)
+
+# 커버리지 판정의 허용오차. agent는 구간을 분 경계로 반올림하므로 유입 마지막
+# 몇십 초가 구간 밖으로 밀려나는 일이 정상적으로 생긴다. 그것까지 누락으로
+# 보고하면 배너가 잡음이 되고, 잡음이 된 배너는 읽히지 않는다.
+_COVERAGE_TOLERANCE = timedelta(seconds=60)
+
+# 리포트에 싣는 마스터 로그 줄 수 상한. 수집 쪽 상한이 analyze_logs 호출마다
+# 걸리므로 최대 6회면 480줄까지 쌓인다. 한 줄이 평균 524자라 그대로 실으면
+# HTML이 수백 KB가 된다. 잘린 사실은 master_log_total로 드러난다.
+_MASTER_LOG_REPORT_MAX = 120
+
+# 마스터 로그 정렬의 기준점. SSH 폴백으로 온 줄은 timestamp를 뽑을 수 없어
+# None인데, None과 datetime을 직접 비교하면 TypeError가 난다.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def _base_time(
@@ -273,3 +292,109 @@ class DiagnosisState:
         """
         self.gaps.append(observation)
         return observation
+
+    def unresolved_failure(self) -> str | None:
+        """성공으로 덮이지 않은 실패 구간이 남았는지 본다.
+
+        실패한 구간을 나중에 다시 불러 종합까지 성공했다면 진단은 성립한
+        것이므로 아무 표식도 남기지 않는다. ``merge_intervals``를 쓰는 이유는
+        재시도 구간이 원래 구간과 정확히 같지 않고 더 넓게 또는 쪼개져 들어올
+        수 있어서다.
+        """
+        if not self.failed:
+            return None
+        covered = merge_intervals(self.analyzed)
+        leftover = [
+            (start, end)
+            for start, end in self.failed
+            if not any(c0 <= start and end <= c1 for c0, c1 in covered)
+        ]
+        if not leftover:
+            return None
+        return ", ".join(f"{fmt(s)} ~ {fmt(e)}" for s, e in leftover)
+
+    def coverage_gaps(self) -> list[str]:
+        """요청된 구간들의 합집합이 관측된 유입을 감쌌는지 본다.
+
+        **합집합으로만 판정한다.** 호출마다 따로 보면 정당한 분할이 전부
+        위반으로 잡힌다 — 20분을 두 조각으로 나누면 첫 조각은
+        ``end < last_seen``이고 둘째 조각은 ``start > first_seen``인 것이
+        당연하다.
+
+        판정 대상은 관측된 유입 자체뿐이다. 앞쪽 lookback은 기본값이지 계약이
+        아니므로 그것을 못 채운 것은 누락으로 보고하지 않는다.
+        ``last_seen``이 없으면 아무것도 주장하지 않는다.
+        """
+        if self.first_seen is None or self.last_seen is None:
+            return []
+        if self.last_seen < self.first_seen:
+            return []
+
+        if not self.requested:
+            return [
+                f"유입 구간({fmt(self.first_seen)} ~ {fmt(self.last_seen)})을 "
+                "분석하지 않았다 — analyze_logs가 호출되지 않았다."
+            ]
+
+        uncovered = timedelta()
+        cursor = self.first_seen
+        for start, end in merge_intervals(self.requested):
+            if end <= cursor:
+                continue
+            if start > cursor:
+                uncovered += min(start, self.last_seen) - cursor
+            cursor = max(cursor, end)
+            if cursor >= self.last_seen:
+                break
+        if cursor < self.last_seen:
+            uncovered += self.last_seen - cursor
+
+        if uncovered <= _COVERAGE_TOLERANCE:
+            return []
+        return [
+            f"관측된 유입 {fmt(self.first_seen)} ~ {fmt(self.last_seen)} 중 "
+            f"{int(uncovered.total_seconds())}초가 분석 구간에 포함되지 않았다."
+        ]
+
+    def to_observations(self) -> Observations:
+        """누적된 관측값을 도메인 객체로 굳힌다.
+
+        수집 중에는 병합이 쉬운 dict로 들고 있다가 여기서 정렬된 tuple이 된다.
+        리포트에 실린 뒤에는 바뀌지 않아야 하므로 frozen 타입으로 옮긴다.
+        """
+        # timestamp가 있는 줄을 먼저, 시간순으로. SSH 폴백 줄(timestamp 없음)은
+        # 뒤로 보내되 넣은 순서를 유지한다 — 원본 파일의 순서가 곧 시간순이다.
+        ordered_master = sorted(
+            enumerate(self.master_logs.values()),
+            key=lambda pair: (
+                pair[1].timestamp is None,
+                pair[1].timestamp or _EPOCH,
+                pair[0],
+            ),
+        )
+        master_events = tuple(event for _index, event in ordered_master)
+
+        return Observations(
+            time_basis=self.time_basis,
+            first_seen=self.first_seen,
+            last_seen=self.last_seen,
+            requested=tuple(self.requested),
+            total_wait_seconds=float(self.wait_seconds),
+            wait_cap_reached=bool(self.wait_cap_reached),
+            timeline=tuple(self.timeline[minute] for minute in sorted(self.timeline)),
+            nodes=tuple(sorted(self.nodes.values(), key=lambda row: row.node)),
+            master_events=master_events[:_MASTER_LOG_REPORT_MAX],
+            master_log_total=len(master_events),
+            health=tuple(self.health),
+            # id는 C1, C2 … 순으로 붙었으므로 발견 순서로 정렬하려면 숫자
+            # 부분을 봐야 한다. 문자열 정렬이면 C10이 C2 앞에 온다. int()로
+            # 파싱하지 않는 이유는 여기서 예외가 나면 리포트 전달 자체가
+            # 깨지기 때문이다 — 길이를 먼저 보면 파싱 없이 같은 순서가 나오고
+            # 어떤 문자열이 와도 터지지 않는다.
+            candidates=tuple(
+                sorted(
+                    self.candidates.values(),
+                    key=lambda c: (len(c.candidate_id), c.candidate_id),
+                )
+            ),
+        )
