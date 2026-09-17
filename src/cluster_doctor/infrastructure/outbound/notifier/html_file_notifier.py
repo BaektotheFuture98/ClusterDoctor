@@ -523,9 +523,9 @@ def render_report(
         # 모델이 그 말을 옮겨 적어 줘야만 성립하는 휴리스틱이다 — 코드는
         # 실패한 분의 row.failed로 그 사실을 정확히 안다.
         #
-        # elif가 아니라 if다. row.failed가 참이면 analyze_logs의 _mark_gap이
-        # 반드시 gaps에도 남기므로, elif로 두면 이 배너가 **한 번도 뜨지
-        # 않는다.** 두 배너는 다른 말을 한다 — 위는 "무엇이 빠졌는가", 이쪽은
+        # elif가 아니라 if다. row.failed가 참이면 state.mark_gap이 반드시
+        # gaps에도 남기므로, elif로 두면 이 배너가 **한 번도 뜨지 않는다.**
+        # 두 배너는 다른 말을 한다 — 위는 "무엇이 빠졌는가", 이쪽은
         # "어느 구간을 믿을 수 없는가"다.
         banners.append(
             '<div class="banner">'
