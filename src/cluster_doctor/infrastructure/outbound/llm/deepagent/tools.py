@@ -200,7 +200,9 @@ def _collect_master_logs(
 
     ClickHouse를 먼저 시도하고 **실패일 때만** SSH로 내려간다. 조회가 SSH보다
     나은 이유는 셋이다 — 노드 IP를 얻는 ES 왕복이 없고, severity 정규식 대신
-    level 컬럼을 쓰고, 접속 실패라는 실패 갈래 자체가 없다.
+    level 컬럼을 쓰고, 접속 실패라는 실패 갈래 자체가 없다. SSH를 남겨 두는
+    것은 적재가 아직 채워지는 중이라서다. 테이블이 안정되면 이 폴백은 지워도
+    된다.
 
     0건에서는 내려가지 않는다. 로거를 좁혀 뒀으므로 건강한 창에서 0건은
     정상이고, 그때마다 SSH로 내려가면 analyze_logs 호출마다(최대 6회) ES 왕복 +
@@ -217,16 +219,17 @@ def _collect_master_logs(
             loggers=_MASTER_EVENT_LOGGERS,
             limit=_MASTER_LOG_MAX_LINES,
         )
+        rendered = _render_entries(entries)
+        state.record_master_logs(entries)
+        _logger.info(
+            "[tool] analyze_logs 마스터 로그 %d줄 (ClickHouse)", len(entries)
+        )
     except Exception as exc:
         _logger.warning(
             "[tool] analyze_logs 마스터 로그 조회 실패, SSH로 폴백: %s", exc
         )
     else:
-        state.record_master_logs(entries)
-        _logger.info(
-            "[tool] analyze_logs 마스터 로그 %d줄 (ClickHouse)", len(entries)
-        )
-        return _render_entries(entries)
+        return rendered
 
     try:
         info = cluster.node_info("_master")
