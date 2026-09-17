@@ -187,7 +187,7 @@ def test_a_degraded_run_still_delivers_the_report():
     # 전달하고 재트리거만 막는다.
     def _degrading(**kwargs):
         # analyze_logs가 실패 문자열을 돌려줄 때 하는 일과 같다.
-        kwargs["run_state"]["degraded"] = True
+        kwargs["state"].degraded = True
         return []
 
     result = _run_analyze_with_tools(_degrading, agent_text="분석 실패 리포트")
@@ -200,7 +200,7 @@ def test_supplementary_gaps_do_not_fail_the_run():
     # 보조 조사(노드 로그 SSH 수집)가 실패해도 4단계 분석 결과는 온전하다.
     # 재트리거를 막지 않고, 빠진 사실만 결과에 실어 보낸다.
     def _with_gap(**kwargs):
-        kwargs["run_state"]["gaps"].append("es-data-02 노드 로그 SSH 수집 실패")
+        kwargs["state"].gaps.append("es-data-02 노드 로그 SSH 수집 실패")
         return []
 
     result = _run_analyze_with_tools(_with_gap, agent_text="정상 리포트")
@@ -212,7 +212,9 @@ def test_supplementary_gaps_do_not_fail_the_run():
 
 def test_a_clean_run_still_returns_the_report():
     def _clean(**kwargs):
-        assert kwargs["run_state"] == {"degraded": False, "gaps": []}
+        state = kwargs["state"]
+        assert state.degraded is False
+        assert state.gaps == []
         return []
 
     result = _run_analyze_with_tools(_clean, agent_text="정상 리포트")
@@ -223,7 +225,7 @@ def test_a_clean_run_still_returns_the_report():
     assert result.gaps == ()
 
 
-def _seed_observation(run_state) -> None:
+def _seed_observation(state) -> None:
     """관측값이 하나라도 있는 상태를 만든다.
 
     ``analyze_logs``가 한 번이라도 성공한 실행과 같은 모양이다. 2단 폴백의
@@ -234,9 +236,7 @@ def _seed_observation(run_state) -> None:
     from cluster_doctor.domain.model.diagnosis_report import TimelineRow
 
     minute = _dt(2026, 8, 27, 3, 0, tzinfo=timezone.utc)
-    run_state.setdefault("observations", {})["timeline"] = {
-        minute: TimelineRow(minute=minute, counts={"slowlog": 3})
-    }
+    state.timeline[minute] = TimelineRow(minute=minute, counts={"slowlog": 3})
 
 
 def test_구조화_실패는_평문으로_떨어지되_진단을_버리지_않는다():
@@ -248,7 +248,7 @@ def test_구조화_실패는_평문으로_떨어지되_진단을_버리지_않�
     """
 
     def _with_observation(**kwargs):
-        _seed_observation(kwargs["run_state"])
+        _seed_observation(kwargs["state"])
         return []
 
     result = _run_analyze_with_tools(
@@ -294,21 +294,10 @@ def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든
     from cluster_doctor.domain.model.diagnosis_report import TimelineRow
 
     def _with_observations(**kwargs):
-        kwargs["run_state"]["observations"] = {
-            "timeline": {
-                _dt(2026, 9, 10, 15, 27, tzinfo=_UTC): TimelineRow(
-                    minute=_dt(2026, 9, 10, 15, 27, tzinfo=_UTC),
-                    counts={"es_query_log": 264},
-                )
-            },
-            "nodes": {},
-            "master_logs": {},
-            "master_log_total": 0,
-            "health": [],
-            "candidates": {},
-            "wait_seconds": 0.0,
-            "wait_cap_reached": False,
-        }
+        minute = _dt(2026, 9, 10, 15, 27, tzinfo=_UTC)
+        kwargs["state"].timeline[minute] = TimelineRow(
+            minute=minute, counts={"es_query_log": 264}
+        )
         return []
 
     # 3단 — 관측값이 있으면 리포트가 나온다
