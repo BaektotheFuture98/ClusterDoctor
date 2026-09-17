@@ -690,6 +690,27 @@ def test_a_master_log_recording_failure_after_a_successful_query_still_triggers_
     assert "오류" not in result
 
 
+def test_a_master_log_recording_failure_after_a_successful_ssh_fallback_still_completes_the_window():
+    # SSH 폴백은 fetch에 성공했지만 기록 단계에서 예외가 난다. fetch와 기록이
+    # 같은 try 블록 안에 있어야, 여기서 난 예외도 이 함수 안에서 흡수되고
+    # 구간 전체가 실패로 번지지 않는다.
+    node_log_fetcher = MagicMock()
+    node_log_fetcher.fetch.return_value = "[2026-09-10T02:04:33][WARN ] shard failed"
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+    state.record_master_text = MagicMock(side_effect=RuntimeError("기록 실패"))
+
+    result = _tools(
+        fetch_logs=MagicMock(return_value=[_node_log_entry()]),
+        fetch_node_logs=MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE")),
+        node_log_fetcher=node_log_fetcher,
+        state=state,
+    )["analyze_logs"].invoke(_WINDOW)
+
+    node_log_fetcher.fetch.assert_called_once()
+    assert state.unresolved_failure() is None
+    assert "오류" not in result
+
+
 def test_get_node_info_is_gone():
     # get_node_logs가 내부에서 같은 조회를 하므로 agent가 부를 실익이 없었고,
     # 프롬프트에도 없었고, 호출 이력도 0회였다. 스키마 토큰만 먹고 있었다.
