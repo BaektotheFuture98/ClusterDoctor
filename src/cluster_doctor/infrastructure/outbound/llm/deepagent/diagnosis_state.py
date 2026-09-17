@@ -42,6 +42,9 @@ from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
     timeline_row,
 )
 from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import format_log_line
+# 후보 줄은 운영자용 리포트와 **같은 함수**로 그린다. 여기서 따로 그리면
+# 모델이 보는 수치와 리포트에 실리는 수치가 갈린다 — 실측으로 es_query_log
+# 264건이 slowlog로 실린 적이 있다.
 from cluster_doctor.infrastructure.outbound.notifier.report_text import candidate_line
 
 _logger = logging.getLogger(__name__)

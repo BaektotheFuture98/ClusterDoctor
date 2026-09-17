@@ -61,6 +61,11 @@ def _tools(
     """이름 → tool 매핑. make_tools 호출마다 클로저 상태가 새로 만들어진다."""
     from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
 
+    # state를 넘기면 기준 시각은 이미 그 안에서 정해진 것이므로 log_time/
+    # kafka_receive_time은 조용히 무시된다. 함께 넘기면 테스트가 skew를
+    # 준다고 믿으면서 아무것도 검증하지 못하는 조합이 생긴다.
+    assert state is None or (log_time is None and kafka_receive_time is None)
+
     if node_log_fetcher is None:
         # fetch가 빈 문자열을 돌려주게 못 박는다. MagicMock 기본 반환값을
         # 그대로 두면 master_logs에 MagicMock이 실려 종합 프롬프트에 그
@@ -934,6 +939,52 @@ def test_조회_자체가_실패하면_없는_로그로_타임라인을_지어�
 
 
 # --------------------------------------------------------------------------
+# DiagnosisState의 수집 가드는 실패해도 진단을 죽이지 않는다
+#
+# record_log_observations·record_failed_timeline은 각각 자기 안에서
+# try/except Exception으로 감싸여 있다. 이 가드가 없으면 그 안에서 난
+# 예외가 tool 밖으로 새어 agent 실행 전체를 죽인다.
+# --------------------------------------------------------------------------
+
+def test_a_node_metric_recording_failure_during_a_successful_analysis_still_returns_a_report():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent import diagnosis_state
+
+    minute = datetime(2026, 8, 27, 18, 31, tzinfo=KST)
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+
+    with patch.object(
+        diagnosis_state, "merge_node_rows", side_effect=RuntimeError("집계 실패")
+    ):
+        result = _tools(
+            fetch_logs=MagicMock(return_value=_busy_logs(minute)),
+            state=state,
+        )["analyze_logs"].invoke(
+            {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
+        )
+
+    assert "오류" not in result
+    assert not state.nodes, "merge_node_rows가 실패했으니 노드 메트릭은 쌓이지 않아야 한다"
+    assert (
+        datetime(2026, 8, 27, 18, 30, tzinfo=KST),
+        datetime(2026, 8, 27, 18, 35, tzinfo=KST),
+    ) in state.analyzed
+
+
+def test_a_timeline_row_failure_while_recording_a_failed_window_still_returns_the_failure_observation():
+    from cluster_doctor.infrastructure.outbound.llm.deepagent import diagnosis_state
+
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+
+    with patch.object(
+        diagnosis_state, "timeline_row", side_effect=RuntimeError("타임라인 생성 실패")
+    ):
+        result, minute = _analyze_with_every_minute_failing(state)
+
+    assert "분석 실패" in result
+    assert minute not in state.timeline, "timeline_row가 실패했으니 그 분은 채워지지 않아야 한다"
+
+
+# --------------------------------------------------------------------------
 # 후보 목록은 모델에게 실제로 도달해야 한다
 #
 # 프롬프트는 "코드가 [C1] [C2] … 후보로 제시하므로 너는 id와 고른 이유만
@@ -1056,6 +1107,12 @@ def test_미래_시각의_slowlog는_유입_구간을_미래로_벌리지_않는
 
     last_seen = datetime.strptime(result["last_seen"], "%Y-%m-%dT%H:%M:%S")
     assert last_seen <= now.replace(tzinfo=None) + timedelta(seconds=1)
+
+    # latest도 같은 눌림을 받아야 한다. earliest/latest는 clock skew로 눌린
+    # times에서 뽑으므로, 미래로 벌어진 원본 timestamp가 아니라 last_seen과
+    # 같은 현재 시각 근처여야 한다.
+    latest = datetime.strptime(result["latest"], "%Y-%m-%dT%H:%M:%S")
+    assert latest <= now.replace(tzinfo=None) + timedelta(seconds=1)
 
 
 # --------------------------------------------------------------------------
