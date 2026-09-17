@@ -200,7 +200,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
 
         # tool은 실패를 예외가 아니라 문자열로 돌려준다(예외는 agent 실행
         # 전체를 죽인다). 그 사실을 여기로 실어 나르는 통로다.
-        state = DiagnosisState(log_time, kafka_receive_time)
+        state = DiagnosisState(log_time=log_time, kafka_receive_time=kafka_receive_time)
         tools = make_tools(
             cluster=self._cluster,
             fetch_logs=self._fetch_logs,
