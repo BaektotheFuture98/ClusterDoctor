@@ -842,7 +842,7 @@ def make_tools(
                     "[tool] 발생 시각이 현재보다 미래인 slowlog %d건(최대 %s) — "
                     "clock skew로 보고 현재 시각으로 눌러 쓴다",
                     len(ahead),
-                    _fmt(max(ahead)),
+                    _fmt(ahead[-1]),
                 )
                 times = sorted(min(t, now) for t in times)
             observed["zero_streak"] = 0
@@ -852,14 +852,16 @@ def make_tools(
                 observed["first_seen"] = times[0]
             if observed["last_seen"] is None or times[-1] > observed["last_seen"]:
                 observed["last_seen"] = times[-1]
+            earliest, latest = _fmt(times[0]), _fmt(times[-1])
         else:
             observed["zero_streak"] += 1
+            earliest, latest = None, None
 
         settled = observed["zero_streak"] >= _SETTLED_ZERO_STREAK
         result = {
             "count": len(entries),
-            "earliest": _fmt(min(e.timestamp for e in entries)) if entries else None,
-            "latest": _fmt(max(e.timestamp for e in entries)) if entries else None,
+            "earliest": earliest,
+            "latest": latest,
             "first_seen": _fmt(observed["first_seen"]) if observed["first_seen"] else None,
             "last_seen": _fmt(observed["last_seen"]) if observed["last_seen"] else None,
             "zero_streak": observed["zero_streak"],
