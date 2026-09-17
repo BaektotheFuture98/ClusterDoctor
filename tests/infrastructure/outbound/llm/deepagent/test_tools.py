@@ -9,6 +9,9 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+from cluster_doctor.infrastructure.outbound.llm.deepagent.diagnosis_state import (
+    DiagnosisState,
+)
 from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import parse_kst
 
 KST = timezone(timedelta(hours=9))
@@ -47,7 +50,7 @@ def _tools(
     fetch_logs=None,
     drain_pending=None,
     cluster=None,
-    run_state=None,
+    state=None,
     node_log_fetcher=None,
     fetch_node_logs=None,
     call_llm=None,
@@ -71,6 +74,9 @@ def _tools(
         # 타입은 조용히 넘기지 않고 터뜨리도록 되어 있다).
         fetch_node_logs = MagicMock(return_value=[])
 
+    if state is None:
+        state = DiagnosisState(log_time or _LOG_TIME, kafka_receive_time or _LOG_TIME)
+
     built = make_tools(
         cluster=cluster or MagicMock(),
         fetch_logs=fetch_logs or MagicMock(return_value=[]),
@@ -80,9 +86,7 @@ def _tools(
         or MagicMock(return_value='{"summary": "s", "evidence": []}'),
         node_log_fetcher=node_log_fetcher,
         fetch_node_logs=fetch_node_logs,
-        run_state=run_state if run_state is not None else {"degraded": False},
-        log_time=log_time or _LOG_TIME,
-        kafka_receive_time=kafka_receive_time or _LOG_TIME,
+        state=state,
     )
     return {t.name: t for t in built}
 
@@ -114,60 +118,53 @@ def test_analyze_logs_rejects_an_unparsable_time_without_raising():
 #
 # tool은 실패해도 예외를 올리지 않고 문자열을 돌려준다(예외는 agent 실행
 # 전체를 죽인다). 그것만으로는 호출자가 분석 실패를 알 수 없어, agent가 쓴
-# "분석하지 못했다" 리포트가 성공으로 취급된다. run_state에 남겨 알린다.
+# "분석하지 못했다" 리포트가 성공으로 취급된다. state에 남겨 알린다.
 # --------------------------------------------------------------------------
 
 def test_a_failed_analysis_that_is_never_retried_is_a_failed_diagnosis():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
-        unresolved_failure,
-    )
-
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     fetch_logs = MagicMock(side_effect=RuntimeError("ClickHouse 접속 불가"))
-    tool = _tools(fetch_logs=fetch_logs, run_state=run_state)["analyze_logs"]
+    tool = _tools(fetch_logs=fetch_logs, state=state)["analyze_logs"]
 
     result = tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
 
     assert "오류" in result
-    assert unresolved_failure(run_state["observed"]) is not None
+    assert state.unresolved_failure() is not None
 
 
 def test_a_failure_that_a_retry_resolved_is_not_a_failed_diagnosis():
     """일시 오류 뒤 같은 구간 재호출이 성공하면 진단은 성립한 것이다.
 
-    첫 실패가 run_state["degraded"]를 박으면 되돌릴 방법이 없다. 실측
+    첫 실패가 state.degraded를 박으면 되돌릴 방법이 없다. 실측
     (13:54 status=529 실패 → 14:00 같은 구간 재호출 → 14:04 성공)에서 리포트에
     붉은 "분석 실패" 배너가 붙고 재트리거까지 막혔다. 거짓 배너는 배너 전체의
     신뢰를 깎는다.
     """
     from cluster_doctor.domain.model.log_entry import SlowlogEntry
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
-        unresolved_failure,
-    )
 
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     logs = [SlowlogEntry(timestamp=datetime(2026, 8, 27, 18, 31, tzinfo=KST))]
     # 1회는 터지고 2회는 성공한다 — provider 과부하가 하는 그대로다.
     fetch_logs = MagicMock(side_effect=[RuntimeError("provider 과부하"), logs])
-    tool = _tools(fetch_logs=fetch_logs, run_state=run_state)["analyze_logs"]
+    tool = _tools(fetch_logs=fetch_logs, state=state)["analyze_logs"]
 
     window = {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
     assert "오류" in tool.invoke(window)
     tool.invoke(window)
 
-    assert unresolved_failure(run_state["observed"]) is None
+    assert state.unresolved_failure() is None
 
 
 def test_an_empty_window_is_not_a_degraded_run():
     # 로그가 없는 구간은 유효한 관찰 결과지 실패가 아니다. 이것을 실패로
     # 표시하면 한산한 시간대의 정상 진단이 통째로 실패로 승격된다.
-    run_state = {"degraded": False}
-    tool = _tools(fetch_logs=MagicMock(return_value=[]), run_state=run_state)["analyze_logs"]
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+    tool = _tools(fetch_logs=MagicMock(return_value=[]), state=state)["analyze_logs"]
 
     result = tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
 
     assert "로그 없음" in result
-    assert run_state["degraded"] is False
+    assert state.degraded is False
 
 
 # --------------------------------------------------------------------------
@@ -436,15 +433,15 @@ def test_search_node_logs_says_when_the_row_limit_truncated_the_result():
 
 def test_search_node_logs_failure_is_an_observation_not_a_degraded_run():
     # 보조 조사다. 실패해도 slowlog 분석 결과는 온전하므로 리포트를 버리지 않는다.
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     fetch_node_logs = MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE"))
 
-    result = _tools(fetch_node_logs=fetch_node_logs, run_state=run_state)[
+    result = _tools(fetch_node_logs=fetch_node_logs, state=state)[
         "search_node_logs"
     ].invoke(_NODE_LOG_WINDOW)
 
     assert "노드 로그 조회 실패" in result
-    assert run_state["degraded"] is False
+    assert state.degraded is False
 
 
 def test_search_node_logs_rejects_an_unparsable_time_without_raising():
@@ -490,7 +487,7 @@ def test_analyze_logs_proceeds_when_the_master_has_no_logs_at_all():
     # 마스터 로그는 보조 컨텍스트다. ClickHouse가 0건이고 SSH도 빈 문자열을
     # 돌려주는 경우(한산한 구간, 또는 그 구간에 WARN 이상이 없었던 경우)에도
     # slowlog 분석은 끝까지 진행되어야 한다.
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     call_llm = MagicMock(return_value="===리포트===\n종합 결과")
     node_log_fetcher = MagicMock()
     node_log_fetcher.fetch.return_value = ""
@@ -499,13 +496,13 @@ def test_analyze_logs_proceeds_when_the_master_has_no_logs_at_all():
         fetch_logs=MagicMock(return_value=[_node_log_entry()]),
         fetch_node_logs=MagicMock(return_value=[]),
         node_log_fetcher=node_log_fetcher,
-        run_state=run_state,
+        state=state,
         call_llm=call_llm,
     )
     result = tools["analyze_logs"].invoke(_WINDOW)
 
     assert "종합 결과" in result
-    assert run_state["degraded"] is False
+    assert state.degraded is False
     # 마스터 로그가 비면 종합 프롬프트에 해당 구획을 아예 넣지 않는다.
     # 빈 구획을 넣으면 모델이 "로그가 없었다"와 "수집하지 못했다"를 구별할 수 없다.
     synthesis_prompt = call_llm.call_args.args[0][0]["content"]
@@ -515,7 +512,7 @@ def test_analyze_logs_proceeds_when_the_master_has_no_logs_at_all():
 def test_analyze_logs_proceeds_when_the_master_node_has_no_reachable_ip():
     # node_info가 빈 dict를 주거나 ip가 없으면(마스터 조회 실패, filter_path
     # 변경 등) SSH 폴백을 건너뛴다. 그때도 분석은 계속된다.
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     cluster = MagicMock()
     cluster.node_info.return_value = {}
     node_log_fetcher = MagicMock()
@@ -525,13 +522,13 @@ def test_analyze_logs_proceeds_when_the_master_node_has_no_reachable_ip():
         fetch_node_logs=MagicMock(side_effect=RuntimeError("UNKNOWN_TABLE")),
         node_log_fetcher=node_log_fetcher,
         cluster=cluster,
-        run_state=run_state,
+        state=state,
     )
     result = tools["analyze_logs"].invoke(_WINDOW)
 
     node_log_fetcher.fetch.assert_not_called()
     assert "오류" not in result
-    assert run_state["degraded"] is False
+    assert state.degraded is False
 
 
 def test_analyze_logs_asks_for_cluster_event_loggers_not_just_warn_and_error():
@@ -701,17 +698,13 @@ def test_split_windows_that_together_cover_the_inflow_are_not_a_gap():
     끝의 30초는 허용오차 안이다. agent가 구간을 분 경계로 반올림하므로 유입
     마지막 몇십 초가 밖으로 밀려나는 일이 정상적으로 생긴다.
     """
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import coverage_gaps
-
-    run_state = {"degraded": False, "gaps": []}
     trigger = datetime(2026, 8, 27, 18, 30, 10, tzinfo=KST)
+    state = DiagnosisState(trigger, trigger)
     tools = _tools(
         drain_pending=lambda: _entries(
             trigger, datetime(2026, 8, 27, 18, 42, 30, tzinfo=KST)
         ),
-        run_state=run_state,
-        log_time=trigger,
-        kafka_receive_time=trigger,
+        state=state,
     )
     tools["check_new_slowlogs"].invoke({})
 
@@ -723,24 +716,20 @@ def test_split_windows_that_together_cover_the_inflow_are_not_a_gap():
         {"start_iso": "2026-08-27T18:35:00", "end_iso": "2026-08-27T18:42:00"}
     )
 
-    assert coverage_gaps(run_state["observed"]) == []
+    assert state.coverage_gaps() == []
 
 
 def test_a_window_starting_after_the_inflow_began_is_reported_as_a_gap():
     # 구간을 좁게 잡는 것은 조용히 근거를 잃는 경로다. 지금까지는 흔적이
     # 남지 않았다 — 리포트에 분석 구간이 적히지만 그것이 유입을 감쌌는지는
     # 아무도 보지 않았다.
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import coverage_gaps
-
-    run_state = {"degraded": False, "gaps": []}
     trigger = datetime(2026, 8, 27, 18, 30, 0, tzinfo=KST)
+    state = DiagnosisState(trigger, trigger)
     tools = _tools(
         drain_pending=lambda: _entries(
             trigger, datetime(2026, 8, 27, 18, 41, 50, tzinfo=KST)
         ),
-        run_state=run_state,
-        log_time=trigger,
-        kafka_receive_time=trigger,
+        state=state,
     )
     tools["check_new_slowlogs"].invoke({})
 
@@ -748,7 +737,7 @@ def test_a_window_starting_after_the_inflow_began_is_reported_as_a_gap():
         {"start_iso": "2026-08-27T18:36:00", "end_iso": "2026-08-27T18:44:00"}
     )
 
-    gaps = coverage_gaps(run_state["observed"])
+    gaps = state.coverage_gaps()
     assert len(gaps) == 1
     assert "360초" in gaps[0], gaps[0]
 
@@ -756,10 +745,11 @@ def test_a_window_starting_after_the_inflow_began_is_reported_as_a_gap():
 def test_nothing_is_claimed_when_the_inflow_was_never_observed():
     # check_new_slowlogs를 한 번도 부르지 않으면 유입을 모른다. 근거 없이
     # 누락을 보고하지 않는다.
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import coverage_gaps
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+    assert state.coverage_gaps() == []  # last_seen이 기본값(None) 그대로다.
 
-    assert coverage_gaps({}) == []
-    assert coverage_gaps({"first_seen": None, "last_seen": None}) == []
+    state.first_seen = None
+    assert state.coverage_gaps() == []  # first_seen까지 없어도 여전히 주장하지 않는다.
 
 
 def test_two_empty_checks_settle_the_inflow_and_one_does_not():
@@ -850,7 +840,7 @@ def _busy_logs(minute: datetime):
     ]
 
 
-def _analyze_with_every_minute_failing(run_state):
+def _analyze_with_every_minute_failing(state):
     """분 단위 LLM이 전부 실패하는 구간을 한 번 분석한다."""
     from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
 
@@ -858,7 +848,7 @@ def _analyze_with_every_minute_failing(run_state):
     tool = _tools(
         fetch_logs=MagicMock(return_value=_busy_logs(minute)),
         call_llm_minute=MagicMock(side_effect=LlmApiError("429 rate limit")),
-        run_state=run_state,
+        state=state,
     )["analyze_logs"]
     result = tool.invoke(
         {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
@@ -867,24 +857,22 @@ def _analyze_with_every_minute_failing(run_state):
 
 
 def test_전구간_분석_실패에도_노드_메트릭과_후보는_남는다():
-    run_state = {"degraded": False}
-    result, _ = _analyze_with_every_minute_failing(run_state)
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+    result, _ = _analyze_with_every_minute_failing(state)
 
     assert "분석 실패" in result
-    observations = run_state["observations"]
-    assert observations["nodes"], "조회에 성공한 노드 메트릭이 사라졌다"
-    assert observations["candidates"], "느린 요청 후보가 사라졌다"
+    assert state.nodes, "조회에 성공한 노드 메트릭이 사라졌다"
+    assert state.candidates, "느린 요청 후보가 사라졌다"
 
 
 def test_분석에_실패한_분도_타임라인에_행을_남긴다():
     # 행 자체가 없으면 그 분이 타임라인에서 사라지고 "실패해서 못 봤다"가
     # "아무 일도 없었다"로 읽힌다. row.failed 배너도 행이 없으면 뜨지 않는다.
-    run_state = {"degraded": False}
-    _, minute = _analyze_with_every_minute_failing(run_state)
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
+    _, minute = _analyze_with_every_minute_failing(state)
 
-    timeline = run_state["observations"]["timeline"]
-    assert minute in timeline, "실패한 분이 타임라인에서 통째로 빠졌다"
-    row = timeline[minute]
+    assert minute in state.timeline, "실패한 분이 타임라인에서 통째로 빠졌다"
+    row = state.timeline[minute]
     assert row.failed is True
     # 건수는 logs만으로 계산되므로 LLM이 실패해도 정확하다.
     assert row.counts["slowlog"] == 1
@@ -892,15 +880,15 @@ def test_분석에_실패한_분도_타임라인에_행을_남긴다():
 
 
 def test_조회_자체가_실패하면_없는_로그로_타임라인을_지어내지_않는다():
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     tool = _tools(
         fetch_logs=MagicMock(side_effect=RuntimeError("ClickHouse 접속 불가")),
-        run_state=run_state,
+        state=state,
     )["analyze_logs"]
 
     tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
 
-    assert not run_state["observations"]["timeline"]
+    assert not state.timeline
 
 
 # --------------------------------------------------------------------------
@@ -913,11 +901,9 @@ def test_조회_자체가_실패하면_없는_로그로_타임라인을_지어�
 # --------------------------------------------------------------------------
 
 def test_analyze_logs가_후보_id를_반환값에_실어_보낸다():
-    run_state = {"degraded": False}
     minute = datetime(2026, 8, 27, 18, 31, tzinfo=KST)
     tool = _tools(
         fetch_logs=MagicMock(return_value=_busy_logs(minute)),
-        run_state=run_state,
     )["analyze_logs"]
 
     result = tool.invoke(
@@ -931,19 +917,18 @@ def test_analyze_logs가_후보_id를_반환값에_실어_보낸다():
 
 def test_후보_id는_리포트에_실리는_것과_같은_것이다():
     # 모델이 보는 id와 운영자가 보는 id가 갈리면 조인이 깨진다.
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     minute = datetime(2026, 8, 27, 18, 31, tzinfo=KST)
     tool = _tools(
         fetch_logs=MagicMock(return_value=_busy_logs(minute)),
-        run_state=run_state,
+        state=state,
     )["analyze_logs"]
 
     result = tool.invoke(
         {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
     )
 
-    stored = run_state["observations"]["candidates"].values()
-    for candidate in stored:
+    for candidate in state.candidates.values():
         assert f"[{candidate.candidate_id}]" in result
 
 
@@ -954,9 +939,9 @@ def test_후보_id는_리포트에_실리는_것과_같은_것이다():
 def test_이미_분석한_구간을_다시_요청하면_호출_예산을_쓰지_않는다():
     # 실측으로 16:09~16:17이 연달아 두 번 요청됐다. 반환값이 같으므로 새로
     # 얻는 것은 없고, 조회와 분 단위 LLM 호출 비용만 그대로 다시 든다.
-    run_state = {"degraded": False}
+    state = DiagnosisState(_LOG_TIME, _LOG_TIME)
     fetch_logs = MagicMock(return_value=_busy_logs(datetime(2026, 8, 27, 18, 31, tzinfo=KST)))
-    tool = _tools(fetch_logs=fetch_logs, run_state=run_state)["analyze_logs"]
+    tool = _tools(fetch_logs=fetch_logs, state=state)["analyze_logs"]
     window = {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
 
     tool.invoke(window)
@@ -965,7 +950,7 @@ def test_이미_분석한_구간을_다시_요청하면_호출_예산을_쓰지_
     assert "이미 분석했다" in second
     assert fetch_logs.call_count == 1
     # 거절된 요청은 분석이 아니므로 커버리지 입력에도 두 번 들어가지 않는다.
-    assert run_state["observed"]["requested"].count(
+    assert state.requested.count(
         (
             datetime(2026, 8, 27, 18, 30, tzinfo=KST),
             datetime(2026, 8, 27, 18, 35, tzinfo=KST),
@@ -1049,7 +1034,7 @@ _SSH_LOG = (
 )
 
 
-def _analyze_with_ssh_master_logs(run_state):
+def _analyze_with_ssh_master_logs(state):
     """ClickHouse 조회가 실패해 SSH로 내려가는 경로."""
     cluster = MagicMock()
     cluster.node_info.return_value = {
@@ -1063,14 +1048,14 @@ def _analyze_with_ssh_master_logs(run_state):
         fetch_node_logs=MagicMock(side_effect=RuntimeError("테이블 준비 안 됨")),
         cluster=cluster,
         node_log_fetcher=node_log_fetcher,
-        run_state=run_state,
+        state=state,
     )["analyze_logs"]
     tool.invoke({"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"})
-    return list(run_state["observations"]["master_logs"].values())
+    return list(state.master_logs.values())
 
 
 def test_ssh_폴백_로그에서_레벨과_로거를_뽑는다():
-    events = _analyze_with_ssh_master_logs({"degraded": False})
+    events = _analyze_with_ssh_master_logs(DiagnosisState(_LOG_TIME, _LOG_TIME))
 
     by_logger = {e.logger for e in events}
     assert "o.e.c.c.LagDetector" in by_logger
@@ -1079,7 +1064,7 @@ def test_ssh_폴백_로그에서_레벨과_로거를_뽑는다():
 
 
 def test_ssh_폴백_로그의_시각도_뽑는다():
-    events = _analyze_with_ssh_master_logs({"degraded": False})
+    events = _analyze_with_ssh_master_logs(DiagnosisState(_LOG_TIME, _LOG_TIME))
 
     stamped = [e for e in events if e.timestamp is not None]
     assert len(stamped) == 2
@@ -1088,7 +1073,7 @@ def test_ssh_폴백_로그의_시각도_뽑는다():
 
 def test_머리를_뽑지_못한_줄도_버리지_않는다():
     # 스택 트레이스 연속 행. 값이 없다는 것과 줄이 없다는 것은 다르다.
-    events = _analyze_with_ssh_master_logs({"degraded": False})
+    events = _analyze_with_ssh_master_logs(DiagnosisState(_LOG_TIME, _LOG_TIME))
 
     assert any("org.elasticsearch.Foo.bar" in e.line for e in events)
     assert len(events) == 3

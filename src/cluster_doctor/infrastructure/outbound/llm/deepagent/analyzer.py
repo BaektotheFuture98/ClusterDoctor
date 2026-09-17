@@ -25,14 +25,13 @@ from cluster_doctor.application.port.outbound.llm_analyzer import (
     LlmAnalyzer,
     LlmResponseError,
 )
-from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport, Observations
+from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
-    coverage_gaps,
-    make_tools,
-    unresolved_failure,
+from cluster_doctor.infrastructure.outbound.llm.deepagent.diagnosis_state import (
+    DiagnosisState,
 )
+from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
 from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.infrastructure.outbound.llm.deepagent.prompts import SYSTEM_PROMPT
 from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
@@ -43,17 +42,6 @@ from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
     complete,
     require_supported_provider,
 )
-
-# 리포트에 싣는 마스터 로그 줄 수 상한. 수집 쪽 상한(_MASTER_LOG_MAX_LINES=80)은
-# analyze_logs 호출마다 걸리므로 최대 6회면 480줄까지 쌓인다. 한 줄이 평균 524자
-# 가므로(실측) 그대로 실으면 HTML이 수백 KB가 된다.
-#
-# 잘린 사실은 master_log_total로 드러난다 — "N줄 중 M줄"이 헤더에 찍힌다.
-_MASTER_LOG_REPORT_MAX = 120
-
-# 마스터 로그 정렬의 기준점. SSH 폴백으로 온 줄은 timestamp를 뽑을 수 없어
-# None인데, None과 datetime을 직접 비교하면 TypeError가 난다.
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 _DENY_FILESYSTEM = FilesystemPermission(
     operations=["read", "write"],
@@ -212,7 +200,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
 
         # tool은 실패를 예외가 아니라 문자열로 돌려준다(예외는 agent 실행
         # 전체를 죽인다). 그 사실을 여기로 실어 나르는 통로다.
-        run_state = {"degraded": False, "gaps": []}
+        state = DiagnosisState(log_time, kafka_receive_time)
         tools = make_tools(
             cluster=self._cluster,
             fetch_logs=self._fetch_logs,
@@ -221,9 +209,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             call_llm_minute=call_llm_minute,
             node_log_fetcher=self._node_log_fetcher,
             fetch_node_logs=self._fetch_node_logs,
-            run_state=run_state,
-            log_time=log_time,
-            kafka_receive_time=kafka_receive_time,
+            state=state,
         )
 
         # 구조화 출력을 건다. langchain은 이 모델(ChatLiteLLM + nvidia_nim/gemini)에
@@ -266,13 +252,13 @@ class DeepAgentAnalyzer(LlmAnalyzer):
 
         # 구간 커버리지는 실행이 끝난 뒤에만 판정할 수 있다. tool은 자기 호출만
         # 알고, 분할 호출이 정당한지는 요청 구간 전체의 합집합을 봐야 안다.
-        run_state["gaps"].extend(coverage_gaps(run_state.get("observed", {})))
+        state.gaps.extend(state.coverage_gaps())
 
         # 실패한 구간을 다시 불러 성공했으면 진단은 성립한 것이다. 일시 오류
         # (provider 과부하 등)로 붉은 배너를 붙이고 재트리거까지 막으면 배너가
         # 거짓이 되고, 거짓 배너는 배너 전체의 신뢰를 깎는다.
-        unresolved = unresolved_failure(run_state.get("observed", {}))
-        analysis_failed = run_state["degraded"] or unresolved is not None
+        unresolved = state.unresolved_failure()
+        analysis_failed = state.degraded or unresolved is not None
 
         # 분석이 실패해도 본문은 전달한다. 여기서 예외를 던지면 notify가
         # 호출되지 않아 리포트가 사라지고, 운영자는 logs/app.log를 뒤져야
@@ -282,14 +268,14 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 "분석이 실패한 채 리포트가 작성되었다 — 재트리거하지 않는다%s",
                 f" (미해결 구간: {unresolved})" if unresolved else "",
             )
-        if run_state["gaps"]:
+        if state.gaps:
             _logger.warning(
                 "수집하지 못한 보조 근거 %d건: %s",
-                len(run_state["gaps"]),
-                " / ".join(run_state["gaps"]),
+                len(state.gaps),
+                " / ".join(state.gaps),
             )
 
-        observations = _build_observations(run_state)
+        observations = state.to_observations()
 
         # ── 폴백 사다리 ────────────────────────────────────────────────
         # 구조화 출력은 실패 갈래를 늘린다. "리포트는 항상 전달된다"를 지키려면
@@ -311,7 +297,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             # 반드시 도달한다. 관측값 쪽 빈칸을 다루는 방식과 같다.
             if not (narrative.headline or narrative.findings or narrative.root_cause):
                 _logger.warning("모델이 판단 필드를 하나도 채우지 않았다")
-                run_state["gaps"].append(
+                state.gaps.append(
                     "모델이 결론·발견된 문제점·근본 원인을 하나도 쓰지 않았다. "
                     "이 리포트에는 관측값만 있고 판단이 없다."
                 )
@@ -321,7 +307,7 @@ class DeepAgentAnalyzer(LlmAnalyzer):
             _logger.warning(
                 "모델이 구조화 리포트를 제출하지 않았다 — 평문을 그대로 싣는다"
             )
-            run_state["gaps"].append(
+            state.gaps.append(
                 "모델이 구조화 리포트를 제출하지 않아 판단 부분을 평문으로 실었다."
             )
             if observations.is_empty():
@@ -353,61 +339,8 @@ class DeepAgentAnalyzer(LlmAnalyzer):
                 narrative_text=content,
             ),
             analysis_failed=analysis_failed,
-            gaps=tuple(run_state["gaps"]),
+            gaps=tuple(state.gaps),
         )
-
-
-def _build_observations(run_state: dict) -> Observations:
-    """tool들이 ``run_state``에 쌓아 둔 관측값을 도메인 객체로 굳힌다.
-
-    수집 중에는 병합이 쉬운 dict로 들고 있다가 여기서 정렬된 tuple이 된다.
-    리포트에 실린 뒤에는 바뀌지 않아야 하므로 frozen 타입으로 옮긴다.
-    """
-    observed = run_state.get("observed", {})
-    raw = run_state.get("observations", {})
-
-    timeline_map = raw.get("timeline", {})
-    node_map = raw.get("nodes", {})
-    master_map = raw.get("master_logs", {})
-    candidate_map = raw.get("candidates", {})
-
-    # timestamp가 있는 줄을 먼저, 시간순으로. SSH 폴백 줄(timestamp 없음)은
-    # 뒤로 보내되 넣은 순서를 유지한다 — 원본 파일의 순서가 곧 시간순이다.
-    ordered_master = sorted(
-        enumerate(master_map.values()),
-        key=lambda pair: (
-            pair[1].timestamp is None,
-            pair[1].timestamp or _EPOCH,
-            pair[0],
-        ),
-    )
-    master_events = tuple(event for _index, event in ordered_master)
-
-    return Observations(
-        time_basis=observed.get("time_basis", ""),
-        first_seen=observed.get("first_seen"),
-        last_seen=observed.get("last_seen"),
-        requested=tuple(observed.get("requested") or ()),
-        total_wait_seconds=float(raw.get("wait_seconds", 0.0)),
-        wait_cap_reached=bool(raw.get("wait_cap_reached", False)),
-        timeline=tuple(timeline_map[minute] for minute in sorted(timeline_map)),
-        nodes=tuple(sorted(node_map.values(), key=lambda row: row.node)),
-        master_events=master_events[:_MASTER_LOG_REPORT_MAX],
-        master_log_total=len(master_events),
-        health=tuple(raw.get("health") or ()),
-        # id는 C1, C2 … 순으로 붙었으므로 발견 순서로 정렬하려면 숫자 부분을
-        # 봐야 한다. 문자열 정렬이면 C10이 C2 앞에 온다. 다만 int()로 파싱하지
-        # 않는다 — 이 함수는 tool이 아니라 analyze() 안이라 예외가 나면
-        # _run_agent의 generic handler로 가서 notify를 건너뛰고, "리포트는 항상
-        # 전달된다"가 그대로 깨진다. 길이를 먼저 보면 파싱 없이 같은 순서가
-        # 나오고 어떤 문자열이 와도 터지지 않는다.
-        candidates=tuple(
-            sorted(
-                candidate_map.values(),
-                key=lambda c: (len(c.candidate_id), c.candidate_id),
-            )
-        ),
-    )
 
 
 def _litellm_call(
