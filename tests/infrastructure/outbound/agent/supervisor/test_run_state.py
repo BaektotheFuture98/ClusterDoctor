@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 
 from cluster_doctor.domain.model.log_entry import NodeLogEntry
-from cluster_doctor.infrastructure.outbound.llm.deepagent.diagnosis_state import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.run_state import (
     DiagnosisState,
 )
-from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import KST
+from cluster_doctor.infrastructure.outbound.agent.common.time_window import KST
 
 TRIGGER = datetime(2026, 9, 17, 3, 0, tzinfo=KST)
 

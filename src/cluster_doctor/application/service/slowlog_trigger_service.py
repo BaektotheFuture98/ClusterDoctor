@@ -15,8 +15,8 @@ import queue as stdlib_queue
 from collections.abc import Coroutine
 from datetime import datetime, timezone
 
-from cluster_doctor.application.port.outbound.llm_analyzer import (
-    LlmAnalyzer,
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
+    DiagnosisAnalyzer,
     LlmApiError,
     LlmResponseError,
 )
@@ -34,12 +34,12 @@ _MAX_CONSECUTIVE_RETRIGGERS = 3
 class SlowlogTriggerService:
     def __init__(
         self,
-        llm_analyzer: LlmAnalyzer,
+        diagnosis_analyzer: DiagnosisAnalyzer,
         notifier: Notifier,
         pending: stdlib_queue.Queue,
         micro_batch_seconds: float = 10.0,
     ) -> None:
-        self._llm_analyzer = llm_analyzer
+        self._diagnosis_analyzer = diagnosis_analyzer
         self._notifier = notifier
         self._pending = pending
         self._micro_batch_seconds = micro_batch_seconds
@@ -107,7 +107,7 @@ class SlowlogTriggerService:
         succeeded = False
         try:
             result = await asyncio.to_thread(
-                self._llm_analyzer.analyze, log_time, kafka_receive_time
+                self._diagnosis_analyzer.analyze, log_time, kafka_receive_time
             )
             _logger.info(
                 "agent 완료 — 리포트 전송 (analysis_failed=%s, gaps=%d)",

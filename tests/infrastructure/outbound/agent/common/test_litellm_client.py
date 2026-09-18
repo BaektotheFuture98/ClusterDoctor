@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cluster_doctor.application.port.outbound.llm_analyzer import LlmResponseError
-from cluster_doctor.infrastructure.outbound.llm.litellm_client import (
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import LlmResponseError
+from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import (
     complete,
     require_supported_provider,
 )
@@ -139,7 +139,7 @@ def _rate_limited(headers=None, **attrs):
 
 
 def _complete_expecting_failure(exc, caplog):
-    from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+    from cluster_doctor.application.port.outbound.diagnosis_analyzer import LlmApiError
 
     with patch("litellm.completion", side_effect=exc):
         with caplog.at_level("WARNING"):

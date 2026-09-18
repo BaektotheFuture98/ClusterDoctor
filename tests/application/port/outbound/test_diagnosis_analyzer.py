@@ -1,6 +1,6 @@
 
-from cluster_doctor.application.port.outbound.llm_analyzer import (
-    LlmAnalyzer,
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
+    DiagnosisAnalyzer,
     LlmApiError,
     LlmResponseError,
 )
@@ -17,5 +17,5 @@ def test_errors_are_distinct_types():
 
 
 def test_port_still_declares_analyze():
-    assert hasattr(LlmAnalyzer, "analyze")
-    assert getattr(LlmAnalyzer.analyze, "__isabstractmethod__", False) is True
+    assert hasattr(DiagnosisAnalyzer, "analyze")
+    assert getattr(DiagnosisAnalyzer.analyze, "__isabstractmethod__", False) is True

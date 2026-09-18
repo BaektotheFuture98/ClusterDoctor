@@ -5,7 +5,7 @@
 0으로 둔 것, 관측값을 코드가 세게 한 것)에서 나온 제약이다.
 """
 
-from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.schema import (
     ReportNarrative,
 )
 

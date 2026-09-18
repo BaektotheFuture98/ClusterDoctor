@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import (
+from cluster_doctor.infrastructure.outbound.agent.common.time_window import (
     KST,
     fmt,
     merge_intervals,

@@ -52,7 +52,7 @@ from cluster_doctor.infrastructure.outbound.notifier.report_text import render_t
 
 # 진단용으로 private 헬퍼를 빌려 쓴다. 기준 시각 판정을 다시 구현하면
 # 실제 동작과 어긋날 수 있고, 어긋난 안내는 없느니만 못하다.
-from cluster_doctor.infrastructure.outbound.llm.deepagent.diagnosis_state import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.run_state import (
     _base_time,
 )
 
@@ -243,7 +243,7 @@ def run(moments: list) -> int:
 
     started = time.monotonic()
     try:
-        result = service._llm_analyzer.analyze(log_time, receive_time)
+        result = service._diagnosis_analyzer.analyze(log_time, receive_time)
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"\n[실패] 진단이 예외로 끝났다 ({elapsed:.1f}초): {type(exc).__name__}: {exc}")

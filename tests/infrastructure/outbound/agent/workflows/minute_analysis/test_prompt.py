@@ -15,7 +15,7 @@ from cluster_doctor.domain.model.log_entry import (
 )
 from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.prompt import (
     build_minute_prompt,
     build_synthesis_prompt,
     format_log_line,

@@ -49,7 +49,7 @@ class DiagnosisResult:
     gaps: tuple[str, ...] = field(default_factory=tuple)
 
 
-class LlmAnalyzer(ABC):
+class DiagnosisAnalyzer(ABC):
     @abstractmethod
     def analyze(
         self, log_time: datetime, kafka_receive_time: datetime

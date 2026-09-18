@@ -34,25 +34,30 @@ from cluster_doctor.application.port.outbound.log_repository import (
 )
 from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
 from cluster_doctor.domain.model.time_range import (
-    MAX_TIME_RANGE_DURATION,
     InvalidTimeRangeError,
     TimeRange,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import format_log_line
-from cluster_doctor.application.port.outbound.llm_analyzer import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.guardrails import (
+    MAX_ANALYZE_CALLS,
+    MAX_SLEEP_SECONDS,
+    MAX_WAIT_SECONDS,
+    MAX_WINDOW_MINUTES,
+)
+from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
     LlmApiError,
     LlmResponseError,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
-from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import LlmCaller
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.graph import build_graph
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.nodes import LlmCaller
 from cluster_doctor.application.port.outbound.node_log_fetcher import (
     DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )
-from cluster_doctor.infrastructure.outbound.llm.deepagent.diagnosis_state import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.run_state import (
     DiagnosisState,
 )
-from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import (
+from cluster_doctor.infrastructure.outbound.agent.common.time_window import (
     KST as _KST,
     fmt as _fmt,
     parse_window as _parse_window,
@@ -68,33 +73,6 @@ def _render_entries(entries: list[NodeLogEntry]) -> str:
     """
     return "\n".join(format_log_line(entry) for entry in entries)
 
-
-# 분석 창 상한. 도메인의 TimeRange가 같은 제약을 강제하므로 값을 두 번 쓰지
-# 않는다 — 두 곳에 박아 두면 한쪽만 고쳤을 때 tool은 통과시키고 TimeRange가
-# 거부하며 서로 다른 오류 메시지를 낸다.
-#
-# 그래도 tool 쪽 검사를 남기는 이유는 반환 형태가 다르기 때문이다. tool은
-# 모델이 읽고 스스로 고칠 수 있는 안내 문장을 돌려주고, 도메인은 어떤
-# 호출자에게든 예외를 던진다.
-_MAX_WINDOW_MINUTES = int(MAX_TIME_RANGE_DURATION.total_seconds() // 60)
-
-# 유입 대기 예산. agent는 slowlog 유입이 멎을 때까지 sleep으로 기다리는데,
-# 그동안 분석은 시작조차 되지 않고 큐만 쌓인다. 프롬프트가 상한을 지시해도
-# 모델은 그것을 어길 수 있으므로 tool이 강제한다.
-#
-# 1회 상한을 60초로 둔 이유: 대기를 여러 번으로 쪼개야 매 사이클마다
-# check_new_slowlogs로 유입 여부를 다시 볼 수 있다. 한 번에 5분을 자면
-# 그 사이 유입이 멎어도 알아채지 못한다.
-_MAX_SLEEP_SECONDS = 60
-_MAX_WAIT_SECONDS = 300
-
-# 한 번의 진단에서 analyze_logs를 부를 수 있는 횟수. 호출 하나가 구간의
-# 분 수만큼 LLM을 부르므로(5분 창 실측 513,122 토큰) 가장 비싼 도구다.
-# sleep과 같은 이유로 tool이 직접 막는다 — 프롬프트가 재시도를 한 번으로
-# 제한해도 모델은 그것을 어길 수 있고, recursion_limit은 9,999라
-# 프레임워크도 막아 주지 않는다. 10분 창을 10분 이하로 쪼개 부르는 경우와
-# 허용된 재시도 1회를 합쳐도 6회면 넉넉하다.
-_MAX_ANALYZE_CALLS = 6
 
 # analyze_logs가 자동으로 붙이는 마스터 로그의 범위. node_role 값이 다르면
 # (예: "master-eligible") 여기를 고쳐야 한다 — 틀리면 조회가 0건이 되고,
@@ -151,7 +129,7 @@ _SETTLED_ZERO_STREAK = 2
 
 def _cap_notice() -> str:
     return (
-        f"대기 상한 {_MAX_WAIT_SECONDS // 60}분에 도달했다. "
+        f"대기 상한 {MAX_WAIT_SECONDS // 60}분에 도달했다. "
         "더 기다리지 말고 즉시 analyze_logs로 진행하라."
     )
 
@@ -176,7 +154,7 @@ def _suggest_windows(first_seen: datetime, last_seen: datetime) -> list[dict]:
 
     windows = []
     cursor = start
-    span = timedelta(minutes=_MAX_WINDOW_MINUTES)
+    span = timedelta(minutes=MAX_WINDOW_MINUTES)
     while cursor < end:
         chunk_end = min(cursor + span, end)
         windows.append({"start_iso": _fmt(cursor), "end_iso": _fmt(chunk_end)})
@@ -289,13 +267,13 @@ def make_tools(
             end_iso: 구간 종료 시각. ISO 8601 형식. 예) "2026-08-26T02:14:05"
         """
         _logger.info("[tool] analyze_logs(%s ~ %s)", start_iso, end_iso)
-        if analyze_state["calls"] >= _MAX_ANALYZE_CALLS:
+        if analyze_state["calls"] >= MAX_ANALYZE_CALLS:
             _logger.warning("[tool] analyze_logs 요청 무시 — 호출 상한 도달")
             # 상한에 걸린 뒤 쓴 리포트는 부분 커버리지다. 거절 문자열만
             # 돌려주고 표식을 남기지 않으면, 구간을 다 못 본 리포트가 완전한
             # 것과 구별되지 않는다.
             return state.mark_gap(
-                f"분석 호출 상한({_MAX_ANALYZE_CALLS}회)에 도달했다. "
+                f"분석 호출 상한({MAX_ANALYZE_CALLS}회)에 도달했다. "
                 f"{start_iso} ~ {end_iso} 구간은 분석하지 못했다. "
                 "지금까지의 결과로 리포트를 작성하라."
             )
@@ -320,9 +298,9 @@ def make_tools(
         analyze_state["calls"] += 1
 
         window_minutes = (end_dt - start_dt).total_seconds() / 60
-        if window_minutes > _MAX_WINDOW_MINUTES:
+        if window_minutes > MAX_WINDOW_MINUTES:
             return (
-                f"오류: 요청 윈도우 {window_minutes:.1f}분이 최대({_MAX_WINDOW_MINUTES}분)를 초과한다. "
+                f"오류: 요청 윈도우 {window_minutes:.1f}분이 최대({MAX_WINDOW_MINUTES}분)를 초과한다. "
                 f"구간을 좁혀서 다시 호출하라."
             )
 
@@ -695,23 +673,23 @@ def make_tools(
         Args:
             seconds: 대기할 초. 60을 넘기면 60으로 줄여 대기한다.
         """
-        if state.wait_seconds >= _MAX_WAIT_SECONDS:
+        if state.wait_seconds >= MAX_WAIT_SECONDS:
             _logger.info("[tool] sleep 요청 무시 — 대기 상한 도달")
             return _cap_notice()
 
         requested = float(seconds)
-        remaining = _MAX_WAIT_SECONDS - state.wait_seconds
-        actual = max(0.0, min(requested, float(_MAX_SLEEP_SECONDS), remaining))
+        remaining = MAX_WAIT_SECONDS - state.wait_seconds
+        actual = max(0.0, min(requested, float(MAX_SLEEP_SECONDS), remaining))
 
         _logger.info("[tool] sleep(%.0fs, 요청 %.0fs)", actual, requested)
         time.sleep(actual)
         state.wait_seconds += actual
-        state.wait_cap_reached = state.wait_seconds >= _MAX_WAIT_SECONDS
+        state.wait_cap_reached = state.wait_seconds >= MAX_WAIT_SECONDS
 
         parts = [f"{actual:.0f}초 대기 완료 (누적 {state.wait_seconds:.0f}초)."]
         if actual < requested:
             parts.append(
-                f"요청한 {requested:.0f}초는 1회 상한 {_MAX_SLEEP_SECONDS}초로 줄였다."
+                f"요청한 {requested:.0f}초는 1회 상한 {MAX_SLEEP_SECONDS}초로 줄였다."
             )
         if state.wait_cap_reached:
             parts.append(_cap_notice())

@@ -15,13 +15,13 @@
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from cluster_doctor.infrastructure.outbound.llm.langgraph.nodes import (
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.nodes import (
     LlmCaller,
     make_analyze_minute,
     make_synthesize,
     split_by_minute,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.state import GraphState
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.state import GraphState
 
 _ANALYZE_MINUTE = "analyze_minute"
 _SPLIT = "split_by_minute"
