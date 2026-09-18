@@ -162,11 +162,11 @@ def get_settings() -> Settings:
     """Build settings once, converting a validation failure into a value-free error.
 
     The guard lives here rather than at the boot call site so that *every*
-    path to the settings is covered. It used to sit in ``main.py``'s
-    lifespan; anything that reached for ``Settings()`` another way -- a
-    script, a test helper, a future request-path caller -- bypassed it and
-    got the raw, secret-bearing ``ValidationError`` back. That happened for
-    real during manual verification and printed part of an API key.
+    path to the settings is covered. Anything that reaches for ``Settings()``
+    another way -- a script, a test helper, a future request-path caller --
+    would otherwise bypass it and get the raw, secret-bearing
+    ``ValidationError`` back, which during manual verification printed part
+    of an API key.
 
     ``exc.errors(include_input=False, include_url=False)`` drops the
     ``input_value`` payload entirely; the message is then assembled from the
