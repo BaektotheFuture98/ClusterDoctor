@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
 from cluster_doctor.domain.model.log_entry import SlowlogEntry
-from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import DeepAgentAnalyzer
+from cluster_doctor.infrastructure.outbound.agent.analyzer import DeepAgentAnalyzer
 from cluster_doctor.infrastructure.config import dependencies
 from cluster_doctor.infrastructure.config import settings as settings_module
 from cluster_doctor.infrastructure.config.dependencies import (
@@ -90,7 +90,7 @@ def test_selected_provider_reaches_the_analyzer(monkeypatch):
                 nvidia_model="google/gemma-4-31b-it",
                 gemini_api_key="g-key",
             )
-        )._llm_analyzer
+        )._diagnosis_analyzer
 
         assert analyzer._provider == "nvidia_nim"
         assert analyzer._default_model == "google/gemma-4-31b-it"
@@ -131,7 +131,7 @@ def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
             _settings(gemini_api_key="g-key", micro_batch_seconds=2.5)
         )
 
-        analyzer = service._llm_analyzer
+        analyzer = service._diagnosis_analyzer
         assert isinstance(analyzer, DeepAgentAnalyzer)
         assert analyzer._api_key == "g-key"
 

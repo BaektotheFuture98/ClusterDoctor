@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.schema import (
     ReportNarrative,
 )
 
@@ -59,17 +59,17 @@ def _orchestrator_kwargs(provider="gemini", default_model="gemini-3.5-flash-lite
 
     with (
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.ChatLiteLLM"
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.ChatLiteLLM"
         ) as chat_llm_cls,
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.create_deep_agent"
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.create_deep_agent"
         ) as create_deep_agent,
     ):
         agent = MagicMock()
         agent.invoke.return_value = _make_agent_response()
         create_deep_agent.return_value = agent
 
-        from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        from cluster_doctor.infrastructure.outbound.agent.analyzer import (
             DeepAgentAnalyzer,
         )
 
@@ -113,7 +113,7 @@ def test_orchestrator_api_key_is_not_folded_into_the_model_string():
 def test_unsupported_provider_is_rejected_at_construction():
     # 잘못된 provider를 첫 호출까지 끌고 가면 진단 요청 한 건을 통째로
     # 날린 뒤에야 오타를 알게 된다.
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+    from cluster_doctor.infrastructure.outbound.agent.analyzer import (
         DeepAgentAnalyzer,
     )
 
@@ -149,13 +149,13 @@ def _run_analyze_with_tools(
 
     with (
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.ChatLiteLLM"
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.ChatLiteLLM"
         ),
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.create_deep_agent"
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.create_deep_agent"
         ) as create_deep_agent,
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.make_tools",
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.make_tools",
             side_effect=make_tools_impl,
         ),
     ):
@@ -165,7 +165,7 @@ def _run_analyze_with_tools(
         )
         create_deep_agent.return_value = agent
 
-        from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        from cluster_doctor.infrastructure.outbound.agent.analyzer import (
             DeepAgentAnalyzer,
         )
 
@@ -288,7 +288,7 @@ def test_구조화도_평문도_없으면_관측값만으로_리포트를_만든
     """
     from datetime import datetime as _dt
 
-    from cluster_doctor.application.port.outbound.llm_analyzer import (
+    from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
         LlmResponseError,
     )
     from cluster_doctor.domain.model.diagnosis_report import TimelineRow
@@ -327,7 +327,7 @@ def _msg(text: str, *, kind: str = "ai", tool_calls=()):
 
 
 def test_마지막_모델_메시지의_본문을_쓴다():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+    from cluster_doctor.infrastructure.outbound.agent.analyzer import (
         _last_model_text,
     )
 
@@ -339,7 +339,7 @@ def test_마지막_모델_메시지의_본문을_쓴다():
 
 
 def test_구조화_tool_안내문은_리포트가_되지_않는다():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+    from cluster_doctor.infrastructure.outbound.agent.analyzer import (
         _last_model_text,
     )
 
@@ -352,7 +352,7 @@ def test_구조화_tool_안내문은_리포트가_되지_않는다():
 
 
 def test_아직_일하는_중인_메시지는_리포트로_집지_않는다():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+    from cluster_doctor.infrastructure.outbound.agent.analyzer import (
         _last_model_text,
     )
 
@@ -367,7 +367,7 @@ def test_아직_일하는_중인_메시지는_리포트로_집지_않는다():
 
 
 def test_사람과_시스템_메시지는_모델이_쓴_것이_아니다():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+    from cluster_doctor.infrastructure.outbound.agent.analyzer import (
         _last_model_text,
     )
 
@@ -379,7 +379,7 @@ def test_사람과_시스템_메시지는_모델이_쓴_것이_아니다():
 
 
 def test_메시지가_없으면_빈_문자열이다():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+    from cluster_doctor.infrastructure.outbound.agent.analyzer import (
         _last_model_text,
     )
 
@@ -398,7 +398,7 @@ def test_판단이_비어_있으면_그_사실을_gaps로_남긴다():
     사다리는 이것을 잡을 수 없다 — 구조화 출력은 성공했고 관측값도 온전하니
     1단이 맞다. 등급을 바꾸는 대신 사실을 남긴다.
     """
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.report_schema import (
+    from cluster_doctor.infrastructure.outbound.agent.supervisor.schema import (
         ReportNarrative,
         SuspectPick,
     )
@@ -413,13 +413,13 @@ def test_판단이_비어_있으면_그_사실을_gaps로_남긴다():
 
     with (
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.ChatLiteLLM"
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.ChatLiteLLM"
         ),
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.create_deep_agent"
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.create_deep_agent"
         ) as create_deep_agent,
         patch(
-            "cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer.make_tools",
+            "cluster_doctor.infrastructure.outbound.agent.supervisor.agent.make_tools",
             side_effect=lambda **kwargs: [],
         ),
     ):
@@ -429,7 +429,7 @@ def test_판단이_비어_있으면_그_사실을_gaps로_남긴다():
         agent.invoke.return_value = response
         create_deep_agent.return_value = agent
 
-        from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import (
+        from cluster_doctor.infrastructure.outbound.agent.analyzer import (
             DeepAgentAnalyzer,
         )
 

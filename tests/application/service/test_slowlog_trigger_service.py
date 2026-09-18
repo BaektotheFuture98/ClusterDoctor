@@ -12,7 +12,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from cluster_doctor.application.port.outbound.llm_analyzer import (
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
     DiagnosisResult,
     LlmApiError,
 )
@@ -62,7 +62,7 @@ class _Notifier:
 
 def _service(analyzer, pending, notifier=None):
     return SlowlogTriggerService(
-        llm_analyzer=analyzer,
+        diagnosis_analyzer=analyzer,
         notifier=notifier or _Notifier(),
         pending=pending,
         micro_batch_seconds=0.01,
@@ -142,7 +142,7 @@ async def test_retriggers_wait_the_batch_window_before_running_again():
 
     analyzer = _Timed()
     service = SlowlogTriggerService(
-        llm_analyzer=analyzer,
+        diagnosis_analyzer=analyzer,
         notifier=_Notifier(),
         pending=pending,
         micro_batch_seconds=delay,

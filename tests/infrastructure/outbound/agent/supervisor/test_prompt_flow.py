@@ -9,7 +9,7 @@ loki_logs에는 마스터 로그만 들어오므로 데이터 노드를 그쪽�
 
 import re
 
-from cluster_doctor.infrastructure.outbound.llm.deepagent.prompts import SYSTEM_PROMPT
+from cluster_doctor.infrastructure.outbound.agent.supervisor.prompt import SYSTEM_PROMPT
 
 _ITEM = re.compile(r"^[a-z]\. ", re.M)
 

@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from cluster_doctor.domain.model.log_entry import QueryLogEntry, SlowlogEntry
 from cluster_doctor.domain.model.node_metric import NodeMetricEntry
-from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
+from cluster_doctor.infrastructure.outbound.agent.common.observations import (
     candidate_key,
     count_by_source,
     merge_node_rows,

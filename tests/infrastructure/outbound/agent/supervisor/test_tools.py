@@ -9,10 +9,10 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-from cluster_doctor.infrastructure.outbound.llm.deepagent.diagnosis_state import (
+from cluster_doctor.infrastructure.outbound.agent.supervisor.run_state import (
     DiagnosisState,
 )
-from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import parse_kst
+from cluster_doctor.infrastructure.outbound.agent.common.time_window import parse_kst
 
 KST = timezone(timedelta(hours=9))
 
@@ -59,7 +59,7 @@ def _tools(
     kafka_receive_time=None,
 ):
     """이름 → tool 매핑. make_tools 호출마다 클로저 상태가 새로 만들어진다."""
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import make_tools
+    from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import make_tools
 
     # state를 넘기면 기준 시각은 이미 그 안에서 정해진 것이므로 log_time/
     # kafka_receive_time은 조용히 무시된다. 함께 넘기면 테스트가 skew를
@@ -184,14 +184,14 @@ _WINDOW = {"start_iso": "2026-08-27T18:30:00", "end_iso": "2026-08-27T18:35:00"}
 
 
 def test_analyze_logs_refuses_past_the_call_cap():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
-        _MAX_ANALYZE_CALLS,
+    from cluster_doctor.infrastructure.outbound.agent.supervisor.guardrails import (
+        MAX_ANALYZE_CALLS,
     )
 
     fetch_logs = MagicMock(return_value=[])
     tool = _analyze_logs_tool(fetch_logs)
 
-    for _ in range(_MAX_ANALYZE_CALLS):
+    for _ in range(MAX_ANALYZE_CALLS):
         interim = tool.invoke(_WINDOW)
         assert "상한" not in interim, interim
 
@@ -207,12 +207,12 @@ def test_analyze_logs_refuses_past_the_call_cap():
 def test_analyze_call_budget_starts_fresh_for_each_agent_run():
     # make_tools는 analyze() 호출마다 새로 불린다. 이전 실행이 쓴 예산이
     # 남아 있으면 다음 사고에서 분석을 아예 못 한다.
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
-        _MAX_ANALYZE_CALLS,
+    from cluster_doctor.infrastructure.outbound.agent.supervisor.guardrails import (
+        MAX_ANALYZE_CALLS,
     )
 
     first = _analyze_logs_tool(MagicMock(return_value=[]))
-    for _ in range(_MAX_ANALYZE_CALLS + 1):
+    for _ in range(MAX_ANALYZE_CALLS + 1):
         first.invoke(_WINDOW)
 
     second = _analyze_logs_tool(MagicMock(return_value=[]))
@@ -229,7 +229,7 @@ def test_analyze_call_budget_starts_fresh_for_each_agent_run():
 # 시작조차 되지 않은 채 큐만 쌓인다. 그래서 예산을 tool이 강제한다.
 # --------------------------------------------------------------------------
 
-SLEEP_PATH = "cluster_doctor.infrastructure.outbound.llm.deepagent.tools.time.sleep"
+SLEEP_PATH = "cluster_doctor.infrastructure.outbound.agent.supervisor.tools.time.sleep"
 
 
 def test_sleep_clamps_a_single_overlong_request():
@@ -539,7 +539,7 @@ def test_analyze_logs_proceeds_when_the_master_node_has_no_reachable_ip():
 def test_analyze_logs_asks_for_cluster_event_loggers_not_just_warn_and_error():
     # 샤드 재배치·노드 이탈·allocation은 ES가 INFO로 남긴다. 레벨만 걸면
     # 이 수집의 목적인 이벤트가 통째로 빠진다.
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+    from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import (
         _MASTER_EVENT_LOGGERS,
         _MASTER_LOG_MAX_LINES,
     )
@@ -570,7 +570,7 @@ def test_analyze_logs_asks_for_cluster_event_loggers_not_just_warn_and_error():
 # --------------------------------------------------------------------------
 
 def test_search_node_logs_adds_the_cluster_event_loggers_by_default():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent.tools import (
+    from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import (
         _MASTER_EVENT_LOGGERS,
     )
 
@@ -889,7 +889,7 @@ def _busy_logs(minute: datetime):
 
 def _analyze_with_every_minute_failing(state):
     """분 단위 LLM이 전부 실패하는 구간을 한 번 분석한다."""
-    from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+    from cluster_doctor.application.port.outbound.diagnosis_analyzer import LlmApiError
 
     minute = datetime(2026, 8, 27, 18, 31, tzinfo=KST)
     tool = _tools(
@@ -947,7 +947,7 @@ def test_조회_자체가_실패하면_없는_로그로_타임라인을_지어�
 # --------------------------------------------------------------------------
 
 def test_a_node_metric_recording_failure_during_a_successful_analysis_still_returns_a_report():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent import diagnosis_state
+    from cluster_doctor.infrastructure.outbound.agent.supervisor import run_state as diagnosis_state
 
     minute = datetime(2026, 8, 27, 18, 31, tzinfo=KST)
     state = DiagnosisState(_LOG_TIME, _LOG_TIME)
@@ -971,7 +971,7 @@ def test_a_node_metric_recording_failure_during_a_successful_analysis_still_retu
 
 
 def test_a_timeline_row_failure_while_recording_a_failed_window_still_returns_the_failure_observation():
-    from cluster_doctor.infrastructure.outbound.llm.deepagent import diagnosis_state
+    from cluster_doctor.infrastructure.outbound.agent.supervisor import run_state as diagnosis_state
 
     state = DiagnosisState(_LOG_TIME, _LOG_TIME)
 

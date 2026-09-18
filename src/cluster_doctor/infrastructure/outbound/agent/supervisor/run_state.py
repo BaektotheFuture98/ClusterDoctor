@@ -29,19 +29,19 @@ from cluster_doctor.domain.model.diagnosis_report import (
     TimelineRow,
 )
 from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
-from cluster_doctor.infrastructure.outbound.llm.deepagent.time_window import (
+from cluster_doctor.infrastructure.outbound.agent.common.time_window import (
     KST,
     fmt,
     merge_intervals,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
+from cluster_doctor.infrastructure.outbound.agent.common.observations import (
     candidate_key,
     merge_node_rows,
     node_metric_summary,
     slow_candidates,
     timeline_row,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import format_log_line
+from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
 # 후보 줄은 운영자용 리포트와 **같은 함수**로 그린다. 여기서 따로 그리면
 # 모델이 보는 수치와 리포트에 실리는 수치가 갈린다 — 실측으로 es_query_log
 # 264건이 slowlog로 실린 적이 있다.

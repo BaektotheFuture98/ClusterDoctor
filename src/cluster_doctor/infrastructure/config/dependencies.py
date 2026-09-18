@@ -8,7 +8,7 @@ from elasticsearch import Elasticsearch
 from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTriggerService
 from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
 from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import ElasticsearchClusterAdapter
-from cluster_doctor.infrastructure.outbound.llm.deepagent.analyzer import DeepAgentAnalyzer
+from cluster_doctor.infrastructure.outbound.agent.analyzer import DeepAgentAnalyzer
 from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
 from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import (
     SshNodeLogFetcher,
@@ -107,7 +107,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
     )
 
     return SlowlogTriggerService(
-        llm_analyzer=analyzer,
+        diagnosis_analyzer=analyzer,
         # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
         # 떨어뜨리므로, 예전 StdoutNotifier의 동작이 폴백으로 남아 있다.
         notifier=HtmlFileNotifier(output_dir=s.report_dir),

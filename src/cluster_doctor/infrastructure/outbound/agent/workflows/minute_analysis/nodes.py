@@ -13,20 +13,20 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from cluster_doctor.infrastructure.outbound.llm.langgraph.observations import (
+from cluster_doctor.infrastructure.outbound.agent.common.observations import (
     timeline_row,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.prompts import (
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.prompt import (
     build_minute_prompt,
     build_synthesis_prompt,
 )
-from cluster_doctor.infrastructure.outbound.llm.langgraph.state import (
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.state import (
     GraphState,
     MinuteBucket,
     MinuteFinding,
 )
 from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.application.port.outbound.llm_analyzer import (
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
     LlmApiError,
     LlmResponseError,
 )

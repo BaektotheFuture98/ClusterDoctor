@@ -15,10 +15,10 @@ from datetime import datetime
 
 import pytest
 
-from cluster_doctor.infrastructure.outbound.llm.langgraph.graph import build_graph
+from cluster_doctor.infrastructure.outbound.agent.workflows.minute_analysis.graph import build_graph
 from cluster_doctor.domain.model.log_entry import SlowlogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.application.port.outbound.llm_analyzer import LlmApiError
+from cluster_doctor.application.port.outbound.diagnosis_analyzer import LlmApiError
 
 TR = TimeRange(start=datetime(2026, 8, 20, 2, 9), end=datetime(2026, 8, 20, 2, 14))
 
