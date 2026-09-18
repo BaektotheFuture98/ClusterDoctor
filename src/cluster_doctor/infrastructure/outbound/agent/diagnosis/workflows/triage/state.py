@@ -32,7 +32,7 @@ class RawRecord:
     node_name: str | None = None
     severity: str | None = None
 
-    def numbered(self) -> str:
+    def as_prompt_line(self) -> str:
         """프롬프트에 실을 한 줄. 모델이 이 번호로 고른다."""
         return f"#{self.record_id} {self.line}"
 

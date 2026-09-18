@@ -154,7 +154,7 @@ def make_map_minute(spec: TriageSpec, call_llm: StructuredLlmCaller):
     return map_minute
 
 
-def make_reduce(
+def make_reduce_to_evidence(
     spec: TriageSpec,
     call_llm: StructuredLlmCaller,
     *,

@@ -130,12 +130,12 @@ def _check_unsupported_claims(report: LogAnalysisReport, result: ValidationResul
     for item in report.root_causes:
         if not item.supporting_evidence_refs:
             result.issues.append(
-                f"원인 후보 '{_head(item.statement)}'에 뒷받침하는 근거가 없다."
+                f"원인 후보 '{_excerpt(item.statement)}'에 뒷받침하는 근거가 없다."
             )
     for item in report.timeline:
         if not item.evidence_refs:
             result.issues.append(
-                f"타임라인 {item.at:%H:%M:%S} '{_head(item.description)}'에 근거 참조가 없다."
+                f"타임라인 {item.at:%H:%M:%S} '{_excerpt(item.description)}'에 근거 참조가 없다."
             )
 
 
@@ -204,13 +204,13 @@ def _check_overclaiming(report: LogAnalysisReport, result: ValidationResult) -> 
         refs = len(item.supporting_evidence_refs)
         if item.confidence == "High" and refs < _MIN_REFS_FOR_HIGH_CONFIDENCE:
             result.issues.append(
-                f"원인 후보 '{_head(item.statement)}'의 confidence가 High인데 근거가 "
+                f"원인 후보 '{_excerpt(item.statement)}'의 confidence가 High인데 근거가 "
                 f"{refs}건뿐이다. 근거를 더 인용하거나 confidence를 낮춰라."
             )
         definitive = [word for word in _DEFINITIVE_MARKERS if word in item.statement]
         if definitive and (item.confidence in ("", "Low") or refs < _MIN_REFS_FOR_HIGH_CONFIDENCE):
             result.issues.append(
-                f"원인 후보 '{_head(item.statement)}'가 확정적으로 쓰였지만"
+                f"원인 후보 '{_excerpt(item.statement)}'가 확정적으로 쓰였지만"
                 f"({', '.join(definitive)}) 근거는 {refs}건이고 confidence는 "
                 f"{item.confidence or '미기재'}다. 표현을 낮춰라."
             )
@@ -245,14 +245,14 @@ def _check_causality(
             continue
         if min(cause_times) > earliest_effect + TIMESTAMP_TOLERANCE:
             result.issues.append(
-                f"원인 후보 '{_head(cause.statement)}'의 근거가 "
+                f"원인 후보 '{_excerpt(cause.statement)}'의 근거가 "
                 f"{min(cause_times):%H:%M:%S}로, 문제로 지목된 관측"
                 f"({earliest_effect:%H:%M:%S})보다 늦다. 원인은 결과보다 먼저 "
                 "관측되어야 한다. 더 이른 근거를 찾거나 인과 서술을 고쳐라."
             )
 
 
-def _head(text: str, limit: int = 40) -> str:
-    """지적 문장에 넣을 짧은 인용. 지적문을 읽을 수 있게 유지하는 것이 목적이다."""
+def _excerpt(text: str, limit: int = 40) -> str:
+    """지적 문장에 넣을 짧은 인용. 지적문 자체가 읽을 수 있어야 한다."""
     text = (text or "").strip().replace("\n", " ")
     return text if len(text) <= limit else text[:limit] + "…"

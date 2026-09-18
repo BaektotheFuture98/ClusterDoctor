@@ -38,7 +38,7 @@ from cluster_doctor.domain.model.log_entry import (
 )
 from cluster_doctor.domain.model.node_metric import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common.time_window import KST
+from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis import node_investigation
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
     AnalysisRunState,
@@ -168,7 +168,7 @@ class EvidenceCollector:
         items = [entry for entry in entries if isinstance(entry, SlowlogEntry)]
         if not items:
             return []
-        result = self._run(slowlog.SPEC, slowlog.to_records(items), state)
+        result = self._run_triage(slowlog.SPEC, slowlog.to_records(items), state)
         return result.evidence
 
     def _triage_query_log(
@@ -177,7 +177,7 @@ class EvidenceCollector:
         items = [entry for entry in entries if isinstance(entry, QueryLogEntry)]
         if not items:
             return []
-        result = self._run(query_log.SPEC, query_log.to_records(items), state)
+        result = self._run_triage(query_log.SPEC, query_log.to_records(items), state)
         return result.evidence
 
     def _node_metric_evidence(self, entries: list[LogEntry]) -> list[Evidence]:
@@ -191,7 +191,7 @@ class EvidenceCollector:
             thresholds=self._metric_thresholds,
         )
 
-    def _run(self, spec, records, state: AnalysisRunState) -> TriageResult:
+    def _run_triage(self, spec, records, state: AnalysisRunState) -> TriageResult:
         """Triage 하나를 돌리고 실패를 gap으로 남긴다."""
         try:
             result = run_triage(
@@ -314,7 +314,7 @@ class EvidenceCollector:
 
         if not records:
             return []
-        return self._run(master_log.SPEC, records, state).evidence
+        return self._run_triage(master_log.SPEC, records, state).evidence
 
     def _master_via_ssh(self, window: TimeRange, state: AnalysisRunState) -> str:
         try:

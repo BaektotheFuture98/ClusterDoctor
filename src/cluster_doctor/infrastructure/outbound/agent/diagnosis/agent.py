@@ -166,7 +166,7 @@ class DiagnosisAgentAdapter:
         self._store.merge_observations(request.incident_id, state.to_observations())
         report_ref = self._store.put_report(request.incident_id, report)
 
-        status = self._status_of(report, draft, evidence, state)
+        status = self._final_status(report, draft, evidence, state)
         suggested = tuple(draft.parsed_windows()) if draft.needs_more_context else ()
         gaps = self._unresolved_gaps(collected, state, window)
 
@@ -186,7 +186,7 @@ class DiagnosisAgentAdapter:
             verification_status=report.verification_status,
             evidence_refs=tuple(item.evidence_id for item in evidence),
             gaps=tuple(state.gaps),
-            analysis_summary=self._summary_of(report, state),
+            analysis_summary=self._summary_for_supervisor(report, state),
         )
 
     # ── Cross-source Analysis ────────────────────────────────────────
@@ -214,7 +214,7 @@ class DiagnosisAgentAdapter:
             analysis_goal=request.analysis_goal,
             evidence=evidence,
             observation_summary=state.summary_for_prompt(),
-            candidate_block=state.candidate_block(),
+            candidates_for_prompt=state.candidates_for_prompt(),
             prior_summary=self._prior_summary(request.state_ref),
             gaps=tuple(state.gaps),
         )
@@ -332,7 +332,7 @@ class DiagnosisAgentAdapter:
 
     # ── 응답 조립 ────────────────────────────────────────────────────
     @staticmethod
-    def _status_of(
+    def _final_status(
         report: LogAnalysisReport,
         draft: DraftReport,
         evidence: list[Evidence],
@@ -374,7 +374,7 @@ class DiagnosisAgentAdapter:
         return tuple(gaps)
 
     @staticmethod
-    def _summary_of(report: LogAnalysisReport, state: AnalysisRunState) -> str:
+    def _summary_for_supervisor(report: LogAnalysisReport, state: AnalysisRunState) -> str:
         """Supervisor가 읽을 한두 문단. 리포트 전문이 아니다."""
         parts = [report.summary or "(요약 없음)"]
         if report.root_causes:

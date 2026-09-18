@@ -40,7 +40,7 @@ _MAP_RULES = """
 
 def build_map_prompt(spec: TriageSpec, bucket: MinuteBucket) -> str:
     """한 분의 레코드에서 후보를 고르게 하는 프롬프트."""
-    lines = "\n".join(record.numbered() for record in bucket.records)
+    lines = "\n".join(record.as_prompt_line() for record in bucket.records)
     return "\n".join(
         [
             _MAP_HEADER,

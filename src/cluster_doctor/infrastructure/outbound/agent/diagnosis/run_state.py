@@ -26,6 +26,7 @@ from cluster_doctor.domain.model.diagnosis_report import (
 )
 from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
 from cluster_doctor.infrastructure.outbound.agent.common.observations import (
     candidate_key,
@@ -34,11 +35,10 @@ from cluster_doctor.infrastructure.outbound.agent.common.observations import (
     slow_candidates,
     timeline_row,
 )
-from cluster_doctor.infrastructure.outbound.agent.common.time_window import KST
-from cluster_doctor.infrastructure.outbound.notifier.report_text import candidate_line
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_log import (
     ES_LOG_LINE_RE,
 )
+from cluster_doctor.infrastructure.outbound.notifier.report_text import candidate_line
 
 _logger = logging.getLogger(__name__)
 
@@ -253,7 +253,7 @@ class AnalysisRunState:
         """지금까지 붙인 후보 id 전부. 검증이 이 집합과 대조한다."""
         return {item.candidate_id for item in self.candidates.values()}
 
-    def candidate_block(self) -> str:
+    def candidates_for_prompt(self) -> str:
         """느린 요청 후보를 id와 함께 프롬프트에 실을 블록으로.
 
         후보 줄은 운영자용 리포트와 **같은 함수**로 그린다. 여기서 따로 그리면

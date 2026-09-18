@@ -10,8 +10,7 @@ from cluster_doctor.domain.model.time_range import (
     split_span,
     subtract_spans,
 )
-
-from cluster_doctor.infrastructure.outbound.agent.common.time_window import KST
+from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 
 
 def at(hour: int, minute: int) -> datetime:

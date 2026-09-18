@@ -53,7 +53,7 @@ class TestBaseTime:
 
 class TestTracker:
     def test_아무것도_안_왔으면_연속_0을_센다(self):
-        tracker = InflowTracker.start(TRIGGER, TRIGGER)
+        tracker = InflowTracker.from_trigger(TRIGGER, TRIGGER)
 
         tracker.observe([], now=TRIGGER)
 
@@ -63,7 +63,7 @@ class TestTracker:
     def test_연속_2회_0이면_정착으로_본다(self):
         """1로는 부족하다 — 커넥터 폴링 주기 때문에 유입이 계속되는 중에도
         한 번은 0건이 나올 수 있다."""
-        tracker = InflowTracker.start(TRIGGER, TRIGGER)
+        tracker = InflowTracker.from_trigger(TRIGGER, TRIGGER)
 
         for _ in range(SETTLED_ZERO_STREAK):
             tracker.observe([], now=TRIGGER)
@@ -71,7 +71,7 @@ class TestTracker:
         assert tracker.settled is True
 
     def test_유입이_다시_오면_연속_0이_풀린다(self):
-        tracker = InflowTracker.start(TRIGGER, TRIGGER)
+        tracker = InflowTracker.from_trigger(TRIGGER, TRIGGER)
         tracker.observe([], now=TRIGGER)
 
         tracker.observe([entry(TRIGGER)], now=TRIGGER)
@@ -80,7 +80,7 @@ class TestTracker:
 
     def test_관측된_것이_더_이르면_시작을_당긴다(self):
         """재트리거로 실행된 경우 기준 시각이 실제 발생보다 늦을 수 있다."""
-        tracker = InflowTracker.start(TRIGGER, TRIGGER)
+        tracker = InflowTracker.from_trigger(TRIGGER, TRIGGER)
         earlier = TRIGGER - timedelta(minutes=3)
 
         tracker.observe([entry(earlier)], now=TRIGGER)
@@ -88,7 +88,7 @@ class TestTracker:
         assert tracker.first_seen == earlier
 
     def test_끝은_바깥쪽으로_넓힌다(self):
-        tracker = InflowTracker.start(TRIGGER, TRIGGER)
+        tracker = InflowTracker.from_trigger(TRIGGER, TRIGGER)
         later = TRIGGER + timedelta(minutes=2)
 
         tracker.observe([entry(later)], now=later)
@@ -99,7 +99,7 @@ class TestTracker:
         """노드 시계가 앞서 있으면 last_seen이 미래가 되고, first_seen은 clock
         skew를 잡아 눌러 둔 값이라 구간이 "수신 시각 ~ 미래"로 벌어진다 —
         실측에서 3시간짜리 구간이 됐다."""
-        tracker = InflowTracker.start(TRIGGER, TRIGGER)
+        tracker = InflowTracker.from_trigger(TRIGGER, TRIGGER)
         future = TRIGGER + timedelta(hours=3)
 
         tracker.observe([entry(future)], now=TRIGGER)

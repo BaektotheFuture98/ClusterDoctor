@@ -16,7 +16,7 @@ from cluster_doctor.domain.model.incident import Incident
 from cluster_doctor.domain.model.incident_state import IncidentState
 from cluster_doctor.domain.model.log_analysis import LogAnalysisResponse
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common.time_window import fmt
+from cluster_doctor.infrastructure.outbound.agent.common.kst import format_kst
 
 
 def build_decision_prompt(
@@ -32,8 +32,8 @@ def build_decision_prompt(
         "<incident>",
         f"incident_id: {incident.incident_id}",
         f"cluster: {incident.cluster}",
-        f"trigger_time: {fmt(incident.trigger_time)} KST (slowlog 자체 기재 시각)",
-        f"kafka_receive_time: {fmt(incident.kafka_receive_time)} KST (수신 시각)",
+        f"trigger_time: {format_kst(incident.trigger_time)} KST (slowlog 자체 기재 시각)",
+        f"kafka_receive_time: {format_kst(incident.kafka_receive_time)} KST (수신 시각)",
         f"trigger_type: {incident.trigger_type}",
         "</incident>",
         "",
@@ -81,7 +81,7 @@ def build_decision_prompt(
 
 
 def _window(window: TimeRange) -> str:
-    return f"{fmt(window.start)} ~ {fmt(window.end)}"
+    return f"{format_kst(window.start)} ~ {format_kst(window.end)}"
 
 
 def _windows(windows: list[TimeRange]) -> str:

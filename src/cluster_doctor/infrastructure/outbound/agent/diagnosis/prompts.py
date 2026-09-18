@@ -59,7 +59,7 @@ def build_analysis_prompt(
     analysis_goal: str,
     evidence: list[Evidence],
     observation_summary: str,
-    candidate_block: str = "",
+    candidates_for_prompt: str = "",
     prior_summary: str = "",
     gaps: tuple[str, ...] = (),
 ) -> str:
@@ -78,8 +78,8 @@ def build_analysis_prompt(
             prior_summary,
         ]
     sections += ["", "코드가 센 관측값 (모델이 옮겨 적지 않는다. 참고만 한다):", observation_summary]
-    if candidate_block:
-        sections += ["", candidate_block]
+    if candidates_for_prompt:
+        sections += ["", candidates_for_prompt]
     if gaps:
         sections += [
             "",
