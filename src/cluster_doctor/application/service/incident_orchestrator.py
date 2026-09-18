@@ -250,7 +250,7 @@ class IncidentOrchestrator:
         진행 중인 구간의 절반만 보게 되고, 무한정 기다리면 분석이 시작되지
         않는다. 상한은 코드가 강제한다.
         """
-        tracker = InflowTracker.start(incident.trigger_time, incident.kafka_receive_time)
+        tracker = InflowTracker.from_trigger(incident.trigger_time, incident.kafka_receive_time)
         while not tracker.settled:
             if token.is_cancelled or deadline.expired:
                 break

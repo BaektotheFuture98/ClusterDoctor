@@ -56,7 +56,9 @@ class InflowTracker:
     total_wait_seconds: float = 0.0
 
     @classmethod
-    def start(cls, log_time: datetime, kafka_receive_time: datetime) -> "InflowTracker":
+    def from_trigger(
+        cls, log_time: datetime, kafka_receive_time: datetime
+    ) -> "InflowTracker":
         base, basis = base_time(log_time, kafka_receive_time)
         return cls(first_seen=base, last_seen=base, time_basis=basis)
 

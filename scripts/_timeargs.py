@@ -1,7 +1,7 @@
 """시각 인자 처리. produce_test_message와 run_diagnosis가 함께 쓴다.
 
 두 스크립트가 같은 파싱을 각자 들고 있으면 한쪽만 고쳤을 때 서로 다른
-시각을 뜻하게 된다 — 같은 이유로 time_window.parse_window가 세 벌의 복붙을
+시각을 뜻하게 된다 — 같은 이유로 KST 파싱이 세 벌의 복붙을
 한 곳으로 모았다. 특히 "오프셋이 없으면 KST"라는 규칙은 두 스크립트가
 반드시 같아야 한다. 어긋나면 프로듀서가 보낸 시각과 단독 실행이 분석한
 시각이 9시간 벌어지고, 양쪽 다 성공하므로 드러나지 않는다.
@@ -52,7 +52,7 @@ _SPAN_UNITS = {"s": 1, "m": 60, "h": 3600}
 def parse_at(value: str) -> datetime:
     """ISO 8601 문자열을 timezone-aware로 만든다. 오프셋이 없으면 KST로 읽는다.
 
-    ``replace(tzinfo=KST)``를 무조건 쓰지 않는 이유는 time_window.parse_kst와
+    ``replace(tzinfo=KST)``를 무조건 쓰지 않는 이유는 ``kst.parse_kst``와
     같다. 그것은 변환이 아니라 덮어쓰기라, ``"...Z"``나 ``"+00:00"``이 붙어
     온 순간을 같은 벽시계의 KST로 재해석해 9시간 어긋나게 한다.
     """

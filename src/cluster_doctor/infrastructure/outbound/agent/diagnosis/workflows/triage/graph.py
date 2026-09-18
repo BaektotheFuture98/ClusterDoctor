@@ -29,7 +29,7 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nod
     StructuredLlmCaller,
     make_chunk_by_minute,
     make_map_minute,
-    make_reduce,
+    make_reduce_to_evidence,
 )
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import (
@@ -90,7 +90,7 @@ def run_triage(
     builder.add_node(_MAP, make_map_minute(spec, call_llm))
     builder.add_node(
         _REDUCE,
-        make_reduce(spec, call_llm, new_evidence_id=new_evidence_id, put_raw=put_raw),
+        make_reduce_to_evidence(spec, call_llm, new_evidence_id=new_evidence_id, put_raw=put_raw),
     )
 
     def dispatch(state: TriageState) -> list:

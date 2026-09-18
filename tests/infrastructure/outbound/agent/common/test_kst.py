@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.infrastructure.outbound.agent.common.time_window import (
+from cluster_doctor.infrastructure.outbound.agent.common.kst import (
     KST,
-    fmt,
+    format_kst,
     parse_kst,
 )
 
@@ -19,6 +19,6 @@ def test_utc_iso_is_converted_not_overwritten():
 
 
 def test_fmt_renders_in_kst():
-    assert fmt(datetime(2026, 9, 17, 3, tzinfo=UTC)) == "2026-09-17T12:00:00"
+    assert format_kst(datetime(2026, 9, 17, 3, tzinfo=UTC)) == "2026-09-17T12:00:00"
 
 
