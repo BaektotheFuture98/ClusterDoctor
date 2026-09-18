@@ -78,7 +78,15 @@ evidence 위 요약의 근거가 된 로그를 원문 그대로, 한 줄에 하�
          정상이다"가 구별되지 않고, 최종 리포트에 수치가 하나도 남지 않는다.
          (실제로 그런 리포트가 나왔다 — 상태 섹션이 "green" 네 줄뿐이었다.)
 
-         그 밖의 줄은 특이사항이 없으면 비워 둔다."""
+         그 밖의 줄은 특이사항이 없으면 비워 둔다.
+
+         이렇게 쓴다:
+           2026-08-27 14:00:02 [SLOWLOG] node=node-a01 comp=app_index_v1 took=32.4s, 68 hits, shards=902, id=service=web,company=1,user=2, query={{"size":0}}
+           2026-08-27 14:00:02 [METRIC] node=node-b02 (10.0.0.12) comp=- cpu=1% os_mem(캐시포함)=99% proc_cpu=0% jvm_heap=59% search(active=0,queue=0,rejected=0) write(active=0,queue=0,rejected=0)
+
+         이렇게 쓰면 종합 단계가 인용할 수치가 사라진다:
+           node-a01에서 32.4초 걸린 느린 쿼리가 있었다
+           노드 메트릭은 정상 범위였다"""
 
 
 def build_synthesis_prompt(

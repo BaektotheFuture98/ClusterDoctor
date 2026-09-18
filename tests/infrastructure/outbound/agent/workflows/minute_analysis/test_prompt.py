@@ -240,3 +240,26 @@ def test_synthesis_prompt_refuses_to_promote_high_os_memory_to_a_problem():
     assert "jvm_heap도 값만으로는 근거가 아니다" in prompt
     assert "rejected가 0이 아니거나 GC 경고가 있어야" in prompt
     assert "85%" not in prompt
+
+
+# --------------------------------------------------------------------------
+# evidence 예시
+#
+# 프롬프트는 "원문 그대로 옮기라"고 시키면서 올바른 줄 두 개를 예시로 보여
+# 준다. 그 예시가 format_log_line의 실제 출력과 어긋나면 모델에게 없는 형식을
+# 가르치는 셈이라, 줄 모양이 바뀌면 예시도 함께 바뀌어야 한다.
+# --------------------------------------------------------------------------
+
+
+def test_the_evidence_example_shows_a_real_rendered_line():
+    prompt = build_minute_prompt([], "2026-08-27 14:00")
+
+    assert format_log_line(SLOWLOG).strip() in prompt
+    assert format_log_line(METRIC).strip() in prompt
+
+
+def test_the_evidence_example_contrasts_a_summarised_line():
+    prompt = build_minute_prompt([], "2026-08-27 14:00")
+
+    assert "이렇게 쓴다:" in prompt
+    assert "이렇게 쓰면 종합 단계가 인용할 수치가 사라진다:" in prompt
