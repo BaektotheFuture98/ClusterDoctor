@@ -52,3 +52,6 @@ Thumbs.db
 
 # 설계·계획 문서는 로컬에만 둔다
 docs/
+
+# Understand-Anything 지식 그래프. 도구가 재생성하므로 추적하지 않는다.
+.ua/
