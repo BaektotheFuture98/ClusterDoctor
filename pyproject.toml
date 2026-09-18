@@ -12,12 +12,9 @@ dependencies = [
     "pydantic-settings>=2.9.0",
     "litellm>=1.97.0",
     "langgraph>=1.2.11",
-    "grandalf>=0.8",
     "elasticsearch==8.*",
-    "deepagents>=0.7.8",
     "paramiko>=5.0.0",
     "matplotlib>=3.11.1",
-    "langchain-litellm>=0.7.1",
 ]
 
 [dependency-groups]

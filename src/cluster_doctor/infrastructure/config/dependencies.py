@@ -1,3 +1,10 @@
+"""Composition Root.
+
+구현체를 고르는 곳은 여기 하나다. application과 domain은 포트만 알고, 어느
+구현이 물려 있는지 모른다 — in-memory 저장소를 Redis로 바꾸는 날 바뀌는 파일도
+여기 하나다.
+"""
+
 import queue as stdlib_queue
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -5,16 +12,39 @@ from urllib.parse import urlparse
 import clickhouse_connect
 from elasticsearch import Elasticsearch
 
+from cluster_doctor.application.service.incident_orchestrator import IncidentOrchestrator
 from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTriggerService
-from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import ClickHouseLogAdapter
-from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import ElasticsearchClusterAdapter
-from cluster_doctor.infrastructure.outbound.agent.analyzer import DeepAgentAnalyzer
-from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import (
-    SshNodeLogFetcher,
-)
-from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
+from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
+from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import (
+    require_supported_provider,
+)
+from cluster_doctor.infrastructure.outbound.agent.diagnosis.agent import (
+    DiagnosisAgentAdapter,
+)
+from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
+    SupervisorAgentAdapter,
+)
+from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_metric import (
+    NodeMetricThresholds,
+)
+from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import (
+    ClickHouseLogAdapter,
+)
+from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import (
+    ElasticsearchClusterAdapter,
+)
+from cluster_doctor.infrastructure.outbound.elasticsearch.es_node_resolver import (
+    ElasticsearchNodeResolver,
+)
+from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
+from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import SshNodeLogFetcher
+from cluster_doctor.infrastructure.outbound.state.in_memory_artifact_store import (
+    InMemoryArtifactStore,
+)
+from cluster_doctor.infrastructure.outbound.state.in_memory_incident_state_repository import (
+    InMemoryIncidentStateRepository,
+)
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
@@ -62,6 +92,11 @@ def _get_cluster_repository() -> ElasticsearchClusterAdapter:
 
 
 @lru_cache
+def _get_node_resolver() -> ElasticsearchNodeResolver:
+    return ElasticsearchNodeResolver(_get_es_client())
+
+
+@lru_cache
 def _get_log_repository() -> ClickHouseLogAdapter:
     s = get_settings()
     return ClickHouseLogAdapter(
@@ -73,11 +108,25 @@ def _get_log_repository() -> ClickHouseLogAdapter:
     )
 
 
+@lru_cache
+def _get_state_repository() -> InMemoryIncidentStateRepository:
+    return InMemoryIncidentStateRepository()
+
+
+@lru_cache
+def _get_artifact_store() -> InMemoryArtifactStore:
+    return InMemoryArtifactStore()
+
+
 def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
     if s is None:
         s = get_settings()
 
-    # pending 큐를 먼저 만들고 drain 클로저와 analyzer가 같은 객체를 공유한다.
+    # provider를 조립 시점에 검증한다. 잘못된 값을 첫 호출까지 끌고 가면
+    # Incident 한 건을 통째로 날린 뒤에야 오타를 알게 된다.
+    provider = require_supported_provider(s.llm_provider)
+
+    # pending 큐를 먼저 만들고 drain 클로저와 orchestrator가 같은 객체를 공유한다.
     pending: stdlib_queue.Queue = stdlib_queue.Queue()
 
     def drain_pending():
@@ -89,34 +138,55 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
                 break
         return items
 
+    log_repository = _get_log_repository()
+    store = _get_artifact_store()
+
     # provider별 키·모델을 직접 읽지 않는다. llm_api_key/llm_model이
     # LLM_PROVIDER에 따라 고른 값을 돌려주므로 여기서 분기할 일이 없다.
-    analyzer = DeepAgentAnalyzer(
-        provider=s.llm_provider,
+    log_analysis_agent = DiagnosisAgentAdapter(
+        provider=provider,
+        model=s.llm_model,
         api_key=s.llm_api_key,
-        default_model=s.llm_model,
+        fetch_logs=log_repository.fetch_logs,
+        fetch_node_logs=log_repository.fetch_node_logs,
         cluster=_get_cluster_repository(),
-        fetch_logs=_get_log_repository().fetch_logs,
-        fetch_node_logs=_get_log_repository().fetch_node_logs,
-        drain_pending=drain_pending,
+        node_resolver=_get_node_resolver(),
         node_log_fetcher=SshNodeLogFetcher(
             ssh_user=s.ssh_user,
             ssh_password=s.ssh_password,
             ssh_port=s.ssh_port,
         ),
+        store=store,
+        metric_thresholds=NodeMetricThresholds(
+            heap_warn_percent=s.node_heap_warn_percent,
+            queue_warn=s.node_queue_warn,
+        ),
+    )
+
+    orchestrator = IncidentOrchestrator(
+        supervisor=SupervisorAgentAdapter(
+            provider=provider, model=s.llm_model, api_key=s.llm_api_key
+        ),
+        log_analysis_agent=log_analysis_agent,
+        state_repository=_get_state_repository(),
+        artifact_store=store,
+        # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
+        # 떨어뜨린다.
+        notifier=HtmlFileNotifier(output_dir=s.report_dir),
+        drain_pending=drain_pending,
     )
 
     return SlowlogTriggerService(
-        diagnosis_analyzer=analyzer,
-        # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
-        # 떨어뜨리므로, 예전 StdoutNotifier의 동작이 폴백으로 남아 있다.
-        notifier=HtmlFileNotifier(output_dir=s.report_dir),
+        orchestrator=orchestrator,
         pending=pending,
+        cluster=s.cluster_name,
         micro_batch_seconds=s.micro_batch_seconds,
     )
 
 
-def build_kafka_consumer(service: SlowlogTriggerService, s: Settings | None = None) -> KafkaConsumerAdapter:
+def build_kafka_consumer(
+    service: SlowlogTriggerService, s: Settings | None = None
+) -> KafkaConsumerAdapter:
     if s is None:
         s = get_settings()
     return KafkaConsumerAdapter(

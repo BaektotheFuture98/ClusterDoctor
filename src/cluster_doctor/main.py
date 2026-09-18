@@ -39,7 +39,6 @@ configure_logging()
 
 async def main() -> None:
     settings = get_settings()
-
     service = build_trigger_service(settings)
     consumer = build_kafka_consumer(service, settings)
 

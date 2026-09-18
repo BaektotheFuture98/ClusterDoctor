@@ -1,87 +1,81 @@
-"""ReportNarrative 스키마 검증.
+"""Supervisor 판단 스키마.
 
-이 스키마의 성질 둘이 중요하다 — 모델이 쓴 것을 **자르지 않고**, 검증 실패로
-재시도 루프를 만들지 않는다. 둘 다 이 저장소의 기존 결정(429 때문에 재시도를
-0으로 둔 것, 관측값을 코드가 세게 한 것)에서 나온 제약이다.
+``prompt.py``의 ``<decision_output>``이 요구하는 다섯 칸과 정확히 같아야 한다.
+한쪽만 고치면 모델은 지시대로 쓰는데 파서가 못 읽는 상태가 되고, 그때 증상은
+"Supervisor가 늘 종료를 고른다"로만 나타나 원인을 짚기 어렵다.
 """
 
+from cluster_doctor.domain.model.supervisor_decision import SupervisorAction
+from cluster_doctor.infrastructure.outbound.agent.supervisor.prompt import SYSTEM_PROMPT
 from cluster_doctor.infrastructure.outbound.agent.supervisor.schema import (
-    ReportNarrative,
+    DecisionOutput,
+    WindowOutput,
 )
 
 
-class TestNothingIsTruncated:
-    def test_안내보다_길어도_자르지_않는다(self):
-        """자르면 한국어가 글자 단위로 끊겨 단어가 쪼개진다.
+def request_output(start="2026-09-18T13:50:00+09:00", end="2026-09-18T14:00:00+09:00"):
+    return DecisionOutput(
+        action="REQUEST_ANALYSIS",
+        analysis_window=WindowOutput(start=start, end=end),
+        analysis_goal="JVM pressure 시작 시점 확인",
+        reason="14:00에 이미 징후가 있었다",
+        based_on=["analyzed_windows", "suggested_windows"],
+    )
 
-        실측에서 follower_check가 follower / _check로 갈렸다. 리포트는 운영자가
-        읽는 것이고, 끊긴 문장은 읽을 수 없다.
-        """
-        long_text = "가" * 3000
 
-        narrative = ReportNarrative(root_cause=long_text)
+class TestPromptAndSchemaAgree:
+    def test_프롬프트가_말하는_action이_전부_스키마에_있다(self):
+        for action in SupervisorAction:
+            assert action.value in SYSTEM_PROMPT
 
-        assert narrative.root_cause == long_text
+    def test_프롬프트가_말하는_필드가_전부_스키마에_있다(self):
+        for field in ("action", "analysis_window", "analysis_goal", "reason", "based_on"):
+            assert field in SYSTEM_PROMPT
+            assert field in DecisionOutput.model_fields
 
-    def test_항목이_많아도_버리지_않는다(self):
-        narrative = ReportNarrative(
-            findings=[{"title": f"문제 {i}"} for i in range(12)],
-            recommendations=[f"조치 {i}" for i in range(20)],
-        )
 
-        assert len(narrative.findings) == 12
-        assert len(narrative.recommendations) == 20
+class TestParsing:
+    def test_분석_요청을_도메인_타입으로_옮긴다(self):
+        decision = request_output().to_domain()
+
+        assert decision.action is SupervisorAction.REQUEST_ANALYSIS
+        assert decision.analysis_window.start.strftime("%H:%M") == "13:50"
+        assert decision.based_on == ("analyzed_windows", "suggested_windows")
+
+    def test_action은_대소문자를_가리지_않는다(self):
+        decision = DecisionOutput(action=" complete_incident ").to_domain()
+
+        assert decision.action is SupervisorAction.COMPLETE_INCIDENT
+
+    def test_종료에는_구간이_없어도_된다(self):
+        decision = DecisionOutput(action="COMPLETE_INCIDENT", reason="충분하다").to_domain()
+
+        assert decision.is_request() is False
+        assert decision.analysis_window is None
+
+
+class TestUnreadableDecisions:
+    def test_모르는_action은_None이다(self):
+        """예외를 올리지 않는다. 모델의 형식 이탈 하나로 Incident를 죽이지
+        않고, None을 받은 orchestrator가 안전한 쪽을 고른다."""
+        assert DecisionOutput(action="MAYBE_LATER").to_domain() is None
+
+    def test_분석을_요청했는데_구간이_없으면_None이다(self):
+        """구간 없는 REQUEST_ANALYSIS는 실행할 수 없다. 조용히 종료로 바꾸면
+        모델이 무엇을 요청했는지가 사라진다."""
+        assert DecisionOutput(action="REQUEST_ANALYSIS").to_domain() is None
+
+    def test_읽을_수_없는_시각이면_None이다(self):
+        assert request_output(start="어제 오후").to_domain() is None
+
+    def test_뒤집힌_구간이면_None이다(self):
+        assert request_output(
+            start="2026-09-18T14:00:00+09:00", end="2026-09-18T13:50:00+09:00"
+        ).to_domain() is None
 
 
 class TestNoRetryLoop:
-    """검증 실패는 ToolStrategy의 재시도가 된다. recursion_limit이 9,999라
-    프레임워크가 막지 않으므로 스키마가 애초에 실패하지 않아야 한다."""
-
-    def test_아무것도_안_채워도_통과한다(self):
-        narrative = ReportNarrative()
-
-        assert narrative.headline == ""
-        assert narrative.findings == []
-
-    def test_모르는_severity는_예외가_아니라_분류_없음이다(self):
-        narrative = ReportNarrative(findings=[{"severity": "중간", "title": "x"}])
-
-        assert narrative.findings[0].severity == ""
-
-
-class TestSeverityIsNotFabricated:
-    def test_채우지_않은_severity는_Info가_되지_않는다(self):
-        """기본값이 "Info"였을 때 25초 지연과 노드 19대 타임아웃이 전부 Info로
-        나왔다. 모델이 그 필드를 채우지 않아 기본값이 그대로 실린 것이었다.
-
-        빈 칸이 그럴듯한 값으로 채워지는 것은 관측값 쪽에서 이미 한 번 당한
-        실패다(slowlog=264). 판단 쪽에도 같은 함정을 두지 않는다.
-        """
-        narrative = ReportNarrative(findings=[{"title": "노드 19대 타임아웃"}])
-
-        assert narrative.findings[0].severity == ""
-
-    def test_채운_severity는_그대로_간다(self):
-        narrative = ReportNarrative(
-            findings=[{"severity": "critical", "title": "x"}]
-        )
-
-        assert narrative.findings[0].severity == "Critical"
-
-
-class TestToDomain:
-    def test_도메인으로_옮기면_전부_tuple이_된다(self):
-        """도메인은 dataclass만 쓴다. list를 그대로 넘기면 frozen이어도 해시가
-        깨져 중복 제거·집합 연산에 쓸 수 없다."""
-        narrative = ReportNarrative(
-            headline="결론",
-            findings=[{"severity": "Info", "title": "t", "evidence": ["e"]}],
-            suspect_picks=[{"candidate_id": "C1", "reason": "r"}],
-            recommendations=["a"],
-        ).to_domain()
-
-        assert isinstance(narrative.findings, tuple)
-        assert isinstance(narrative.findings[0].evidence, tuple)
-        assert isinstance(narrative.suspect_picks, tuple)
-        assert isinstance(narrative.recommendations, tuple)
-        assert narrative.suspect_picks[0].candidate_id == "C1"
+    def test_아무것도_안_채워도_스키마_검증은_통과한다(self):
+        """required 필드 하나가 빠지면 구조화 출력 검증이 실패하고, 그 실패는
+        재시도 루프가 된다."""
+        assert DecisionOutput().action == ""

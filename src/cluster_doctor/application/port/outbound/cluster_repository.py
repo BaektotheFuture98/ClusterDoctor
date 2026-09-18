@@ -4,9 +4,9 @@ from abc import ABC, abstractmethod
 class ClusterRepository(ABC):
     """클러스터 상태 조회 포트.
 
-    agent 도구가 실제로 쓰는 세 가지 조회를 모두 덮는다. health()만 두면
-    나머지 둘은 여전히 인프라 클라이언트를 직접 쓰게 되어, 포트를 두는 의미가
-    사라진다 — 실제로 그런 상태였다.
+    진단이 실제로 쓰는 두 가지 조회를 덮는다. 노드 주소를 푸는 일은
+    ``NodeResolver``가 따로 맡는다 — 돌려주는 타입이 다르고(``ResolvedNode``),
+    쓰는 쪽도 Node Investigation 하나뿐이다.
     """
 
     @abstractmethod
@@ -20,18 +20,5 @@ class ClusterRepository(ABC):
 
         할당 문제가 없으면 구현체가 예외를 올릴 수 있다. 그것을 무엇으로
         번역할지는 호출자가 정한다.
-        """
-        ...
-
-    @abstractmethod
-    def node_info(self, node_id: str) -> dict:
-        """단일 노드의 IP와 로그 디렉터리 경로를 반환한다.
-
-        반환 키:
-          ip           — SSH 접속에 쓸 transport 주소
-          log_path     — nodes.*.settings.path.logs
-          cluster_name — nodes.*.settings.cluster.name (로그 파일명 구성에 사용)
-
-        노드를 찾지 못하면 빈 dict를 돌려준다.
         """
         ...
