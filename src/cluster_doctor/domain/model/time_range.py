@@ -8,10 +8,9 @@ from datetime import datetime, timedelta
 # segments built internally by the adapter are always well under this, so
 # they are never rejected by it.
 #
-# Tightened from 1 hour to 10 minutes when the graph analysis mode landed.
-# That mode issues one LLM call per non-empty minute, so the window size is
-# now also a bound on LLM cost and on how long a single request can run --
-# not just on ClickHouse fan-out.
+# The graph analysis mode issues one LLM call per non-empty minute, so this
+# window size also bounds LLM cost and how long a single request can run --
+# not just ClickHouse fan-out.
 MAX_TIME_RANGE_DURATION = timedelta(minutes=10)
 
 

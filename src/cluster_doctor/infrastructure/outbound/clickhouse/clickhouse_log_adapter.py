@@ -62,9 +62,9 @@ class ClickHouseLogAdapter(LogRepository):
         The ``LIMIT`` has no ``ORDER BY`` behind it, so once the cap is hit
         ClickHouse returns an arbitrary subset and the rows that were dropped
         leave no trace in the result. That silence also corrupts the prompt:
-        ``_build_prompt`` derives ``총 {len(entries)}건`` from what was
-        fetched, so a truncated segment tells the model a capped number is
-        the true total. Making the count exact would need a second
+        the row count shown to the model is derived from what was fetched,
+        so a truncated segment tells the model a capped number is the true
+        total. Making the count exact would need a second
         ``count()`` round-trip per segment per source; this at least gives
         operators a signal that it happened, and where.
 
