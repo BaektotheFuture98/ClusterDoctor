@@ -50,11 +50,11 @@ from cluster_doctor.infrastructure.config.dependencies import (
 from cluster_doctor.infrastructure.config.settings import get_settings
 from cluster_doctor.infrastructure.outbound.notifier.report_text import render_text
 
-# 진단용으로 private 헬퍼를 빌려 쓴다. 기준 시각 판정을 다시 구현하면
-# 실제 동작과 어긋날 수 있고, 어긋난 안내는 없느니만 못하다.
-from cluster_doctor.infrastructure.outbound.agent.supervisor.run_state import (
-    _base_time,
-)
+# 기준 시각 판정을 다시 구현하지 않는다. 실제 동작과 어긋날 수 있고,
+# 어긋난 안내는 없느니만 못하다.
+from cluster_doctor.application.service.inflow import base_time
+from cluster_doctor.application.service.report_assembler import to_diagnosis_report
+from cluster_doctor.domain.model.incident import Incident, TriggerType
 
 
 # ── LLM 호출 측정 ──────────────────────────────────────────────────
@@ -231,48 +231,63 @@ def run(moments: list) -> int:
     report_dir = Path(settings.report_dir)
     before = _snapshot_reports(report_dir)
 
-    # build_trigger_service가 큐·analyzer·notifier를 한곳에서 조립한다.
+    # build_trigger_service가 큐·Agent·notifier를 한곳에서 조립한다.
     # 여기서 다시 조립하지 않고 그 결과를 빌려 쓴다 — 조립을 복제하면
     # dependencies.py가 바뀔 때 이 스크립트만 조용히 낡는다.
     service = build_trigger_service(settings)
+    orchestrator = service._orchestrator
     for moment in moments:
         service._pending.put(SlowlogEntry(timestamp=moment))
 
     log_time = min(moments)
     receive_time = datetime.now(timezone.utc)
+    incident = Incident(
+        incident_id=f"manual-{int(time.time())}",
+        cluster=settings.cluster_name,
+        trigger_time=log_time,
+        kafka_receive_time=receive_time,
+        trigger_type=TriggerType.MANUAL,
+    )
 
     started = time.monotonic()
     try:
-        result = service._diagnosis_analyzer.analyze(log_time, receive_time)
+        # orchestrator가 리포트 전달까지 맡는다. 여기서 따로 notify하지 않는다 —
+        # 두 번 부르면 리포트 파일이 두 개 생긴다.
+        outcome = asyncio.run(orchestrator.run(incident))
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"\n[실패] 진단이 예외로 끝났다 ({elapsed:.1f}초): {type(exc).__name__}: {exc}")
         _print_measurements()
         return 1
-
-    asyncio.run(
-        service._notifier.notify(
-            result.report,
-            gaps=result.gaps,
-            analysis_failed=result.analysis_failed,
-        )
-    )
     elapsed = time.monotonic() - started
+
+    store = orchestrator._store
+    observations = store.get_observations(incident.incident_id)
+    report = store.get_report(outcome.report_ref) if outcome.report_ref else None
+    evidence = store.list_evidence(incident.incident_id)
+    rendered = to_diagnosis_report(report, observations, evidence)
 
     print("\n-- 결과 ----------------------------------------------------")
     print(f"  소요 시간       : {elapsed:.1f}초")
-    print(f"  analysis_failed : {result.analysis_failed}")
-    print(f"  gaps            : {len(result.gaps)}건")
-    for gap in result.gaps:
+    print(f"  Incident 상태   : {outcome.status}")
+    print(f"  분석 호출       : {outcome.analysis_calls}회")
+    print(f"  analysis_failed : {outcome.analysis_failed}")
+    print(f"  gaps            : {len(outcome.gaps)}건")
+    for gap in outcome.gaps:
         print(f"      - {gap}")
-    obs = result.report.observations
-    print(f"  리포트 길이     : {len(render_text(result.report)):,}자")
+    if report is not None:
+        print(f"  검증            : {report.verification_status} (수정 {report.revision_count}회)")
+        for issue in report.verification_issues:
+            print(f"      - {issue}")
+    print(f"  Evidence        : {len(evidence)}건")
+    print(f"  리포트 길이     : {len(render_text(rendered)):,}자")
     print(
-        f"  관측값          : 타임라인 {len(obs.timeline)}분 / 노드 {len(obs.nodes)}개 / "
-        f"마스터로그 {obs.master_log_total}줄 / 상태 {len(obs.health)}건 / "
-        f"후보 {len(obs.candidates)}건"
+        f"  관측값          : 타임라인 {len(observations.timeline)}분 / "
+        f"노드 {len(observations.nodes)}개 / "
+        f"마스터로그 {observations.master_log_total}줄 / "
+        f"상태 {len(observations.health)}건 / "
+        f"후보 {len(observations.candidates)}건"
     )
-    print(f"  모델 판단       : {'구조화' if result.report.narrative else '평문'}")
 
     created = _snapshot_reports(report_dir) - before
     for path in sorted(created):
@@ -306,12 +321,12 @@ def main() -> int:
 
     moments = _timeargs.resolve(args)
 
-    print("  실행 방식 : Kafka 없이 analyzer 직접 호출 (pending 큐에 합성 항목 주입)")
+    print("  실행 방식 : Kafka 없이 Incident 직접 실행 (pending 큐에 합성 항목 주입)")
     _timeargs.describe_moments(moments)
 
     log_time = min(moments)
     receive_time = datetime.now(timezone.utc)
-    base, basis = _base_time(log_time, receive_time)
+    base, basis = base_time(log_time, receive_time)
     print(f"\n  기준 시각 판정    : {basis}")
     print(f"  first_seen 초기값 : {base.astimezone(KST):%Y-%m-%d %H:%M:%S} KST")
     print(

@@ -28,13 +28,13 @@
 갖지 않는다. "구조화됐는가"는 이 객체 **안에서** 표현된다.
 
 도메인이므로 dataclass만 쓴다. 모델이 채우는 pydantic 스키마는 어댑터 계층
-(``llm/deepagent/report_schema.py``)에 있고, 그쪽이 ``to_domain()``으로 여기
+(``agent/diagnosis/schema.py``)에 있고, 그쪽이 ``to_domain()``으로 여기
 타입으로 옮긴다. 매핑 함수 하나가 그 경계를 지키는 값이다 — 없애면 도메인이
 pydantic과 langchain의 스키마 규약에 묶이고, provider를 바꾸는 순간 도메인이
 흔들린다.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 
@@ -160,15 +160,15 @@ class SlowCandidate:
 class Observations:
     """코드가 관측한 사실 전부. 모델을 거치지 않는다.
 
-    ``analyze_logs``는 한 진단에서 여러 번 불릴 수 있으므로 값들이 누적된다.
-    누적 규칙은 수집하는 쪽(``deepagent/tools.py``)에 있고, 여기 도착할 때는
-    이미 병합이 끝나 있다.
+    한 Incident 안에서 분석이 여러 번 일어날 수 있으므로 값들이 누적된다.
+    누적 규칙은 수집하는 쪽(``agent/diagnosis/run_state.py``와
+    ``merge_observations``)에 있고, 여기 도착할 때는 이미 병합이 끝나 있다.
     """
 
     time_basis: str = ""
     first_seen: datetime | None = None
     last_seen: datetime | None = None
-    # analyze_logs가 실제로 요청한 구간들. 중복을 허용한다 — 같은 구간을 다시
+    # 실제로 분석을 요청한 구간들. 중복을 허용한다 — 같은 구간을 다시
     # 부른 것은 그 자체로 사실이다.
     requested: tuple[tuple[datetime, datetime], ...] = ()
     total_wait_seconds: float = 0.0
@@ -329,3 +329,89 @@ class DiagnosisReport:
     observations: Observations
     narrative: Narrative | None = None
     narrative_text: str = ""
+
+
+def merge_node_row(current: NodeMetricRow, new: NodeMetricRow) -> NodeMetricRow:
+    """같은 노드의 두 관측을 합친다. 지표마다 max의 max, 표본은 합.
+
+    쌍 단위 병합을 도메인에 두는 이유: 이 값을 합치는 곳이 둘이다. 한 번의
+    분석 안에서 구간을 합칠 때(``observations.merge_node_rows``)와, 한 Incident
+    안에서 여러 번의 분석을 합칠 때(``ArtifactStore.merge_observations``).
+    규칙이 두 벌이 되면 한쪽만 고쳐지는 날이 온다.
+    """
+    return replace(
+        current,
+        samples=current.samples + new.samples,
+        jvm_heap_max=max(current.jvm_heap_max, new.jvm_heap_max),
+        cpu_max=max(current.cpu_max, new.cpu_max),
+        os_mem_max=max(current.os_mem_max, new.os_mem_max),
+        search_queue_max=max(current.search_queue_max, new.search_queue_max),
+        search_rejected_max=max(current.search_rejected_max, new.search_rejected_max),
+        write_queue_max=max(current.write_queue_max, new.write_queue_max),
+        write_rejected_max=max(current.write_rejected_max, new.write_rejected_max),
+    )
+
+
+def merge_observations(current: Observations, new: Observations) -> Observations:
+    """한 Incident 안에서 여러 번의 분석 결과를 하나로 합친다.
+
+    누적 규칙이 값마다 다른 것이 요점이다.
+
+      timeline        분을 키로 덮어쓴다. 실패한 분을 다시 분석해 성공하면
+                      failed 표시가 사라져야 한다.
+      nodes           노드를 키로 지표별 max.
+      master_events   (시각, 노드, 줄)로 중복 제거. 겹친 구간을 다시 조회하면
+                      같은 줄이 두 번 온다.
+      candidates      ``candidate_id``로 중복 제거. id는 한 번 붙으면 바뀌지
+                      않으므로 그 자체가 키다.
+      health          시간순 이력이라 이어 붙인다.
+      first/last_seen 바깥쪽으로 넓힌다.
+    """
+    timeline = {row.minute: row for row in current.timeline}
+    timeline.update({row.minute: row for row in new.timeline})
+
+    nodes = {row.node: row for row in current.nodes}
+    for row in new.nodes:
+        existing = nodes.get(row.node)
+        nodes[row.node] = row if existing is None else merge_node_row(existing, row)
+
+    events: dict[tuple, MasterEvent] = {
+        (event.timestamp, event.node, event.line): event
+        for event in current.master_events + new.master_events
+    }
+
+    candidates = {item.candidate_id: item for item in current.candidates}
+    candidates.update({item.candidate_id: item for item in new.candidates})
+
+    return Observations(
+        time_basis=current.time_basis or new.time_basis,
+        first_seen=_earlier(current.first_seen, new.first_seen),
+        last_seen=_later(current.last_seen, new.last_seen),
+        requested=current.requested + new.requested,
+        total_wait_seconds=current.total_wait_seconds + new.total_wait_seconds,
+        wait_cap_reached=current.wait_cap_reached or new.wait_cap_reached,
+        timeline=tuple(timeline[minute] for minute in sorted(timeline)),
+        nodes=tuple(sorted(nodes.values(), key=lambda row: row.node)),
+        master_events=tuple(events.values()),
+        master_log_total=current.master_log_total + new.master_log_total,
+        health=current.health + new.health,
+        candidates=tuple(
+            sorted(candidates.values(), key=lambda c: (len(c.candidate_id), c.candidate_id))
+        ),
+    )
+
+
+def _earlier(left: datetime | None, right: datetime | None) -> datetime | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
+def _later(left: datetime | None, right: datetime | None) -> datetime | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)

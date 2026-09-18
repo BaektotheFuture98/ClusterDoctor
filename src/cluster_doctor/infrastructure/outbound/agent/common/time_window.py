@@ -1,7 +1,7 @@
 """KST 시각 변환과 구간 계산.
 
-``tools.py``와 ``diagnosis_state.py``가 함께 쓴다. 두 모듈이 서로를
-import하지 않아야 하므로 공통분을 여기에 둔다.
+Supervisor와 진단 쪽이 함께 쓴다. 두 계층이 서로를 import하지 않아야
+하므로 공통분을 여기에 둔다.
 """
 from __future__ import annotations
 
@@ -25,34 +25,11 @@ def parse_kst(iso: str) -> datetime:
     return parsed.astimezone(KST)
 
 
-def parse_window(
-    start_iso: str, end_iso: str
-) -> tuple[datetime | None, datetime | None, str | None]:
-    """두 ISO 문자열을 KST 구간으로 만든다. ``(start, end, 오류문자열)``.
-
-    실패를 예외가 아니라 세 번째 항목으로 돌려주는 이유: 호출자는 어차피
-    문자열을 반환해야 한다. tool에서 예외가 새면 agent 실행 전체가 중단되므로
-    각 tool이 반드시 잡아야 하는데, 그러면 잡는 코드가 다시 여러 벌이 된다.
-    """
-    try:
-        return parse_kst(start_iso), parse_kst(end_iso), None
-    except ValueError as exc:
-        return None, None, f"시각 파싱 오류: {exc}"
-
-
 def fmt(moment: datetime) -> str:
-    """프롬프트로 나가는 시각 표기. analyze_logs가 받는 형식과 같다."""
+    """시각 한 개의 표기. 프롬프트와 로그가 같은 모양을 쓰게 한다.
+
+    Supervisor 스냅샷과 진단 쪽이 함께 쓴다. 각자 ``strftime``을 부르면 한쪽만
+    형식이 바뀌는 날이 오고, 그때 두 값이 같은 시각인지 눈으로 봐서는 알 수
+    없다.
+    """
     return moment.astimezone(KST).strftime("%Y-%m-%dT%H:%M:%S")
-
-
-def merge_intervals(
-    intervals: list[tuple[datetime, datetime]],
-) -> list[tuple[datetime, datetime]]:
-    """겹치거나 맞닿은 구간을 합친다."""
-    merged: list[tuple[datetime, datetime]] = []
-    for start, end in sorted(intervals):
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-    return merged

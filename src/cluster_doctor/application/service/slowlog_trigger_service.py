@@ -1,51 +1,52 @@
-"""Kafka slowlog 수신 시 agent를 트리거한다.
+"""Kafka slowlog 수신 시 Incident를 만들어 Supervisor를 돌린다.
 
-micro_batch_seconds 동안 slowlog를 모은 뒤 agent를 한 번 실행한다.
+micro_batch_seconds 동안 slowlog를 모은 뒤 Incident 하나를 연다.
   - 첫 slowlog 수신 → 타이머 시작, pending 큐에 적재
-  - 타이머 만료 → agent 실행 (pending 큐의 로그는 agent가 check_new_slowlogs()로 꺼냄)
-  - agent 실행 중 도착한 slowlog → pending 큐에 적재 (agent가 직접 확인)
-  - agent가 성공으로 끝났고 큐에 잔여 항목이 남아 있으면 재트리거.
-    단 micro_batch_seconds만큼 쉰 뒤에 걸고, 연속 3회를 넘기지 않는다.
+  - 타이머 만료 → Incident 생성 → ``IncidentOrchestrator.run``
+  - 실행 중 도착한 slowlog → pending 큐에 적재 (orchestrator가 유입 정착을
+    확인하며 직접 꺼낸다)
+  - 성공으로 끝났고 큐에 잔여 항목이 남아 있으면 재트리거. 단
+    micro_batch_seconds만큼 쉰 뒤에 걸고, 연속 3회를 넘기지 않는다.
     실패한 실행은 재트리거하지 않는다 (다음 slowlog 도착 시 자연히 재개된다).
+
+**Incident 경계가 여기 있다.** 재트리거는 새 Incident다 — 앞선 Incident의
+State도 Evidence도 이어받지 않는다. slowlog는 몰려서 오므로 한 건마다 진단하면
+같은 사고를 수십 번 분석하게 되고, 그 묶음이 Incident 하나다.
 """
 
 import asyncio
 import logging
 import queue as stdlib_queue
+import uuid
 from collections.abc import Coroutine
 from datetime import datetime, timezone
 
-from cluster_doctor.application.port.outbound.diagnosis_analyzer import (
-    DiagnosisAnalyzer,
-    LlmApiError,
-    LlmResponseError,
-)
-from cluster_doctor.application.port.outbound.notifier import Notifier
+from cluster_doctor.application.service.incident_orchestrator import IncidentOrchestrator
+from cluster_doctor.domain.model.incident import Incident, TriggerType
 from cluster_doctor.domain.model.log_entry import LogEntry
 
 _logger = logging.getLogger(__name__)
 
-# agent가 큐를 비우지 않은 채 계속 성공하면 재트리거가 끝나지 않는다
-# (큐를 비우는 것은 agent의 check_new_slowlogs 뿐이다). 상한을 둬서
-# 프롬프트를 어긴 실행이 무한 루프가 되지 않게 한다.
+# orchestrator가 큐를 비우지 않은 채 계속 성공하면 재트리거가 끝나지 않는다.
+# 상한을 둬서 무한 루프가 되지 않게 한다.
 _MAX_CONSECUTIVE_RETRIGGERS = 3
 
 
 class SlowlogTriggerService:
     def __init__(
         self,
-        diagnosis_analyzer: DiagnosisAnalyzer,
-        notifier: Notifier,
+        orchestrator: IncidentOrchestrator,
         pending: stdlib_queue.Queue,
+        cluster: str = "elasticsearch",
         micro_batch_seconds: float = 10.0,
     ) -> None:
-        self._diagnosis_analyzer = diagnosis_analyzer
-        self._notifier = notifier
+        self._orchestrator = orchestrator
         self._pending = pending
+        self._cluster = cluster
         self._micro_batch_seconds = micro_batch_seconds
         self._running = False
         self._trigger_task: asyncio.Task | None = None
-        self._agent_task: asyncio.Task | None = None
+        self._incident_task: asyncio.Task | None = None
         self._consecutive_retriggers = 0
         self._first_log_time: datetime | None = None
         self._first_kafka_receive_time: datetime | None = None
@@ -63,12 +64,14 @@ class SlowlogTriggerService:
             self._trigger_task = asyncio.create_task(self._wait_and_trigger())
 
     async def _wait_and_trigger(self) -> None:
-        """micro_batch_seconds 후 agent를 실행한다."""
+        """micro_batch_seconds 후 Incident를 연다."""
         await asyncio.sleep(self._micro_batch_seconds)
         self._trigger_task = None
         self._running = True
         self._consecutive_retriggers = 0
-        self._spawn_agent(self._first_log_time, self._first_kafka_receive_time)
+        self._spawn(
+            self._run_incident(self._first_log_time, self._first_kafka_receive_time)
+        )
 
     def _spawn(self, coro: Coroutine) -> None:
         """태스크를 띄우고 핸들을 보관한다.
@@ -76,78 +79,59 @@ class SlowlogTriggerService:
         asyncio는 실행 중인 태스크에 약한 참조만 유지한다. create_task의
         반환값을 버리면 실행 도중 GC되어 진단이 아무 흔적 없이 사라질 수 있다.
         """
-        self._agent_task = asyncio.create_task(coro)
+        self._incident_task = asyncio.create_task(coro)
 
-    def _spawn_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
-        """agent를 즉시 실행한다. 첫 실행 경로 — _wait_and_trigger가 이미 기다렸다."""
-        self._spawn(self._run_agent(log_time, kafka_receive_time))
-
-    def _spawn_delayed_agent(
+    async def _delayed_incident(
         self, log_time: datetime, kafka_receive_time: datetime
     ) -> None:
-        """재실행을 건다. _maybe_retrigger는 동기 함수라 직접 await할 수 없다."""
-        self._spawn(self._delayed_agent(log_time, kafka_receive_time))
-
-    async def _delayed_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
         """재실행 전에 배치 창만큼 쉰다.
 
-        첫 실행은 _wait_and_trigger가 이미 기다렸으므로 이 경로를 타지 않는다.
-        재실행에 지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아, 상한에
-        걸릴 때까지 할당량을 그대로 태운다.
+        첫 실행은 ``_wait_and_trigger``가 이미 기다렸으므로 이 경로를 타지
+        않는다. 재실행에 지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아,
+        상한에 걸릴 때까지 할당량을 그대로 태운다.
         """
         await asyncio.sleep(self._micro_batch_seconds)
-        await self._run_agent(log_time, kafka_receive_time)
+        await self._run_incident(log_time, kafka_receive_time)
 
-    async def _run_agent(self, log_time: datetime, kafka_receive_time: datetime) -> None:
+    async def _run_incident(
+        self, log_time: datetime, kafka_receive_time: datetime
+    ) -> None:
+        incident = Incident(
+            incident_id=uuid.uuid4().hex[:12],
+            cluster=self._cluster,
+            trigger_time=log_time,
+            kafka_receive_time=kafka_receive_time,
+            trigger_type=TriggerType.SLOWLOG,
+        )
         _logger.info(
-            "agent 시작 (log_time=%s, kafka_receive_time=%s)",
+            "Incident %s 시작 (log_time=%s, kafka_receive_time=%s)",
+            incident.incident_id,
             log_time.strftime("%Y-%m-%d %H:%M:%S"),
             kafka_receive_time.strftime("%Y-%m-%d %H:%M:%S"),
         )
         succeeded = False
         try:
-            result = await asyncio.to_thread(
-                self._diagnosis_analyzer.analyze, log_time, kafka_receive_time
-            )
-            _logger.info(
-                "agent 완료 — 리포트 전송 (analysis_failed=%s, gaps=%d)",
-                result.analysis_failed,
-                len(result.gaps),
-            )
-            # 리포트는 항상 전달한다. 분석이 실패했더라도 agent가 쓴 본문이
-            # 있으면 운영자가 읽을 수 있어야 한다. 실패를 예외로 올려 notify를
-            # 건너뛰면 운영자는 logs/app.log를 뒤져야 한다.
-            await self._notifier.notify(
-                result.report,
-                gaps=result.gaps,
-                analysis_failed=result.analysis_failed,
-            )
-            # 재트리거 여부는 완전성으로만 판단한다. 근거가 일부 빠진 것
-            # (gaps)은 분석이 성공한 것이므로 막지 않는다 — 큐에 남은 항목은
-            # 그 사이 새로 도착한 slowlog다.
-            succeeded = not result.analysis_failed
-        except (LlmApiError, LlmResponseError) as exc:
-            # 두 예외는 상속 관계가 없는 형제다(둘 다 RuntimeError 직속).
-            # LlmApiError만 잡으면 빈 응답(LlmResponseError)이 아래
-            # generic 핸들러로 빠져 '예상치 못한 오류'로 잘못 분류된다.
-            _logger.error("LLM 분석 실패: %s", exc)
+            outcome = await self._orchestrator.run(incident)
+            # 재트리거 여부는 완전성으로만 판단한다. 근거가 일부 빠진 것(gaps)은
+            # 분석이 성공한 것이므로 막지 않는다 — 큐에 남은 항목은 그 사이
+            # 새로 도착한 slowlog다.
+            succeeded = not outcome.analysis_failed
         except Exception:
-            # exc_info를 남긴다. 이 갈래는 원인을 모르는 실패이므로
-            # 스택 없이는 진단할 수 없다.
-            _logger.exception("agent 실행 중 예상치 못한 오류")
+            # exc_info를 남긴다. orchestrator는 예외를 올리지 않기로 되어 있으므로
+            # 여기 오는 것은 원인을 모르는 실패이고, 스택 없이는 진단할 수 없다.
+            _logger.exception("Incident 실행 중 예상치 못한 오류")
         finally:
             self._running = False
-            self._agent_task = None
+            self._incident_task = None
             self._maybe_retrigger(succeeded)
 
     def _maybe_retrigger(self, succeeded: bool) -> None:
         """다음 실행을 이어서 걸지 결정한다.
 
-        실패한 실행은 절대 이어 걸지 않는다. _run_agent은 큐를 비우지 않으므로
-        (비우는 것은 agent의 check_new_slowlogs 뿐이다) 실패하면 큐가 그대로
-        남고, 바로 다시 걸면 같은 실패를 백오프 없이 무한 반복하며 API
-        할당량을 태운다. 다음 slowlog가 도착하면 on_slowlog가 새 타이머를
-        걸어 자연히 재개되므로 잃는 것은 없다.
+        실패한 실행은 절대 이어 걸지 않는다. 실패하면 큐가 그대로 남고, 바로
+        다시 걸면 같은 실패를 백오프 없이 무한 반복하며 API 할당량을 태운다.
+        다음 slowlog가 도착하면 ``on_slowlog``가 새 타이머를 걸어 자연히
+        재개되므로 잃는 것은 없다.
         """
         if not succeeded:
             self._consecutive_retriggers = 0
@@ -159,9 +143,8 @@ class SlowlogTriggerService:
 
         if self._consecutive_retriggers >= _MAX_CONSECUTIVE_RETRIGGERS:
             _logger.warning(
-                "연속 재트리거 %d회에 도달해 중단한다. agent가 큐를 비우지 "
-                "않고 있다(check_new_slowlogs 미호출 가능성). 다음 slowlog "
-                "도착 시 재개된다.",
+                "연속 재트리거 %d회에 도달해 중단한다. 다음 slowlog 도착 시 "
+                "재개된다.",
                 self._consecutive_retriggers,
             )
             self._consecutive_retriggers = 0
@@ -170,4 +153,4 @@ class SlowlogTriggerService:
         self._consecutive_retriggers += 1
         self._running = True
         now = datetime.now(timezone.utc)
-        self._spawn_delayed_agent(now, now)
+        self._spawn(self._delayed_incident(now, now))

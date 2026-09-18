@@ -8,7 +8,6 @@
 from functools import singledispatch
 
 from cluster_doctor.domain.model.log_entry import (
-    LogEntry,
     NodeLogEntry,
     QueryLogEntry,
     SlowlogEntry,

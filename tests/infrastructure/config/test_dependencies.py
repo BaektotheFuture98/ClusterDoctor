@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
 from cluster_doctor.domain.model.log_entry import SlowlogEntry
-from cluster_doctor.infrastructure.outbound.agent.analyzer import DeepAgentAnalyzer
+from cluster_doctor.infrastructure.outbound.agent.diagnosis.agent import (
+    DiagnosisAgentAdapter,
+)
+from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
+    SupervisorAgentAdapter,
+)
 from cluster_doctor.infrastructure.config import dependencies
 from cluster_doctor.infrastructure.config import settings as settings_module
 from cluster_doctor.infrastructure.config.dependencies import (
@@ -71,38 +76,44 @@ def test_close_clickhouse_client_closes_the_cached_client(monkeypatch):
     settings_module.get_settings.cache_clear()
 
 
-def test_selected_provider_reaches_the_analyzer(monkeypatch):
-    """provider 선택이 analyzer까지 도달해야 .env 설정이 의미를 갖는다.
+def test_selected_provider_reaches_both_agents(monkeypatch):
+    """provider 선택이 두 Agent까지 도달해야 .env 설정이 의미를 갖는다.
 
     이 조립 함수가 s.gemini_api_key/s.gemini_model을 직접 읽으면 .env에 NVIDIA
     설정을 넣어도 Gemini로 가고, extra="ignore" 때문에 경고조차 없다 —
     "문서화된 설정이 조용히 무시된다"는 실측 사고와 같은 모양이다.
+
+    Supervisor와 SubAgent 둘 다 본다. 한쪽만 배선하면 판단은 A 모델이, 분석은
+    B 모델이 하게 되고 그 상태는 어디에도 드러나지 않는다.
     """
     monkeypatch.setattr(dependencies, "_get_es_client", lambda: MagicMock())
     monkeypatch.setattr(dependencies, "_get_log_repository", lambda: MagicMock())
     dependencies._get_cluster_repository.cache_clear()
+    dependencies._get_node_resolver.cache_clear()
 
     try:
-        analyzer = dependencies.build_trigger_service(
+        orchestrator = dependencies.build_trigger_service(
             _settings(
                 llm_provider="nvidia_nim",
                 nvidia_api_key="nv-key",
                 nvidia_model="google/gemma-4-31b-it",
                 gemini_api_key="g-key",
             )
-        )._diagnosis_analyzer
+        )._orchestrator
 
-        assert analyzer._provider == "nvidia_nim"
-        assert analyzer._default_model == "google/gemma-4-31b-it"
-        # 고르지 않은 provider의 키가 실려서는 안 된다. 둘 다 설정돼 있을 때
-        # 엉뚱한 쪽을 집으면 401이 날 뿐 원인이 드러나지 않는다.
-        assert analyzer._api_key == "nv-key"
+        for bound in (orchestrator._agent._call_llm, orchestrator._supervisor._call_llm):
+            assert bound.keywords["provider"] == "nvidia_nim"
+            assert bound.keywords["model"] == "google/gemma-4-31b-it"
+            # 고르지 않은 provider의 키가 실려서는 안 된다. 둘 다 설정돼 있을 때
+            # 엉뚱한 쪽을 집으면 401이 날 뿐 원인이 드러나지 않는다.
+            assert bound.keywords["api_key"] == "nv-key"
     finally:
         dependencies._get_cluster_repository.cache_clear()
+        dependencies._get_node_resolver.cache_clear()
 
 
-def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
-    """analyzer 조립과 pending 큐 공유를 함께 검증한다.
+def test_build_trigger_service_wires_the_graph_and_shares_queue(monkeypatch):
+    """Agent 조립과 pending 큐 공유를 함께 검증한다.
 
     ``_get_es_client`` / ``_get_log_repository``를 팩토리 단위로 교체한다.
     ``clickhouse_connect.get_client``는 생성 시점에 실제로 접속을 시도하고
@@ -117,7 +128,8 @@ def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
     monkeypatch하는 것만으로는 ``.env``를 덮지 못한다.
 
     pending 큐 공유는 이 조립 함수에서 가장 깨지기 쉬운 계약이다 — 서비스가
-    넣은 항목을 analyzer의 drain 클로저가 꺼낼 수 있어야 한다.
+    넣은 항목을 orchestrator의 drain 클로저가 꺼낼 수 있어야 한다. 그 클로저가
+    유입 정착을 판정하는 유일한 입구다.
     """
     monkeypatch.setattr(dependencies, "_get_es_client", lambda: MagicMock())
     monkeypatch.setattr(dependencies, "_get_log_repository", lambda: MagicMock())
@@ -125,29 +137,34 @@ def test_build_trigger_service_wires_deepagent_and_shares_queue(monkeypatch):
     # 검증하려면 그래야 한다). lru_cache가 이 테스트의 가짜 ES 클라이언트를
     # 물고 남으면 이후 호출자가 그것을 돌려받는다.
     dependencies._get_cluster_repository.cache_clear()
+    dependencies._get_node_resolver.cache_clear()
 
     try:
         service = dependencies.build_trigger_service(
             _settings(gemini_api_key="g-key", micro_batch_seconds=2.5)
         )
+        orchestrator = service._orchestrator
 
-        analyzer = service._diagnosis_analyzer
-        assert isinstance(analyzer, DeepAgentAnalyzer)
-        assert analyzer._api_key == "g-key"
+        assert isinstance(orchestrator._agent, DiagnosisAgentAdapter)
+        assert isinstance(orchestrator._supervisor, SupervisorAgentAdapter)
 
-        # analyzer는 raw Elasticsearch 클라이언트가 아니라 ClusterRepository
-        # 포트를 받아야 한다. 포트와 어댑터가 정의만 되어 있고 조립되지 않으면
-        # ES 호출이 포트를 우회하고 어댑터는 죽은 코드로 남는다.
-        assert isinstance(analyzer._cluster, ClusterRepository)
+        # SubAgent는 raw Elasticsearch 클라이언트가 아니라 포트를 받아야 한다.
+        # 포트와 어댑터가 정의만 되어 있고 조립되지 않으면 ES 호출이 포트를
+        # 우회하고 어댑터는 죽은 코드로 남는다.
+        assert isinstance(orchestrator._agent._cluster, ClusterRepository)
+        assert hasattr(orchestrator._agent._node_resolver, "resolve")
+
+        # 상태와 산출물은 포트를 거쳐 오간다. application 코드가 dict에 직접
+        # 접근하면 Redis 구현으로 바꿀 수 없다.
+        assert orchestrator._store is orchestrator._agent._store
 
         entry = SlowlogEntry(timestamp=datetime.now(timezone.utc))
         service._pending.put(entry)
-        assert analyzer._drain_pending() == [entry]
+        assert orchestrator._drain_pending() == [entry]
 
         # MICRO_BATCH_SECONDS를 승격한 목적 자체가 "문서화된 설정값이 실제로는
-        # 무시된다"는 사고를 막는 것이었다. dependencies.py가 하드코딩된 값으로
-        # 되돌아가도 이 조립 함수를 통해 실행 중인 서비스까지 값이 전달되는지
-        # 검증하는 테스트가 없으면 같은 사고가 조용히 재발한다.
+        # 무시된다"는 사고를 막는 것이었다.
         assert service._micro_batch_seconds == 2.5
     finally:
         dependencies._get_cluster_repository.cache_clear()
+        dependencies._get_node_resolver.cache_clear()

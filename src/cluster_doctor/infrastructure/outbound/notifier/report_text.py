@@ -1,7 +1,7 @@
 """``DiagnosisReport``를 평문으로 그린다.
 
 줄 포맷이 여기 한 벌만 있다. HTML 어댑터는 같은 함수로 만든 줄을 ``<pre>``에
-담고, ``StdoutNotifier``와 HTML의 ``<details>`` 원문 블록은 ``render_text``가
+담고, 로그 폴백과 HTML의 ``<details>`` 원문 블록은 ``render_text``가
 만든 문서를 그대로 쓴다. 세 곳이 각자 그리면 같은 관측값이 화면마다 다르게
 보이고, 한쪽만 고쳐지는 사고가 난다.
 
@@ -412,7 +412,7 @@ def scrub(text: str) -> str:
 def render_text(report: DiagnosisReport) -> str:
     """리포트 전체를 평문 한 장으로.
 
-    ``StdoutNotifier``와 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
+    로그 폴백과 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
     함수들로 따로 조립하지만 내용은 같다.
 
     섹션 번호는 코드가 센다. 제목에 박아 두면 빈 섹션 하나가 건너뛰어질 때
