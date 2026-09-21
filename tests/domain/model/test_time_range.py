@@ -6,8 +6,14 @@ from cluster_doctor.domain.model.time_range import (
     TimeRange,
 )
 
-FROM = datetime(2026, 8, 20, 2, 9, 0)
-TO   = datetime(2026, 8, 20, 2, 10, 0)
+# TimeRange는 naive datetime을 거부한다. 기본 재료를 aware로 두고, 거절을
+# 확인하는 테스트만 naive를 따로 만든다 — 반대로 두면 대부분의 테스트가
+# "naive 거부"에 걸려 무엇을 검증하려던 것이었는지 알 수 없게 된다.
+FROM = datetime(2026, 8, 20, 2, 9, 0, tzinfo=timezone.utc)
+TO   = datetime(2026, 8, 20, 2, 10, 0, tzinfo=timezone.utc)
+
+NAIVE_FROM = FROM.replace(tzinfo=None)
+NAIVE_TO   = TO.replace(tzinfo=None)
 
 def test_creates_valid_time_range():
     tr = TimeRange(start=FROM, end=TO)
@@ -78,15 +84,30 @@ def test_rejects_aware_start_with_naive_end():
     # the domain rejection and so escaped as a 500 for what is caller
     # -controlled input. It must be the domain error instead.
     with pytest.raises(InvalidTimeRangeError, match="시간대"):
-        TimeRange(start=FROM.replace(tzinfo=timezone.utc), end=TO)
+        TimeRange(start=FROM, end=NAIVE_TO)
 
 
 def test_rejects_naive_start_with_aware_end():
     with pytest.raises(InvalidTimeRangeError, match="시간대"):
-        TimeRange(start=FROM, end=TO.replace(tzinfo=timezone.utc))
+        TimeRange(start=NAIVE_FROM, end=TO)
+
+
+def test_rejects_both_naive_datetimes():
+    """둘 다 naive인 것도 막는다.
+
+    한쪽만 naive인 경우만 막던 동안 이 타입은 "서로 비교 가능한 구간"은
+    보장했지만 "**다른 구간과** 비교 가능한 구간"은 보장하지 못했다. 그 틈으로
+    offset 없이 적힌 값이 들어왔고, 터진 자리는 여기가 아니라 한참 뒤의 차집합
+    산수였다.
+    """
+    with pytest.raises(InvalidTimeRangeError, match="naive") as excinfo:
+        TimeRange(start=NAIVE_FROM, end=NAIVE_TO)
+
+    # 혼합 쌍과 **다른** 규칙이다. 두 메시지가 같아지면 어느 규칙이 걸렸는지
+    # 구분할 수 없고, 고칠 자리도 특정되지 않는다.
+    assert "서로 달라" not in str(excinfo.value)
 
 
 def test_accepts_two_aware_datetimes():
-    # The awareness guard must reject only *mixed* pairs; a consistently
-    # aware range is valid input.
-    TimeRange(start=FROM.replace(tzinfo=timezone.utc), end=TO.replace(tzinfo=timezone.utc))
+    # A consistently aware range is the only valid input.
+    TimeRange(start=FROM, end=TO)

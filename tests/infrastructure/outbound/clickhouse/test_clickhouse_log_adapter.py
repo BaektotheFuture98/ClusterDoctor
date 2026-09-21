@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -14,14 +14,19 @@ from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
-TR       = TimeRange(start=datetime(2026, 8, 20, 2, 9, 0), end=datetime(2026, 8, 20, 2, 10, 0))
-TR_MULTI = TimeRange(start=datetime(2026, 8, 20, 2, 9, 30), end=datetime(2026, 8, 20, 2, 11, 15))
+# ``TimeRange``는 naive datetime을 거부한다. 구간이 만들어진 자리에서 거절되지
+# 않으면 한참 뒤의 차집합 산수에서 터지기 때문이다. 이 파일의 시각도 전부
+# aware여야 하고, 운영에서 ClickHouse가 돌려주는 값도 그렇다.
+KST = timezone(timedelta(hours=9))
+
+TR       = TimeRange(start=datetime(2026, 8, 20, 2, 9, 0, tzinfo=KST), end=datetime(2026, 8, 20, 2, 10, 0, tzinfo=KST))
+TR_MULTI = TimeRange(start=datetime(2026, 8, 20, 2, 9, 30, tzinfo=KST), end=datetime(2026, 8, 20, 2, 11, 15, tzinfo=KST))
 
 # slowlog row 계약: 실제 서버에서 확인한 순서·타입이다.
 #   0=발생 시각(_source.`@timestamp`, aware), 1=인덱스명, 2=노드명, 3=took,
 #   4=total_hits, 5=total_shards(int), 6=x-opaque-id, 7=쿼리 원문
 SLOWLOG_ROW = (
-    datetime(2026, 8, 20, 2, 9, 5),
+    datetime(2026, 8, 20, 2, 9, 5, tzinfo=KST),
     "app_index_v1_20250721",
     "node-a01",
     "32.4s",
@@ -55,19 +60,19 @@ def _make_client(slowlog_rows=None, query_rows=None, metric_rows=None):
 def test_split_exact_one_minute():
     segs = _split_by_minute(TR)
     assert len(segs) == 1
-    assert segs[0].start == datetime(2026, 8, 20, 2, 9, 0)
-    assert segs[0].end   == datetime(2026, 8, 20, 2, 10, 0)
+    assert segs[0].start == datetime(2026, 8, 20, 2, 9, 0, tzinfo=KST)
+    assert segs[0].end   == datetime(2026, 8, 20, 2, 10, 0, tzinfo=KST)
 
 
 def test_split_crosses_two_boundaries():
     segs = _split_by_minute(TR_MULTI)
     assert len(segs) == 3
-    assert segs[0].start == datetime(2026, 8, 20, 2, 9, 30)
-    assert segs[0].end   == datetime(2026, 8, 20, 2, 10, 0)
-    assert segs[1].start == datetime(2026, 8, 20, 2, 10, 0)
-    assert segs[1].end   == datetime(2026, 8, 20, 2, 11, 0)
-    assert segs[2].start == datetime(2026, 8, 20, 2, 11, 0)
-    assert segs[2].end   == datetime(2026, 8, 20, 2, 11, 15)
+    assert segs[0].start == datetime(2026, 8, 20, 2, 9, 30, tzinfo=KST)
+    assert segs[0].end   == datetime(2026, 8, 20, 2, 10, 0, tzinfo=KST)
+    assert segs[1].start == datetime(2026, 8, 20, 2, 10, 0, tzinfo=KST)
+    assert segs[1].end   == datetime(2026, 8, 20, 2, 11, 0, tzinfo=KST)
+    assert segs[2].start == datetime(2026, 8, 20, 2, 11, 0, tzinfo=KST)
+    assert segs[2].end   == datetime(2026, 8, 20, 2, 11, 15, tzinfo=KST)
 
 
 def test_fetch_logs_maps_slowlog():
@@ -78,7 +83,7 @@ def test_fetch_logs_maps_slowlog():
     assert len(sl) == 1
     e = sl[0]
     assert isinstance(e, SlowlogEntry)
-    assert e.timestamp    == datetime(2026, 8, 20, 2, 9, 5)
+    assert e.timestamp    == datetime(2026, 8, 20, 2, 9, 5, tzinfo=KST)
     assert e.index_name   == "app_index_v1_20250721"
     assert e.node         == "node-a01"
     assert e.took         == "32.4s"       # 느린 정도
@@ -126,7 +131,7 @@ def test_slowlog_is_filtered_by_occurrence_time_not_ingestion_time():
 
 
 QUERY_ROW = (
-    datetime(2026, 8, 20, 2, 9, 10), "host1", Decimal("0.5"), "Y", "GET",
+    datetime(2026, 8, 20, 2, 9, 10, tzinfo=KST), "host1", Decimal("0.5"), "Y", "GET",
     "svc", "prod", "proj", "cls1", ["kwd", "kwd2"], "acme", "alice",
 )
 
@@ -168,7 +173,7 @@ def test_fetch_logs_maps_query_log_fail():
 
 
 def test_fetch_logs_maps_node_metric():
-    row    = (datetime(2026, 8, 20, 2, 9, 0), "node1", "10.0.0.1", 30, 60, 15, 70, 2, 0, 0, 1, 0, 0)
+    row    = (datetime(2026, 8, 20, 2, 9, 0, tzinfo=KST), "node1", "10.0.0.1", 30, 60, 15, 70, 2, 0, 0, 1, 0, 0)
     client = _make_client(metric_rows=[row])
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     metrics = [l for l in adapter.fetch_logs(TR) if l.source == "node_metric"]
@@ -281,7 +286,7 @@ def test_warns_once_per_truncated_segment_and_source(caplog):
 
 
 def test_fetch_logs_sorted_descending():
-    t2     = datetime(2026, 8, 20, 2, 9, 30)
+    t2     = datetime(2026, 8, 20, 2, 9, 30, tzinfo=KST)
     client = _make_client(
         slowlog_rows=[SLOWLOG_ROW],
         query_rows=[(t2, "h", Decimal("0.1"), "Y", "GET", "s", "e", "p", "c", ["k"], None, None)],

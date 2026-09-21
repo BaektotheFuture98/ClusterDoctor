@@ -1,12 +1,12 @@
 """트리거 서비스의 Incident 생성과 재실행 규칙.
 
-Incident는 pending 큐를 orchestrator가 비운다(유입 정착 확인). 그래서 실행이
+Incident는 pending 큐를 runner가 비운다(유입 정착 확인). 그래서 실행이
 실패하면 큐가 손대지지 않은 채 남고, finally가 그대로 재실행을 걸면 같은
 실패를 무한히 반복하며 API 할당량만 태운다. 429(할당량 소진)에서 실제로
 성립하는 조건이다.
 
 리포트 전달은 여기서 보지 않는다 — 그것은 Incident Lifecycle의 일이고
-``test_incident_orchestrator``가 본다.
+``test_incident_runner``가 본다.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from cluster_doctor.application.service.incident_orchestrator import IncidentOutcome
+from cluster_doctor.application.service.incident_runner import IncidentOutcome
 from cluster_doctor.application.service.slowlog_trigger_service import (
     _MAX_CONSECUTIVE_RETRIGGERS,
     SlowlogTriggerService,
@@ -26,7 +26,7 @@ from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 TS = datetime(2026, 8, 28, 10, 20, tzinfo=timezone.utc)
 
 
-class FakeOrchestrator:
+class FakeRunner:
     """Incident를 받아 결과를 돌려준다. 큐를 비우는 동작도 흉내낼 수 있다."""
 
     def __init__(
@@ -62,9 +62,9 @@ class FakeOrchestrator:
         return len(self.incidents)
 
 
-def service_for(orchestrator, pending, micro_batch_seconds: float = 0.01):
+def service_for(runner, pending, micro_batch_seconds: float = 0.01):
     return SlowlogTriggerService(
-        orchestrator=orchestrator,
+        runner=runner,
         pending=pending,
         cluster="es-prod",
         micro_batch_seconds=micro_batch_seconds,
@@ -84,14 +84,14 @@ async def settle(service, timeout: float = 5.0):
 
 class TestIncidentCreation:
     async def test_트리거가_Incident_하나를_연다(self):
-        orchestrator = FakeOrchestrator()
-        service = service_for(orchestrator, stdlib_queue.Queue())
+        runner = FakeRunner()
+        service = service_for(runner, stdlib_queue.Queue())
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        assert orchestrator.calls == 1
-        incident = orchestrator.incidents[0]
+        assert runner.calls == 1
+        incident = runner.incidents[0]
         assert incident.cluster == "es-prod"
         assert incident.trigger_time == TS
         assert incident.trigger_type is TriggerType.SLOWLOG
@@ -101,14 +101,14 @@ class TestIncidentCreation:
         같은 id를 쓰면 저장소가 그 둘을 구별하지 못한다."""
         pending = stdlib_queue.Queue()
         pending.put(SlowlogEntry(timestamp=TS))
-        orchestrator = FakeOrchestrator()
-        service = service_for(orchestrator, pending)
+        runner = FakeRunner()
+        service = service_for(runner, pending)
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        ids = {incident.incident_id for incident in orchestrator.incidents}
-        assert len(ids) == orchestrator.calls
+        ids = {incident.incident_id for incident in runner.incidents}
+        assert len(ids) == runner.calls
 
     async def test_마이크로_배치가_지난_뒤에_연다(self):
         """slowlog는 몰려서 오므로 한 건마다 진단하면 같은 사고를 수십 번
@@ -116,19 +116,19 @@ class TestIncidentCreation:
         pending = stdlib_queue.Queue()
         # 정상 실행은 유입 정착을 확인하며 큐를 비운다. 비우지 않으면 재트리거가
         # 이어져 "타이머가 한 번만 걸렸는가"를 볼 수 없다.
-        orchestrator = FakeOrchestrator(drains=pending)
-        service = service_for(orchestrator, pending, micro_batch_seconds=0.05)
+        runner = FakeRunner(drains=pending)
+        service = service_for(runner, pending, micro_batch_seconds=0.05)
 
         await service.on_slowlog(SlowlogEntry(timestamp=TS))
-        assert orchestrator.calls == 0
+        assert runner.calls == 0
 
         await asyncio.sleep(0.12)
         await settle(service)
-        assert orchestrator.calls == 1
+        assert runner.calls == 1
 
     async def test_실행_중_도착한_slowlog는_새_타이머를_걸지_않는다(self):
-        orchestrator = FakeOrchestrator()
-        service = service_for(orchestrator, stdlib_queue.Queue())
+        runner = FakeRunner()
+        service = service_for(runner, stdlib_queue.Queue())
         service._running = True
 
         await service.on_slowlog(SlowlogEntry(timestamp=TS))
@@ -140,39 +140,39 @@ class TestRetrigger:
     async def test_실패한_실행은_다시_걸지_않는다(self):
         pending = stdlib_queue.Queue()
         pending.put(SlowlogEntry(timestamp=TS))
-        orchestrator = FakeOrchestrator(analysis_failed=True)
-        service = service_for(orchestrator, pending)
+        runner = FakeRunner(analysis_failed=True)
+        service = service_for(runner, pending)
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        assert orchestrator.calls == 1
+        assert runner.calls == 1
         assert not pending.empty()
 
     async def test_예상치_못한_예외도_다시_걸지_않는다(self):
-        """orchestrator는 예외를 올리지 않기로 되어 있다. 여기 오는 것은
+        """runner는 예외를 올리지 않기로 되어 있다. 여기 오는 것은
         원인을 모르는 실패이고, 백오프 없이 반복하면 할당량만 태운다."""
         pending = stdlib_queue.Queue()
         pending.put(SlowlogEntry(timestamp=TS))
-        orchestrator = FakeOrchestrator(error=RuntimeError("ES 접속 불가"))
-        service = service_for(orchestrator, pending)
+        runner = FakeRunner(error=RuntimeError("ES 접속 불가"))
+        service = service_for(runner, pending)
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        assert orchestrator.calls == 1
+        assert runner.calls == 1
 
     async def test_연속_재트리거에_상한이_있다(self):
         """큐를 끝내 비우지 않으면 성공 경로에서도 무한히 돈다."""
         pending = stdlib_queue.Queue()
         pending.put(SlowlogEntry(timestamp=TS))
-        orchestrator = FakeOrchestrator()
-        service = service_for(orchestrator, pending)
+        runner = FakeRunner()
+        service = service_for(runner, pending)
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        assert orchestrator.calls == 1 + _MAX_CONSECUTIVE_RETRIGGERS
+        assert runner.calls == 1 + _MAX_CONSECUTIVE_RETRIGGERS
 
     async def test_재실행_전에_배치_창만큼_쉰다(self):
         """지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아, 상한에 걸릴
@@ -180,13 +180,13 @@ class TestRetrigger:
         pending = stdlib_queue.Queue()
         pending.put(SlowlogEntry(timestamp=TS))
         delay = 0.05
-        orchestrator = FakeOrchestrator()
-        service = service_for(orchestrator, pending, micro_batch_seconds=delay)
+        runner = FakeRunner()
+        service = service_for(runner, pending, micro_batch_seconds=delay)
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        gaps = [b - a for a, b in zip(orchestrator.starts, orchestrator.starts[1:])]
+        gaps = [b - a for a, b in zip(runner.starts, runner.starts[1:])]
         assert gaps
         # 스케줄러 오차를 감안해 느슨하게 본다. 지연이 없으면 0에 가깝다.
         assert all(gap >= delay * 0.9 for gap in gaps), gaps
@@ -194,23 +194,23 @@ class TestRetrigger:
     async def test_큐를_비웠으면_다시_걸지_않는다(self):
         pending = stdlib_queue.Queue()
         pending.put(SlowlogEntry(timestamp=TS))
-        orchestrator = FakeOrchestrator(drains=pending)
-        service = service_for(orchestrator, pending)
+        runner = FakeRunner(drains=pending)
+        service = service_for(runner, pending)
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        assert orchestrator.calls == 1
+        assert runner.calls == 1
         assert pending.empty()
 
     async def test_큐가_비어_있으면_다시_걸지_않는다(self):
-        orchestrator = FakeOrchestrator()
-        service = service_for(orchestrator, stdlib_queue.Queue())
+        runner = FakeRunner()
+        service = service_for(runner, stdlib_queue.Queue())
 
         await service._run_incident(TS, TS)
         await settle(service)
 
-        assert orchestrator.calls == 1
+        assert runner.calls == 1
 
 
 class TestTaskHandle:
@@ -220,13 +220,13 @@ class TestTaskHandle:
         started = threading.Event()
         release = threading.Event()
 
-        class BlockingOrchestrator(FakeOrchestrator):
+        class BlockingRunner(FakeRunner):
             async def run(self, incident, *, cancellation=None):
                 started.set()
                 await asyncio.to_thread(release.wait, 5)
                 return await super().run(incident, cancellation=cancellation)
 
-        service = service_for(BlockingOrchestrator(), stdlib_queue.Queue())
+        service = service_for(BlockingRunner(), stdlib_queue.Queue())
         service._running = True
         service._spawn(service._run_incident(TS, TS))
 

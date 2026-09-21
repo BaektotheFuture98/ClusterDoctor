@@ -7,7 +7,7 @@ Context에 SSH 원문과 minute 중간 결과가 쌓이고, Context window가 �
 그래서 규칙은 하나다 — **Agent 사이에는 참조만 흐르고, 실체는 여기 있다.**
 
 관측값(``Observations``)도 여기 둔다. 그것은 Evidence가 아니라 코드가 센
-숫자이고, Incident에 걸쳐 누적돼야 하며(``analyze``가 여러 번 불린다),
+숫자이고, Incident에 걸쳐 누적돼야 하며(한 Incident에 분석이 여러 번 돈다),
 Supervisor는 읽을 일이 없다.
 """
 
@@ -64,7 +64,7 @@ class ArtifactStore(Protocol):
     def merge_observations(self, incident_id: str, observations: Observations) -> None:
         """코드가 센 관측값을 누적한다. 지표마다 max의 max, 타임라인은 분을 키로.
 
-        덮어쓰기가 아니라 병합인 이유: ``analyze``는 한 Incident에서 여러 번
+        덮어쓰기가 아니라 병합인 이유: 분석은 한 Incident에서 여러 번
         불리고 구간이 겹칠 수 있다.
         """
         ...

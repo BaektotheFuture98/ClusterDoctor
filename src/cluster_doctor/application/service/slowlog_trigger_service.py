@@ -2,8 +2,8 @@
 
 micro_batch_seconds 동안 slowlog를 모은 뒤 Incident 하나를 연다.
   - 첫 slowlog 수신 → 타이머 시작, pending 큐에 적재
-  - 타이머 만료 → Incident 생성 → ``IncidentOrchestrator.run``
-  - 실행 중 도착한 slowlog → pending 큐에 적재 (orchestrator가 유입 정착을
+  - 타이머 만료 → Incident 생성 → ``IncidentRunner.run``
+  - 실행 중 도착한 slowlog → pending 큐에 적재 (runner가 유입 정착을
     확인하며 직접 꺼낸다)
   - 성공으로 끝났고 큐에 잔여 항목이 남아 있으면 재트리거. 단
     micro_batch_seconds만큼 쉰 뒤에 걸고, 연속 3회를 넘기지 않는다.
@@ -21,13 +21,13 @@ import uuid
 from collections.abc import Coroutine
 from datetime import datetime, timezone
 
-from cluster_doctor.application.service.incident_orchestrator import IncidentOrchestrator
+from cluster_doctor.application.service.incident_runner import IncidentRunner
 from cluster_doctor.domain.model.incident import Incident, TriggerType
 from cluster_doctor.domain.model.log_entry import LogEntry
 
 _logger = logging.getLogger(__name__)
 
-# orchestrator가 큐를 비우지 않은 채 계속 성공하면 재트리거가 끝나지 않는다.
+# runner가 큐를 비우지 않은 채 계속 성공하면 재트리거가 끝나지 않는다.
 # 상한을 둬서 무한 루프가 되지 않게 한다.
 _MAX_CONSECUTIVE_RETRIGGERS = 3
 
@@ -35,12 +35,12 @@ _MAX_CONSECUTIVE_RETRIGGERS = 3
 class SlowlogTriggerService:
     def __init__(
         self,
-        orchestrator: IncidentOrchestrator,
+        runner: IncidentRunner,
         pending: stdlib_queue.Queue,
         cluster: str = "elasticsearch",
         micro_batch_seconds: float = 10.0,
     ) -> None:
-        self._orchestrator = orchestrator
+        self._runner = runner
         self._pending = pending
         self._cluster = cluster
         self._micro_batch_seconds = micro_batch_seconds
@@ -111,13 +111,13 @@ class SlowlogTriggerService:
         )
         succeeded = False
         try:
-            outcome = await self._orchestrator.run(incident)
+            outcome = await self._runner.run(incident)
             # 재트리거 여부는 완전성으로만 판단한다. 근거가 일부 빠진 것(gaps)은
             # 분석이 성공한 것이므로 막지 않는다 — 큐에 남은 항목은 그 사이
             # 새로 도착한 slowlog다.
             succeeded = not outcome.analysis_failed
         except Exception:
-            # exc_info를 남긴다. orchestrator는 예외를 올리지 않기로 되어 있으므로
+            # exc_info를 남긴다. runner는 예외를 올리지 않기로 되어 있으므로
             # 여기 오는 것은 원인을 모르는 실패이고, 스택 없이는 진단할 수 없다.
             _logger.exception("Incident 실행 중 예상치 못한 오류")
         finally:

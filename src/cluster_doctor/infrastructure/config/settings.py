@@ -68,6 +68,16 @@ class Settings(BaseSettings):
             raise ValueError("nvidia_api_key is required when llm_provider=nvidia_nim")
         return v
 
+    @field_validator("cluster_name")
+    @classmethod
+    def _require_cluster_name(cls, v: str) -> str:
+        # 빈 이름은 리포트와 로그에서 어느 클러스터를 본 것인지 지운다.
+        # 런타임이 아니라 여기서 막는 이유: 값을 고칠 수 있는 것은 운영자이고,
+        # Incident 한 건을 태운 뒤에 알게 되는 것보다 기동이 실패하는 편이 낫다.
+        if not v.strip():
+            raise ValueError("cluster_name is required")
+        return v
+
     @field_validator("es_host")
     @classmethod
     def _require_es_host(cls, v: str) -> str:

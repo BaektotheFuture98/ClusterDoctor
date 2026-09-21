@@ -27,7 +27,6 @@ from math import ceil
 
 from cluster_doctor.application.exception import GuardrailViolation
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.log_analysis import LogAnalysisRequest
 from cluster_doctor.domain.model.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
@@ -149,26 +148,6 @@ class Deadline:
             raise GuardrailViolation(f"{what} 실행 시간 상한 {self.seconds:.0f}초 초과")
 
 
-def validate_analysis_request(request: LogAnalysisRequest) -> None:
-    """요청 자체가 성립하는가. Pydantic이 잡지 못하는 것만 본다.
-
-    ``start < end``와 10분 상한은 ``TimeRange``가 이미 강제하므로 여기까지
-    오지 않는다. 남는 것은 그 타입이 모르는 것 — 빈 cluster와 빈 incident_id다.
-    """
-    if not request.incident_id.strip():
-        raise GuardrailViolation("incident_id가 비어 있다")
-    if not request.cluster.strip():
-        raise GuardrailViolation("cluster가 비어 있다")
-
-    minutes = (
-        request.analysis_window.end - request.analysis_window.start
-    ).total_seconds() / 60
-    if minutes > MAX_ANALYSIS_WINDOW_MINUTES:
-        raise GuardrailViolation(
-            f"분석 창 {minutes:.1f}분이 상한 {MAX_ANALYSIS_WINDOW_MINUTES}분을 넘는다"
-        )
-
-
 def window_minutes(window: TimeRange) -> int:
     """구간의 분 수. 예산 회계의 단위다.
 
@@ -208,6 +187,31 @@ def fit_to_budget(window: TimeRange, state: IncidentState) -> TimeRange:
     if window_minutes(window) <= budget:
         return window
     return TimeRange(start=window.start, end=window.start + timedelta(minutes=budget))
+
+
+def admit_window(window: TimeRange, state: IncidentState) -> TimeRange:
+    """Guardrail을 통과한 실제 분석 구간. 통과하지 못하면 ``GuardrailViolation``.
+
+    **부분 중복은 잘라서 통과시킨다.** 13:50~14:05를 요청받았고 14:00~14:10이
+    이미 분석됐다면 13:50~14:00으로 좁힌다 — 요청 전체를 거절하면 모델이 똑같은
+    요청을 다시 내놓고 사이클만 태운다.
+
+    승인 경로가 여기 하나뿐이어야 한다. 두 벌이 되면 어느 쪽이 승인한 구간이
+    맞는지 판정할 근거가 없고, 예산 회계는 승인된 구간을 기준으로 한다.
+    """
+    check_analysis_budget(state)
+
+    remaining = state.remaining_of(window)
+    if not remaining:
+        raise GuardrailViolation(
+            f"{window.start:%H:%M}~{window.end:%H:%M} 구간은 이미 전부 분석했다"
+        )
+
+    # 앞 조각만 쓴다. 남은 조각이 여럿이면 뒤쪽은 다음 제안에서 다시 계산된다 —
+    # 한 번에 둘을 승인하면 승인 하나에 위임 하나라는 회계가 깨진다.
+    admitted = fit_to_budget(remaining[0], state)
+    check_not_duplicate(admitted, state)
+    return admitted
 
 
 def check_not_duplicate(window: TimeRange, state: IncidentState) -> None:
