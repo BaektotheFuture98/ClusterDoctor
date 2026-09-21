@@ -9,9 +9,9 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.agent import (
 from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
     SupervisorAgentAdapter,
 )
-from cluster_doctor.infrastructure.bootstrap import dependencies
+from cluster_doctor.infrastructure.config import dependencies
 from cluster_doctor.infrastructure.config import settings as settings_module
-from cluster_doctor.infrastructure.bootstrap.dependencies import (
+from cluster_doctor.infrastructure.config.dependencies import (
     _parse_clickhouse_url,
     close_clickhouse_client,
 )

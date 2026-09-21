@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 
-from cluster_doctor.infrastructure.bootstrap.dependencies import (
+from cluster_doctor.infrastructure.config.dependencies import (
     build_trigger_service,
     build_kafka_consumer,
     close_clickhouse_client,
