@@ -43,7 +43,7 @@ from _timeargs import KST
 import cluster_doctor.main  # noqa: F401
 
 from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
-from cluster_doctor.infrastructure.bootstrap.dependencies import (
+from cluster_doctor.infrastructure.config.dependencies import (
     build_trigger_service,
     close_clickhouse_client,
 )
