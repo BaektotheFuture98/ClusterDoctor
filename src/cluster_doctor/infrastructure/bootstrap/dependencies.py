@@ -39,10 +39,10 @@ from cluster_doctor.infrastructure.outbound.elasticsearch.es_node_resolver impor
 )
 from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
 from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import SshNodeLogFetcher
-from cluster_doctor.infrastructure.outbound.state.in_memory_artifact_store import (
+from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
-from cluster_doctor.infrastructure.outbound.state.in_memory_incident_state_repository import (
+from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
     InMemoryIncidentStateRepository,
 )
 

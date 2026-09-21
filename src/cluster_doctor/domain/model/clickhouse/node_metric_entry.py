@@ -2,6 +2,10 @@
 
 한 시점의 노드 상태를 스냅샷한 측정값이다. 사건(event) 로그인 SlowlogEntry·
 QueryLogEntry와 달리 주기적으로 수집되는 샘플이므로 별도 파일에 둔다.
+
+ClickHouse의 ``es_node_metric`` 테이블에서만 온다(테이블 이름과 달리
+Elasticsearch가 아니라 ClickHouse에 적재된다 — ``settings.py``의
+``clickhouse_node_metric_table`` 참고).
 """
 
 from dataclasses import dataclass

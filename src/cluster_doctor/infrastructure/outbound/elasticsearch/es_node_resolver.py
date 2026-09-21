@@ -14,7 +14,7 @@ import logging
 
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.domain.model.evidence import ResolvedNode
+from cluster_doctor.domain.model.elasticsearch.resolved_node import ResolvedNode
 
 _logger = logging.getLogger(__name__)
 

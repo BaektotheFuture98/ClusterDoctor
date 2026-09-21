@@ -17,7 +17,7 @@ from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.log_entry import SlowlogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.agent import (
     DiagnosisAgentAdapter,
 )
@@ -26,7 +26,7 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nod
     MapOutput,
     ReduceOutput,
 )
-from cluster_doctor.infrastructure.outbound.state.in_memory_artifact_store import (
+from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
 from tests.domain.model.test_time_range_spans import KST, span

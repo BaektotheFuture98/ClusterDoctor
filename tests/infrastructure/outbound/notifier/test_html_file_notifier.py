@@ -485,7 +485,7 @@ class TestObservationsAreNotFabricated:
         시각이다. 실측에서 9/10 15:27 사고 리포트에 "11:40 green"이 실렸고,
         그대로 두면 운영자는 사고 당시가 green이었다고 읽는다.
         """
-        from cluster_doctor.domain.model.diagnosis_report import HealthPoint
+        from cluster_doctor.domain.model.elasticsearch.health_point import HealthPoint
 
         window = (
             datetime(2026, 9, 10, 15, 20, tzinfo=_KST),
@@ -504,7 +504,7 @@ class TestObservationsAreNotFabricated:
         assert "분석 구간이 아니다" not in html_out  # 문구가 바뀌면 알아채게
 
     def test_상태_이력이_분석_구간_안이면_주의를_붙이지_않는다(self):
-        from cluster_doctor.domain.model.diagnosis_report import HealthPoint
+        from cluster_doctor.domain.model.elasticsearch.health_point import HealthPoint
 
         window = (
             datetime(2026, 9, 10, 15, 20, tzinfo=_KST),

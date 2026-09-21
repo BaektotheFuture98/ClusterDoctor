@@ -32,11 +32,11 @@ from cluster_doctor.application.exception import LlmApiError, LlmResponseError
 from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.application.port.outbound.node_resolver import NodeResolver
 from cluster_doctor.application.service.guardrails import truncate_raw
-from cluster_doctor.domain.model.evidence import (
-    Evidence,
-    ProblemNodeCandidate,
-    ResolvedNode,
+from cluster_doctor.domain.model.evidence import Evidence, ProblemNodeCandidate
+from cluster_doctor.infrastructure.outbound.agent.common.log_format import (
+    format_evidence_line,
 )
+from cluster_doctor.domain.model.elasticsearch.resolved_node import ResolvedNode
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource import node_log
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.graph import run_triage
@@ -104,7 +104,7 @@ def find_problem_nodes(
     known_refs = {item.evidence_id for item in master_evidence}
     prompt = _CANDIDATE_PROMPT.format(
         limit=limit,
-        evidence="\n".join(item.cite() for item in master_evidence),
+        evidence="\n".join(format_evidence_line(item) for item in master_evidence),
     )
     try:
         text = call_llm(

@@ -9,11 +9,9 @@ from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter im
     ClickHouseLogAdapter,
     _split_by_minute,
 )
-from cluster_doctor.domain.model.log_entry import (
-    QueryLogEntry,
-    SlowlogEntry,
-)
-from cluster_doctor.domain.model.node_metric import NodeMetricEntry
+from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
+from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
 TR       = TimeRange(start=datetime(2026, 8, 20, 2, 9, 0), end=datetime(2026, 8, 20, 2, 10, 0))

@@ -11,7 +11,7 @@ from cluster_doctor.application.service.inflow import (
     InflowTracker,
     base_time,
 )
-from cluster_doctor.domain.model.log_entry import SlowlogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from tests.domain.model.test_time_range_spans import KST
 
 TRIGGER = datetime(2026, 9, 17, 3, 0, tzinfo=KST)

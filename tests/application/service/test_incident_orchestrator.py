@@ -30,10 +30,10 @@ from cluster_doctor.domain.model.supervisor_decision import (
     SupervisorDecision,
 )
 from cluster_doctor.domain.model.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.state.in_memory_artifact_store import (
+from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
-from cluster_doctor.infrastructure.outbound.state.in_memory_incident_state_repository import (
+from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
     InMemoryIncidentStateRepository,
 )
 from tests.domain.model.test_time_range_spans import KST, label, span

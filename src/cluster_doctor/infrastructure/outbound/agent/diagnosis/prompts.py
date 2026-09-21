@@ -14,6 +14,9 @@ from __future__ import annotations
 
 from cluster_doctor.domain.model.evidence import Evidence
 from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
+from cluster_doctor.infrastructure.outbound.agent.common.log_format import (
+    format_evidence_line,
+)
 
 _ANALYSIS_HEADER = """너는 Elasticsearch 장애 분석 시스템 ClusterDoctor의
 Log Analysis SubAgent다. 지금 단계는 Cross-source Analysis다.
@@ -90,7 +93,7 @@ def build_analysis_prompt(
         _ANALYSIS_RULES,
         "",
         f"--- 선별된 근거 {len(evidence)}건 ---",
-        "\n".join(item.cite() for item in evidence) or "(근거 없음)",
+        "\n".join(format_evidence_line(item) for item in evidence) or "(근거 없음)",
     ]
     return "\n".join(sections)
 
@@ -154,6 +157,6 @@ def build_revision_prompt(
             _ANALYSIS_RULES,
             "",
             f"--- 인용할 수 있는 근거 {len(evidence)}건 ---",
-            "\n".join(item.cite() for item in evidence) or "(근거 없음)",
+            "\n".join(format_evidence_line(item) for item in evidence) or "(근거 없음)",
         ]
     )

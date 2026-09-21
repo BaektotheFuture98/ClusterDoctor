@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from aiokafka import AIOKafkaConsumer
 
 from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTriggerService
-from cluster_doctor.domain.model.log_entry import SlowlogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 
 _logger = logging.getLogger(__name__)
 

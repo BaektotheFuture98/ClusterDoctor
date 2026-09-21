@@ -93,6 +93,24 @@ def _root_cause_text(report: LogAnalysisReport) -> str:
     return " / ".join(parts)
 
 
+def _cite(evidence: Evidence) -> str:
+    """근거 하나를 사람이 읽을 한 줄로 그린다.
+
+    ``infrastructure/agent/common/log_format.format_evidence_line``과 모양이
+    같다. 이 함수를 그쪽에서 가져다 쓰지 않는 이유는 이 파일 상단에 적은 대로
+    이 모듈이 인프라에 의존하지 않기 때문이다 — application 계층이 인프라를
+    import하면 그 경계가 깨진다.
+    """
+    parts = [f"[{evidence.evidence_id}]", evidence.event_time.strftime("%Y-%m-%d %H:%M:%S")]
+    parts.append(str(evidence.source))
+    if evidence.severity:
+        parts.append(evidence.severity)
+    if evidence.node_name or evidence.node_id:
+        parts.append(f"node={evidence.node_name or evidence.node_id}")
+    parts.append(evidence.message)
+    return " | ".join(parts)
+
+
 def _quote(
     refs: tuple[str, ...], cite: dict[str, Evidence], *, extra: str = ""
 ) -> tuple[str, ...]:
@@ -108,5 +126,5 @@ def _quote(
             continue
         seen.add(ref)
         found = cite.get(ref)
-        lines.append(found.cite() if found else f"[{ref}] (존재하지 않는 근거 참조)")
+        lines.append(_cite(found) if found else f"[{ref}] (존재하지 않는 근거 참조)")
     return tuple(lines)

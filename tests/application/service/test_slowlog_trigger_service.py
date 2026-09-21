@@ -21,7 +21,7 @@ from cluster_doctor.application.service.slowlog_trigger_service import (
     SlowlogTriggerService,
 )
 from cluster_doctor.domain.model.incident import IncidentStatus, TriggerType
-from cluster_doctor.domain.model.log_entry import SlowlogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 
 TS = datetime(2026, 8, 28, 10, 20, tzinfo=timezone.utc)
 
