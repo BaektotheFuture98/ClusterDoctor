@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
+from cluster_doctor.domain.model.log_entry import LogEntry
+from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 
 # 노드 로그 한 번 조회로 돌려줄 기본/최대 줄 수. 프롬프트에 그대로 실리므로

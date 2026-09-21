@@ -56,7 +56,8 @@ from cluster_doctor.domain.model.log_analysis import (
     VerificationStatus,
 )
 from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
-from cluster_doctor.domain.model.log_entry import LogEntry, NodeLogEntry
+from cluster_doctor.domain.model.log_entry import LogEntry
+from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import complete
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.collector import (

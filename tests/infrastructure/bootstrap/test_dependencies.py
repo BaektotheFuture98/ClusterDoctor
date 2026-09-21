@@ -2,16 +2,16 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
-from cluster_doctor.domain.model.log_entry import SlowlogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.agent import (
     DiagnosisAgentAdapter,
 )
 from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
     SupervisorAgentAdapter,
 )
-from cluster_doctor.infrastructure.config import dependencies
+from cluster_doctor.infrastructure.bootstrap import dependencies
 from cluster_doctor.infrastructure.config import settings as settings_module
-from cluster_doctor.infrastructure.config.dependencies import (
+from cluster_doctor.infrastructure.bootstrap.dependencies import (
     _parse_clickhouse_url,
     close_clickhouse_client,
 )

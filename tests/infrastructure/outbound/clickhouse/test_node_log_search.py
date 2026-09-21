@@ -12,7 +12,7 @@ import pytest
 from cluster_doctor.application.port.outbound.log_repository import (
     MAX_NODE_LOG_LIMIT,
 )
-from cluster_doctor.domain.model.log_entry import NodeLogEntry
+from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.domain.model.time_range import InvalidTimeRangeError
 from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import (
     ClickHouseLogAdapter,

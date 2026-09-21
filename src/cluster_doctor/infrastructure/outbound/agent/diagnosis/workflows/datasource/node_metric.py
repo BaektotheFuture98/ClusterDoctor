@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource
-from cluster_doctor.domain.model.node_metric import NodeMetricEntry
+from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 
 # rejected는 **누적** 카운터다(``_nodes/stats``). 그래서 0이 아니라는 사실
 # 자체가 근거이고, 증가분을 따지지 않는다. 이 값만은 설정으로 열지 않는다 —

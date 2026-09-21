@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from cluster_doctor.domain.model.evidence import ResolvedNode
+from cluster_doctor.domain.model.elasticsearch.resolved_node import ResolvedNode
 
 
 @runtime_checkable

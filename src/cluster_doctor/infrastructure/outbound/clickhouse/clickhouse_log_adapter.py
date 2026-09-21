@@ -1,13 +1,11 @@
 import logging
 from datetime import datetime, timedelta
 
-from cluster_doctor.domain.model.log_entry import (
-    LogEntry,
-    NodeLogEntry,
-    QueryLogEntry,
-    SlowlogEntry,
-)
-from cluster_doctor.domain.model.node_metric import NodeMetricEntry
+from cluster_doctor.domain.model.log_entry import LogEntry
+from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
+from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
+from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 from cluster_doctor.domain.model.time_range import (
     InvalidTimeRangeError,
     TimeRange,

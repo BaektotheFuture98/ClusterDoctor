@@ -7,12 +7,11 @@
 
 from functools import singledispatch
 
-from cluster_doctor.domain.model.log_entry import (
-    NodeLogEntry,
-    QueryLogEntry,
-    SlowlogEntry,
-)
-from cluster_doctor.domain.model.node_metric import NodeMetricEntry
+from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
+from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
+from cluster_doctor.domain.model.evidence import Evidence
+from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
+from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 
 # 한 쿼리가 키워드 200개 넘게 싣고 오는 경우가 있다. 그대로 그리면 한 줄이
 # 2,000자를 넘고(실측 2,029자), 같은 유저가 agg와 count로 같은 목록을 두 번
@@ -110,3 +109,15 @@ def _format_node_metric(entry: NodeMetricEntry) -> str:
         f"write(active={entry.write_active},queue={entry.write_queue},"
         f"rejected={entry.write_rejected})"
     )
+
+
+def format_evidence_line(evidence: Evidence) -> str:
+    """프롬프트에 실을 근거 한 줄. 모델이 id로 골라 쓰게 한다."""
+    parts = [f"[{evidence.evidence_id}]", evidence.event_time.strftime("%Y-%m-%d %H:%M:%S")]
+    parts.append(str(evidence.source))
+    if evidence.severity:
+        parts.append(evidence.severity)
+    if evidence.node_name or evidence.node_id:
+        parts.append(f"node={evidence.node_name or evidence.node_id}")
+    parts.append(evidence.message)
+    return " | ".join(parts)

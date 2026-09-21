@@ -79,7 +79,7 @@ def test_포트가_아닌_구현은_주입되지_않는다():
     여기서 고정하는 것은 **배선이 무엇을 만드는가**다 — 조립이 구현을 고르고,
     소비자는 그 선택을 모른다.
     """
-    from cluster_doctor.infrastructure.config import dependencies
+    from cluster_doctor.infrastructure.bootstrap import dependencies
 
     source = inspect.getsource(dependencies.build_trigger_service)
     assert "SshNodeLogFetcher(" in source

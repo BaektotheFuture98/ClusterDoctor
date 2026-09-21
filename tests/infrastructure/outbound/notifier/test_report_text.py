@@ -12,14 +12,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from cluster_doctor.domain.model.diagnosis_report import (
-    DiagnosisReport,
-    HealthPoint,
-    MasterEvent,
-    NodeMetricRow,
-    Observations,
-    TimelineRow,
-)
+from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, TimelineRow
+from cluster_doctor.domain.model.elasticsearch.health_point import HealthPoint
 from cluster_doctor.infrastructure.outbound.notifier.report_text import (
     health_lines,
     master_log_lines,

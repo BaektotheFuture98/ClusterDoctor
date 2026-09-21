@@ -11,7 +11,7 @@ ES는 그 사건들을 INFO로 남긴다.
 from __future__ import annotations
 
 from cluster_doctor.domain.model.evidence import EvidenceSource
-from cluster_doctor.domain.model.log_entry import NodeLogEntry
+from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
