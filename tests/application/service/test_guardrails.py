@@ -23,7 +23,6 @@ from cluster_doctor.application.service.guardrails import (
     fit_to_budget,
     remaining_minutes,
     truncate_raw,
-    validate_analysis_request,
     window_minutes,
 )
 from cluster_doctor.domain.model.incident_state import IncidentState
@@ -125,19 +124,6 @@ class TestAnalysisBudget:
         assert remaining_minutes(IncidentState(incident_id="inc-1")) == (
             MAX_ANALYZED_MINUTES
         )
-
-
-class TestRequestValidation:
-    def test_incident_id가_비면_거절한다(self):
-        with pytest.raises(GuardrailViolation):
-            validate_analysis_request(request_for(span(14, 0, 14, 10), incident_id=" "))
-
-    def test_cluster가_비면_거절한다(self):
-        with pytest.raises(GuardrailViolation):
-            validate_analysis_request(request_for(span(14, 0, 14, 10), cluster=""))
-
-    def test_정상_요청은_통과한다(self):
-        validate_analysis_request(request_for(span(14, 0, 14, 10)))
 
 
 class TestWaitBudget:

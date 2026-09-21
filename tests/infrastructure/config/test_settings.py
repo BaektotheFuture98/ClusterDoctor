@@ -8,8 +8,13 @@ from pydantic import BaseModel, ValidationError
 from cluster_doctor.infrastructure.config import settings as settings_module
 from cluster_doctor.infrastructure.config.settings import ConfigurationError, Settings, get_settings
 
+# 기본 provider가 nvidia_nim이므로 NVIDIA_API_KEY가 없으면 어떤 Settings도
+# 세워지지 않는다. 여기 빠져 있으면 provider와 무관한 테스트까지 "필수 키
+# 없음"으로 떨어져, 무엇을 검증하려던 테스트였는지 실패 메시지가 말해 주지
+# 못한다.
 REQUIRED = {
     "GEMINI_API_KEY":  "test-key",
+    "NVIDIA_API_KEY":  "nv-test-key",
     "CLICKHOUSE_URL":  "jdbc:clickhouse://localhost:8123/default",
     "ES_HOST":         "es.example.com",
 }
@@ -53,15 +58,20 @@ def test_required_fields_loaded(monkeypatch):
     assert s.clickhouse_url == "jdbc:clickhouse://localhost:8123/default"
 
 
-def test_provider_defaults_to_gemini(monkeypatch):
-    """provider를 고르지 않으면 기존 동작을 유지한다."""
+def test_provider_defaults_to_nvidia_nim(monkeypatch):
+    """provider를 고르지 않았을 때 무엇이 쓰이는지 못 박는다.
+
+    기본값이 바뀌면 .env를 그대로 둔 운영자의 호출 대상이 통째로 바뀐다.
+    키와 모델이 그 기본값을 따라가는지까지 함께 본다 — 한쪽만 따라가면
+    A provider에 B의 키를 보내고 401만 남는다.
+    """
     for k, v in REQUIRED.items():
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     s = Settings(_env_file=None)
-    assert s.llm_provider == "gemini"
-    assert s.llm_api_key == s.gemini_api_key
-    assert s.llm_model == s.gemini_model
+    assert s.llm_provider == "nvidia_nim"
+    assert s.llm_api_key == s.nvidia_api_key
+    assert s.llm_model == s.nvidia_model
 
 
 def test_selecting_nvidia_switches_key_and_model(monkeypatch):
@@ -131,7 +141,30 @@ def test_provider_key_error_does_not_echo_the_other_providers_key(monkeypatch):
     assert CANARY not in str(excinfo.value)
 
 
+def test_empty_cluster_name_is_rejected(monkeypatch):
+    # 기본값이 있으므로 비우려면 명시해야 한다. 그래도 막는 이유는 빈 이름이
+    # 리포트와 로그에서 어느 클러스터를 본 것인지 지우기 때문이고, 기동이
+    # 실패하는 편이 Incident 한 건을 태운 뒤 알게 되는 것보다 낫다.
+    for key, value in REQUIRED.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("CLUSTER_NAME", "   ")
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    assert "cluster_name" in str(excinfo.value)
+
+
+def test_cluster_name_has_a_usable_default(monkeypatch):
+    # 검증기를 넣으면서 기본값까지 막지 않았는지 고정한다.
+    for key, value in REQUIRED.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("CLUSTER_NAME", raising=False)
+    assert Settings(_env_file=None).cluster_name == "elasticsearch"
+
+
 def test_missing_gemini_key_is_rejected(monkeypatch):
+    # gemini를 고른 경우에만 gemini 키가 필수다. provider를 명시하지 않으면
+    # 기본값(nvidia_nim)이 적용돼 이 검증기가 아예 돌지 않는다.
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValidationError) as excinfo:
@@ -141,6 +174,7 @@ def test_missing_gemini_key_is_rejected(monkeypatch):
 
 def test_key_error_does_not_echo_other_secrets(monkeypatch):
     """검증 실패 메시지에 다른 비밀값이 실려서는 안 된다."""
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("CLICKHOUSE_URL", REQUIRED["CLICKHOUSE_URL"])
     monkeypatch.setenv("CLICKHOUSE_PASSWORD", CANARY)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -211,9 +245,8 @@ def test_get_settings_does_not_cache_a_failed_configuration(broken_settings):
 
 
 def test_micro_batch_seconds_defaults_to_ten(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
-    monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
-    monkeypatch.setenv("ES_HOST", "es.example.com")
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
     assert Settings(_env_file=None).micro_batch_seconds == 10.0
 
 
@@ -240,9 +273,8 @@ def test_micro_batch_seconds_is_configurable(monkeypatch):
     # .env에 적어둔 값이 실제로 동작에 반영돼야 한다. 실측으로
     # FLUSH_INTERVAL_SECONDS가 문서에만 있고 코드에는 없어, 설정해도
     # 하드코딩된 10초로 동작하면서 아무 경고가 없었다.
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
-    monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
-    monkeypatch.setenv("ES_HOST", "es.example.com")
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
     monkeypatch.setenv("MICRO_BATCH_SECONDS", "30")
     assert Settings(_env_file=None).micro_batch_seconds == 30.0
 
@@ -251,8 +283,8 @@ def test_missing_es_host_is_rejected_at_startup(monkeypatch):
     # agent의 첫 단계가 cluster_health()라 ES는 이제 필수다. 비어 있으면
     # Elasticsearch(hosts=[])가 조립 시점에 ValueError를 던지는데, 그것은
     # 어떤 설정이 문제인지 알려주지 않는다.
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
-    monkeypatch.setenv("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/default")
+    for k, v in REQUIRED.items():
+        monkeypatch.setenv(k, v)
     monkeypatch.setenv("ES_HOST", "")
     settings_module.get_settings.cache_clear()
     try:

@@ -35,6 +35,10 @@ class IncidentState(BaseModel):
     unresolved_gaps: list[TimeRange] = Field(default_factory=list)
 
     evidence_refs: list[str] = Field(default_factory=list)
+    # 분석이 확보하지 못한 것을 사람이 읽을 문장으로. 리포트 배너가 이것만
+    # 읽는다 — 사이클마다 쌓이므로 여기 두지 않으면 앞선 분석의 누락이
+    # 사라지고, 리포트가 갖추지 못한 완결성을 주장하게 된다.
+    accumulated_gaps: list[str] = Field(default_factory=list)
 
     latest_report_ref: str | None = None
     latest_analysis_status: LogAnalysisStatus | None = None

@@ -1,31 +1,12 @@
-"""Log Analysis SubAgent.
+"""근거를 놓고 원인을 묻고, 쓴 리포트를 검증하고, 지적을 받아 고친다.
 
-한 analysis window 안에서 **조사·RCA·리포트·검증을 전부** 책임진다. Supervisor는
-이 경계 안을 보지 않는다.
+수집(``collector.py``)과 리포트 작성이 갈라져 있는 이유는 Diagnosis SubAgent가
+모델에게 그 둘을 **따로** 고르게 하기 때문이다. 한 덩어리로 묶여 있으면
+"근거는 이미 모았으니 리포트만 다시 쓴다"가 표현되지 않고, 다시 쓸 때마다
+데이터소스 조회 비용이 함께 든다.
 
-    LogAnalysisRequest
-        ↓
-    EvidenceCollector  (datasource workflow 조율, Node Investigation 포함)
-        ↓
-    Evidence[]
-        ↓
-    Cross-source Analysis  (여기서 처음으로 원인을 묻는다)
-        ↓
-    Draft Report
-        ↓
-    Consistency Validator ──┐ MISMATCH
-        │ PASS              ↓
-        │            bounded revision (최대 MAX_REPORT_REVISIONS회)
-        ↓                   │
-    LogAnalysisResponse ←───┘
-
-**tool loop가 아니다.** tool loop 오케스트레이터를 쓰지 않는 이유는 여기서
-모델이 결정할 것이 "무엇이 의미 있는가"와 "원인이 무엇인가"뿐이기 때문이다.
-어느 datasource를 어떤 순서로 부를지는 결정 사항이 아니라 절차이고, 절차를
-모델에게 맡기면 상한이 프롬프트 문장이 된다.
-
-**예외를 밖으로 내보내지 않는다.** 실패는 ``status=FAILED``로 표현한다. 예외로
-올리면 Supervisor 사이클이 죽고, 그때까지 모은 Evidence와 관측값이 함께 사라진다.
+검증과 수정은 여기 안에 있고 모델이 건드리지 못한다. 모델이 자기 출력을
+채점하면 거의 통과하기 때문이다.
 """
 
 from __future__ import annotations
@@ -35,34 +16,17 @@ from collections.abc import Callable
 from datetime import timedelta
 from functools import partial
 
-from cluster_doctor.application.exception import (
-    GuardrailViolation,
-    LlmApiError,
-    LlmResponseError,
-)
+from cluster_doctor.application.exception import LlmApiError, LlmResponseError
 from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
-from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
-from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
-from cluster_doctor.application.port.outbound.node_resolver import NodeResolver
-from cluster_doctor.application.service.guardrails import (
-    MAX_REPORT_REVISIONS,
-    validate_analysis_request,
-)
+from cluster_doctor.application.service.guardrails import MAX_REPORT_REVISIONS
 from cluster_doctor.domain.model.evidence import Evidence
 from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisRequest,
-    LogAnalysisResponse,
-    LogAnalysisStatus,
     VerificationStatus,
 )
 from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
-from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.domain.model.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import complete
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.collector import (
-    EvidenceCollector,
-)
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.prompts import (
     build_analysis_prompt,
     build_revision_prompt,
@@ -77,121 +41,28 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import (
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.validator import (
     validate_report,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_metric import (
-    DEFAULT_THRESHOLDS,
-    NodeMetricThresholds,
-)
 
 _logger = logging.getLogger(__name__)
 
 _ANALYSIS_MAX_TOKENS = 8192
 
 
-class DiagnosisAgentAdapter:
-    """``LogAnalysisAgent`` 포트의 구현."""
+class ReportWriter:
+    """초안 → 검증 → 수정. 리포트 하나가 만들어지는 전 구간."""
 
     def __init__(
         self,
         *,
-        provider: str,
-        model: str,
-        api_key: str,
-        fetch_logs: Callable[[TimeRange], list[LogEntry]],
-        fetch_node_logs: Callable[..., list[NodeLogEntry]],
-        cluster: ClusterRepository,
-        node_resolver: NodeResolver,
-        node_log_fetcher: NodeLogFetcher,
         store: ArtifactStore,
+        call_llm: Callable[..., str],
         max_revisions: int = MAX_REPORT_REVISIONS,
-        metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS,
-        call_llm: Callable[..., str] | None = None,
     ) -> None:
-        # ``call_llm``을 주입할 수 있게 둔 것은 테스트를 위해서다. 기본값은
-        # provider/model/api_key가 묶인 실제 호출자이고, 이 계층 아래(워크플로
-        # 노드, Node Investigation)는 누구에게 묻는지 모른다 — 그 결정은
-        # 조립 시점에 한 번만 이뤄진다.
-        self._call_llm = call_llm or partial(
-            _structured_call, provider=provider, model=model, api_key=api_key
-        )
-        self._fetch_logs = fetch_logs
-        self._fetch_node_logs = fetch_node_logs
-        self._cluster = cluster
-        self._node_resolver = node_resolver
-        self._node_log_fetcher = node_log_fetcher
         self._store = store
+        self._call_llm = call_llm
         self._max_revisions = max_revisions
-        self._metric_thresholds = metric_thresholds
-
-    def analyze(self, request: LogAnalysisRequest) -> LogAnalysisResponse:
-        window = request.analysis_window
-        try:
-            validate_analysis_request(request)
-        except GuardrailViolation as exc:
-            _logger.error("[subagent] 요청 거절: %s", exc)
-            return LogAnalysisResponse(
-                status=LogAnalysisStatus.FAILED,
-                analyzed_window=window,
-                analysis_summary=f"요청이 런타임 제약을 어겼다: {exc}",
-            )
-
-        _logger.info(
-            "[subagent] 분석 시작 %s ~ %s (목표: %s)",
-            window.start.strftime("%Y-%m-%d %H:%M"),
-            window.end.strftime("%H:%M"),
-            request.analysis_goal or "(없음)",
-        )
-
-        state = AnalysisRunState(window)
-        collector = EvidenceCollector(
-            incident_id=request.incident_id,
-            store=self._store,
-            fetch_logs=self._fetch_logs,
-            fetch_node_logs=self._fetch_node_logs,
-            cluster=self._cluster,
-            node_resolver=self._node_resolver,
-            node_log_fetcher=self._node_log_fetcher,
-            call_llm=self._call_llm,
-            metric_thresholds=self._metric_thresholds,
-        )
-        collected = collector.collect(window, state)
-        evidence = collected.evidence
-
-        draft = self._draft_report(request, evidence, state)
-        report = draft.to_domain(
-            incident_id=request.incident_id,
-            window=window,
-            evidence_refs=tuple(item.evidence_id for item in evidence),
-        )
-        report = self._verify_and_revise(report, evidence, state.candidate_ids())
-
-        self._store.merge_observations(request.incident_id, state.to_observations())
-        report_ref = self._store.put_report(request.incident_id, report)
-
-        status = self._final_status(report, draft, evidence, state)
-        suggested = tuple(draft.parsed_windows()) if draft.needs_more_context else ()
-        gaps = self._unresolved_gaps(collected, state, window)
-
-        _logger.info(
-            "[subagent] 분석 종료 status=%s verification=%s evidence=%d gaps=%d",
-            status,
-            report.verification_status,
-            len(evidence),
-            len(gaps),
-        )
-        return LogAnalysisResponse(
-            status=status,
-            analyzed_window=window,
-            suggested_windows=suggested,
-            unresolved_gaps=gaps,
-            report_ref=report_ref,
-            verification_status=report.verification_status,
-            evidence_refs=tuple(item.evidence_id for item in evidence),
-            gaps=tuple(state.gaps),
-            analysis_summary=self._summary_for_supervisor(report, state),
-        )
 
     # ── Cross-source Analysis ────────────────────────────────────────
-    def _draft_report(
+    def draft_report(
         self,
         request: LogAnalysisRequest,
         evidence: list[Evidence],
@@ -250,7 +121,7 @@ class DiagnosisAgentAdapter:
         )
 
     # ── 검증과 수정 ──────────────────────────────────────────────────
-    def _verify_and_revise(
+    def verify_and_revise(
         self,
         report: LogAnalysisReport,
         evidence: list[Evidence],
@@ -333,31 +204,7 @@ class DiagnosisAgentAdapter:
 
     # ── 응답 조립 ────────────────────────────────────────────────────
     @staticmethod
-    def _final_status(
-        report: LogAnalysisReport,
-        draft: DraftReport,
-        evidence: list[Evidence],
-        state: AnalysisRunState,
-    ) -> LogAnalysisStatus:
-        """어떤 상태로 끝났는가.
-
-        우선순위가 있다. 분석이 성립하지 않은 것이 가장 무겁고, 그다음이 리포트를
-        믿을 수 없는 것이며, 범위 확장 요청은 그 뒤다 — 세 가지가 함께 일어날 수
-        있고, Supervisor에게는 가장 무거운 것을 먼저 알려야 한다.
-
-        ``suggested_windows``는 상태와 무관하게 응답에 실리므로, 검증에 실패한
-        분석도 Scope 확장 제안은 Supervisor에게 전달된다.
-        """
-        if state.degraded and not evidence:
-            return LogAnalysisStatus.FAILED
-        if report.verification_status is VerificationStatus.MISMATCH:
-            return LogAnalysisStatus.VALIDATION_FAILED
-        if draft.needs_more_context and draft.parsed_windows():
-            return LogAnalysisStatus.NEED_MORE_CONTEXT
-        return LogAnalysisStatus.COMPLETED
-
-    @staticmethod
-    def _unresolved_gaps(
+    def unresolved_gaps(
         collected, state: AnalysisRunState, window: TimeRange
     ) -> tuple[TimeRange, ...]:
         """근거를 확보하지 못한 시간 범위.
@@ -375,7 +222,7 @@ class DiagnosisAgentAdapter:
         return tuple(gaps)
 
     @staticmethod
-    def _summary_for_supervisor(report: LogAnalysisReport, state: AnalysisRunState) -> str:
+    def summary_for_supervisor(report: LogAnalysisReport, state: AnalysisRunState) -> str:
         """Supervisor가 읽을 한두 문단. 리포트 전문이 아니다."""
         parts = [report.summary or "(요약 없음)"]
         if report.root_causes:
@@ -390,6 +237,17 @@ class DiagnosisAgentAdapter:
         return " / ".join(parts)
 
 
+def build_structured_call(
+    *, provider: str, model: str, api_key: str
+) -> Callable[..., str]:
+    """provider/model/api_key를 한 번 묶어 둔 호출자를 만든다.
+
+    이 계층 아래(워크플로 노드, Validator, ReportWriter)는 누구에게 묻는지
+    모른다 — 그 결정은 조립 시점에 한 번만 이뤄진다.
+    """
+    return partial(_structured_call, provider=provider, model=model, api_key=api_key)
+
+
 def _structured_call(
     messages: list[dict],
     max_tokens: int,
@@ -399,11 +257,6 @@ def _structured_call(
     api_key: str,
     response_format=None,
 ) -> str:
-    """provider/model/api_key가 묶인 호출자.
-
-    이 계층 아래(워크플로 노드, Validator)는 누구에게 묻는지 모른다 — 그 결정은
-    조립 시점에 한 번만 이뤄진다.
-    """
     return complete(
         messages=messages,
         provider=provider,
