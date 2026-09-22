@@ -13,9 +13,9 @@ import clickhouse_connect
 from elasticsearch import Elasticsearch
 
 from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTriggerService
+from cluster_doctor.ingestion.kafka.slowlog_trigger import SlowlogTriggerService
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
-from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
+from cluster_doctor.ingestion.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.agent.common.litellm_client import (
     require_supported_provider,
 )

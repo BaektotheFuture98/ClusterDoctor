@@ -15,12 +15,12 @@ from datetime import datetime, timezone
 
 from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
 from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.application.service.slowlog_trigger_service import (
+from cluster_doctor.ingestion.kafka.slowlog_trigger import (
     SlowlogTriggerService,
 )
 from cluster_doctor.incident.models import IncidentStatus, TriggerType
 from cluster_doctor.agent.contracts import LogAnalysisStatus
-from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
+from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
@@ -115,7 +115,7 @@ async def settle(service, timeout: float = 5.0):
 async def test_slowlog_한_건이_Incident_실행과_리포트_전달까지_간다():
     service, agent, notifier, _pending = build()
 
-    await service.on_slowlog(SlowlogEntry(timestamp=TS))
+    await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
     await settle(service)
 
     assert len(agent.incidents) == 1
@@ -132,7 +132,7 @@ async def test_마이크로_배치_안의_여러_건이_Incident_하나로_묶�
     service, agent, _notifier, _pending = build()
 
     for _ in range(5):
-        await service.on_slowlog(SlowlogEntry(timestamp=TS))
+        await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
     await settle(service)
 
     assert len(agent.incidents) == 1
@@ -141,7 +141,7 @@ async def test_마이크로_배치_안의_여러_건이_Incident_하나로_묶�
 async def test_Agent에_닿기_전에_분석_후보_구간이_준비된다():
     service, agent, _notifier, _pending = build()
 
-    await service.on_slowlog(SlowlogEntry(timestamp=TS))
+    await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
     await settle(service)
 
     assert agent.drained[0] >= 1, "후보 구간 없이 Agent가 불렸다"
@@ -165,12 +165,12 @@ class TestRetriggerGate:
         def failed_but_closed_ok(run_index, state, pending):
             # 실행 중에 새 slowlog가 도착한다 — 재트리거 조건이 선다.
             if run_index == 1:
-                pending.put(SlowlogEntry(timestamp=TS))
+                pending.put(SlowlogTriggerEvent(timestamp=TS))
             state.latest_analysis_status = LogAnalysisStatus.FAILED
 
         service, agent, _notifier, pending = build(behaviour=failed_but_closed_ok)
 
-        await service.on_slowlog(SlowlogEntry(timestamp=TS))
+        await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
         await settle(service)
 
         assert len(agent.incidents) == 1, "실패한 실행이 재트리거를 걸었다"
@@ -182,12 +182,12 @@ class TestRetriggerGate:
 
         def succeeded(run_index, state, pending):
             if run_index == 1:
-                pending.put(SlowlogEntry(timestamp=TS))
+                pending.put(SlowlogTriggerEvent(timestamp=TS))
             state.latest_analysis_status = LogAnalysisStatus.COMPLETED
 
         service, agent, _notifier, pending = build(behaviour=succeeded)
 
-        await service.on_slowlog(SlowlogEntry(timestamp=TS))
+        await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
         await settle(service)
 
         assert len(agent.incidents) == 2

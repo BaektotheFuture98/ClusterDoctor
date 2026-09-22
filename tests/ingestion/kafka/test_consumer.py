@@ -1,4 +1,4 @@
-"""Kafka 메시지 → SlowlogEntry 파싱.
+"""Kafka 메시지 → SlowlogTriggerEvent 파싱.
 
 timestamp는 반드시 timezone-aware여야 한다. naive가 하나라도 섞이면
 check_new_slowlogs의 sorted()가 TypeError로 터져 agent 실행이 통째로
@@ -9,7 +9,7 @@ naive 값에 대해서는 호스트 로컬 시간대를 가정해 구간을 9시
 
 import pytest
 
-from cluster_doctor.infrastructure.inbound.kafka.consumer import _parse_message
+from cluster_doctor.ingestion.kafka.consumer import _parse_message
 
 KST_ISO = "2026-08-28T10:20:15.123000+09:00"
 UTC_ISO = "2026-08-28T01:20:15.123000Z"

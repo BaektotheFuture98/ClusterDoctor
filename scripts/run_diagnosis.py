@@ -42,7 +42,7 @@ from _timeargs import KST
 # import 시점에 configure_logging()이 돌아 stderr와 logs/app.log에 로그가 붙는다.
 import cluster_doctor.main  # noqa: F401
 
-from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
+from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 from cluster_doctor.infrastructure.config.dependencies import (
     build_trigger_service,
     close_clickhouse_client,
@@ -237,7 +237,7 @@ def run(moments: list) -> int:
     service = build_trigger_service(settings)
     orchestrator = service._orchestrator
     for moment in moments:
-        service._pending.put(SlowlogEntry(timestamp=moment))
+        service._pending.put(SlowlogTriggerEvent(timestamp=moment))
 
     log_time = min(moments)
     receive_time = datetime.now(timezone.utc)
