@@ -17,7 +17,7 @@ import logging
 from langchain_core.messages import HumanMessage
 
 from cluster_doctor.application.port.outbound.incident_agent import IncidentAgentResult
-from cluster_doctor.application.port.outbound.incident_state_repository import (
+from cluster_doctor.storage.incident_state_store import (
     IncidentStateRepository,
 )
 from cluster_doctor.application.service.guardrails import MAX_SUPERVISOR_CYCLES

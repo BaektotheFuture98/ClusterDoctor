@@ -30,11 +30,9 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
+from cluster_doctor.storage.artifact_store import ArtifactStore
 from cluster_doctor.application.port.outbound.incident_agent import IncidentAgent
-from cluster_doctor.application.port.outbound.incident_state_repository import (
-    IncidentStateRepository,
-)
+from cluster_doctor.storage.incident_state_store import IncidentStateRepository
 from cluster_doctor.application.port.outbound.notifier import Notifier
 from cluster_doctor.application.service.guardrails import (
     INCIDENT_TIMEOUT_SECONDS,

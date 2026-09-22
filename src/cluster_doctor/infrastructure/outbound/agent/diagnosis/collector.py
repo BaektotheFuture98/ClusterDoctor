@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
+from cluster_doctor.storage.artifact_store import ArtifactStore
 from cluster_doctor.agent.integrations.elasticsearch.ports import (
     ClusterRepository,
     NodeResolver,

@@ -19,7 +19,7 @@ from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
 )
 from cluster_doctor.infrastructure.outbound.agent.supervisor.state import DIAGNOSIS_SUBAGENT
 from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import TASK_TOOL_NAME
-from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
+from cluster_doctor.storage.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 
