@@ -15,7 +15,7 @@ from cluster_doctor.contracts.observations import (
     Observations,
     TimelineRow,
 )
-from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import (
+from cluster_doctor.reporting.html_file_notifier import (
     HtmlFileNotifier,
     _unique_path,
     render_report,

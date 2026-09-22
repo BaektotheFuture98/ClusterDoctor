@@ -41,7 +41,7 @@ from cluster_doctor.agent.integrations.elasticsearch.cluster_adapter import (
 from cluster_doctor.agent.integrations.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
-from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
+from cluster_doctor.reporting.html_file_notifier import HtmlFileNotifier
 from cluster_doctor.agent.integrations.ssh.fetcher import SshNodeLogFetcher
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,

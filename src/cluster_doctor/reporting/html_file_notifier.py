@@ -30,13 +30,13 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from cluster_doctor.application.port.outbound.notifier import Notifier
 from cluster_doctor.contracts.observations import (
     DiagnosisReport,
     Observations,
     observed_severity,
 )
-from cluster_doctor.infrastructure.outbound.notifier.report_text import (
+from cluster_doctor.reporting.notifier import Notifier
+from cluster_doctor.reporting.report_text import (
     SEVERITY_PREFIX,
     candidate_details,
     candidate_line,
