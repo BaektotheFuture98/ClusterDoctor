@@ -20,7 +20,7 @@ from cluster_doctor.application.service.incident_runner import IncidentRunner
 from cluster_doctor.contracts.observations import Observations, TimelineRow
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
 from cluster_doctor.domain.model.incident import Incident, IncidentStatus
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
 )

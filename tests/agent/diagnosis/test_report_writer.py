@@ -17,25 +17,25 @@ from dataclasses import replace
 from datetime import datetime
 
 from cluster_doctor.exceptions import LlmApiError
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisRequest,
     VerificationStatus,
 )
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.collector import (
+from cluster_doctor.agent.diagnosis.collector import (
     EvidenceCollector,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.report_writer import (
+from cluster_doctor.agent.diagnosis.report_writer import (
     ReportWriter,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
+from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import DraftReport
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.schema import DraftReport
+from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nodes import (
+from cluster_doctor.agent.diagnosis.workflows.triage.nodes import (
     MapOutput,
     ReduceOutput,
 )

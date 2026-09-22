@@ -19,7 +19,7 @@ from cluster_doctor.application.service.slowlog_trigger_service import (
     SlowlogTriggerService,
 )
 from cluster_doctor.domain.model.incident import IncidentStatus, TriggerType
-from cluster_doctor.domain.model.log_analysis import LogAnalysisStatus
+from cluster_doctor.agent.contracts import LogAnalysisStatus
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,

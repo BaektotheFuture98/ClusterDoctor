@@ -12,8 +12,8 @@ datasource만 보고 내려진 것이 되며, 뒤 단계는 이미 내려진 결
 
 from __future__ import annotations
 
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import (
+from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
+from cluster_doctor.agent.diagnosis.workflows.triage.state import (
     MinuteBucket,
     MinuteResult,
     RawRecord,

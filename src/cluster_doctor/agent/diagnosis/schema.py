@@ -24,7 +24,7 @@ import logging
 from pydantic import BaseModel, Field, field_validator
 
 from cluster_doctor.contracts.observations import SuspectPick as DomainSuspectPick
-from cluster_doctor.domain.model.log_analysis import VerificationStatus
+from cluster_doctor.agent.contracts import VerificationStatus
 from cluster_doctor.contracts.report import (
     LogAnalysisReport,
     ReportFinding,

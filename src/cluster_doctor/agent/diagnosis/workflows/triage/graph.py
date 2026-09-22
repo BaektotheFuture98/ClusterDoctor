@@ -23,7 +23,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nodes import (
+from cluster_doctor.agent.diagnosis.workflows.triage.nodes import (
     EvidenceIdFactory,
     RawRefFactory,
     StructuredLlmCaller,
@@ -31,8 +31,8 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nod
     make_map_minute,
     make_reduce_to_evidence,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import (
+from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
+from cluster_doctor.agent.diagnosis.workflows.triage.state import (
     RawRecord,
     TriageState,
 )

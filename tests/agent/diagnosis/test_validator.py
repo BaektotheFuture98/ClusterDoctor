@@ -14,7 +14,7 @@ from cluster_doctor.contracts.report import (
     RootCause,
     TimelineEvent,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.validator import (
+from cluster_doctor.agent.diagnosis.validator import (
     validate_report,
 )
 from tests.contracts.test_time_range_spans import KST

@@ -11,13 +11,13 @@ from datetime import datetime
 
 from cluster_doctor.exceptions import LlmApiError
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.graph import run_triage
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nodes import (
+from cluster_doctor.agent.diagnosis.workflows.triage.graph import run_triage
+from cluster_doctor.agent.diagnosis.workflows.triage.nodes import (
     MapOutput,
     ReduceOutput,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
+from cluster_doctor.agent.diagnosis.workflows.triage.state import RawRecord
 from tests.contracts.test_time_range_spans import KST
 
 SPEC = TriageSpec(

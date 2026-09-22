@@ -18,7 +18,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from cluster_doctor.domain.model.incident import IncidentStatus
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
 )

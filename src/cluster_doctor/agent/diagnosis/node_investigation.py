@@ -38,8 +38,8 @@ from cluster_doctor.agent.common.log_format import (
 )
 from cluster_doctor.agent.integrations.elasticsearch.resolved_node import ResolvedNode
 from cluster_doctor.contracts.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource import node_log
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.graph import run_triage
+from cluster_doctor.agent.diagnosis.workflows.datasource import node_log
+from cluster_doctor.agent.diagnosis.workflows.triage.graph import run_triage
 
 _logger = logging.getLogger(__name__)
 

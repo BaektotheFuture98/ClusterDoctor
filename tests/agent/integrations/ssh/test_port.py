@@ -61,7 +61,7 @@ def test_분석기가_구현이_아니라_포트를_요구한다():
     실행 호스트가 클러스터 내부 대역에 닿지 못하는 배치에서는 SSH가 구조적으로
     실패하므로, 다른 어댑터가 필요해질 수 있다.
     """
-    from cluster_doctor.infrastructure.outbound.agent.diagnosis.subagent import (
+    from cluster_doctor.agent.diagnosis.subagent import (
         DiagnosisSeams,
     )
 
