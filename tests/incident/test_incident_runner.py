@@ -14,12 +14,12 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from cluster_doctor.application.port.outbound.incident_agent import IncidentAgentResult
-from cluster_doctor.application.service.guardrails import CancellationToken
-from cluster_doctor.application.service.incident_runner import IncidentRunner
+from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
+from cluster_doctor.incident.guardrails import CancellationToken
+from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.contracts.observations import Observations, TimelineRow
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.domain.model.incident import Incident, IncidentStatus
+from cluster_doctor.incident.models import Incident, IncidentStatus
 from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
@@ -73,7 +73,7 @@ class FakeIncidentAgent:
                 "analyzed": list(state.analyzed_windows),
                 "analysis_call_count": state.analysis_call_count,
                 "analyzed_minutes": state.analyzed_minutes,
-                "latest_report_ref": state.latest_report_ref,
+                "final_report_ref": state.final_report_ref,
             }
         )
         if self._behaviour is not None:
@@ -222,7 +222,7 @@ class TestLifecycle:
         assert second["analyzed"] == []
         assert second["analysis_call_count"] == 0
         assert second["analyzed_minutes"] == 0
-        assert second["latest_report_ref"] is None
+        assert second["final_report_ref"] is None
 
 
 class TestWallClock:
@@ -429,7 +429,7 @@ class TestVerification:
         ref = store.put_report("inc-1", report)
 
         def attach(_incident, state, repository):
-            state.latest_report_ref = ref
+            state.final_report_ref = ref
             repository.save(state)
             return IncidentAgentResult(status=IncidentStatus.COMPLETED)
 

@@ -18,7 +18,7 @@ from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.storage.artifact_store import ArtifactStore
-from cluster_doctor.application.service.guardrails import MAX_REPORT_REVISIONS
+from cluster_doctor.incident.guardrails import MAX_REPORT_REVISIONS
 from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.agent.contracts import (
     LogAnalysisRequest,

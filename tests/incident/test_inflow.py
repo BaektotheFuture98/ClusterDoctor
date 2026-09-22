@@ -6,7 +6,7 @@
 
 from datetime import datetime, timedelta
 
-from cluster_doctor.application.service.inflow import (
+from cluster_doctor.incident.inflow import (
     SETTLED_ZERO_STREAK,
     InflowTracker,
     base_time,

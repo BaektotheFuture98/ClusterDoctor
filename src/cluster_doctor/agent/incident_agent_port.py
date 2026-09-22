@@ -20,8 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from cluster_doctor.domain.model.incident import Incident, IncidentStatus
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.models import Incident, IncidentStatus
+from cluster_doctor.incident.state import IncidentState
 
 
 @dataclass(frozen=True)

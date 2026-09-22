@@ -9,7 +9,7 @@ import time
 import pytest
 
 from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.application.service.guardrails import (
+from cluster_doctor.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYZED_MINUTES,
     MAX_SINGLE_WAIT_SECONDS,
@@ -25,7 +25,7 @@ from cluster_doctor.application.service.guardrails import (
     truncate_raw,
     window_minutes,
 )
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.contracts import LogAnalysisRequest
 from tests.contracts.test_time_range_spans import span
 

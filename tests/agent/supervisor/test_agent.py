@@ -10,8 +10,8 @@
 chat model만 대본이다. 그래프도 미들웨어도 진단 파이프라인도 전부 진짜다.
 """
 
-from cluster_doctor.domain.model.incident import Incident, IncidentStatus
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.models import Incident, IncidentStatus
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.contracts import LogAnalysisStatus
 from cluster_doctor.agent.supervisor import agent as agent_module
 from cluster_doctor.agent.supervisor.agent import (
@@ -117,8 +117,8 @@ class TestEndToEndDelegation:
         assert final.analysis_call_count == 1
         assert final.analyzed_minutes == 10
         assert final.latest_analysis_status is LogAnalysisStatus.COMPLETED
-        assert final.latest_report_ref is not None
-        assert store.get_report(final.latest_report_ref) is not None
+        assert final.final_report_ref is not None
+        assert store.get_report(final.final_report_ref) is not None
         assert store.list_evidence("inc-1"), "SubAgent의 근거 수집이 돌지 않았다"
 
 

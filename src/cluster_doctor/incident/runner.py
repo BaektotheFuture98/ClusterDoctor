@@ -31,20 +31,20 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from cluster_doctor.storage.artifact_store import ArtifactStore
-from cluster_doctor.application.port.outbound.incident_agent import IncidentAgent
+from cluster_doctor.agent.incident_agent_port import IncidentAgent
 from cluster_doctor.storage.incident_state_store import IncidentStateRepository
 from cluster_doctor.application.port.outbound.notifier import Notifier
-from cluster_doctor.application.service.guardrails import (
+from cluster_doctor.incident.guardrails import (
     INCIDENT_TIMEOUT_SECONDS,
     CancellationToken,
     Deadline,
     clamp_wait,
 )
-from cluster_doctor.application.service.inflow import InflowTracker
+from cluster_doctor.incident.inflow import InflowTracker
 from cluster_doctor.application.service.report_assembler import to_diagnosis_report
-from cluster_doctor.application.service.window_planner import initial_windows
-from cluster_doctor.domain.model.incident import Incident, IncidentStatus
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.window_planner import initial_windows
+from cluster_doctor.incident.models import Incident, IncidentStatus
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
@@ -147,7 +147,7 @@ class IncidentRunner:
             or state.latest_analysis_status is LogAnalysisStatus.FAILED
             or state.latest_verification_status is VerificationStatus.MISMATCH,
             gaps=gaps,
-            report_ref=state.latest_report_ref,
+            report_ref=state.final_report_ref,
             analysis_calls=state.analysis_call_count,
             reason=state.closing_reason,
         )
@@ -267,8 +267,8 @@ class IncidentRunner:
         """
         observations = self._store.get_observations(incident.incident_id)
         report = (
-            self._store.get_report(state.latest_report_ref)
-            if state.latest_report_ref
+            self._store.get_report(state.final_report_ref)
+            if state.final_report_ref
             else None
         )
         evidence = self._store.list_evidence(incident.incident_id)
