@@ -82,10 +82,10 @@ from cluster_doctor.storage.incident_state_store import (
     IncidentStateRepository,
 )
 from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
-from cluster_doctor.application.service.window_planner import plan_new_windows
+from cluster_doctor.incident.window_planner import plan_new_windows
 from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.domain.model.incident import Incident
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.models import Incident
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.contracts import (
     LogAnalysisRequest,
     LogAnalysisResponse,
@@ -319,7 +319,7 @@ def build_diagnosis_subagent(
             cluster=incident.cluster,
             analysis_window=window,
             # 앞선 리포트를 꺼낼 참조. 첫 호출에서는 None이다.
-            state_ref=state.latest_report_ref,
+            state_ref=state.final_report_ref,
             analysis_goal=goal,
         )
         delegation = _Delegation(window, request)
@@ -736,7 +736,7 @@ def _apply_response(
     state.latest_verification_status = response.verification_status
     state.latest_analysis_summary = response.analysis_summary
     if response.report_ref:
-        state.latest_report_ref = response.report_ref
+        state.final_report_ref = response.report_ref
     for ref in response.evidence_refs:
         if ref not in state.evidence_refs:
             state.evidence_refs.append(ref)

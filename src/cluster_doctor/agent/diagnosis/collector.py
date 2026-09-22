@@ -26,7 +26,7 @@ from cluster_doctor.agent.integrations.elasticsearch.ports import (
     NodeResolver,
 )
 from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
-from cluster_doctor.application.service.guardrails import (
+from cluster_doctor.incident.guardrails import (
     MAX_EVIDENCE_TOTAL,
     clamp_evidence,
     truncate_raw,

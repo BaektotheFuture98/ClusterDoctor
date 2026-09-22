@@ -10,7 +10,7 @@ from cluster_doctor.agent.integrations.ssh.port import (
     DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )
-from cluster_doctor.application.service.guardrails import (
+from cluster_doctor.incident.guardrails import (
     SSH_COMMAND_TIMEOUT_SECONDS,
     SSH_CONNECT_TIMEOUT_SECONDS,
 )

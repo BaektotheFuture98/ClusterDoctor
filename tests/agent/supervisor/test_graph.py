@@ -17,13 +17,13 @@ from deepagents import CompiledSubAgent
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 
-from cluster_doctor.application.service.guardrails import (
+from cluster_doctor.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYZED_MINUTES,
     MAX_REJECTED_DECISIONS,
 )
-from cluster_doctor.domain.model.incident import IncidentStatus
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.models import IncidentStatus
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.common import harness as harness_module
 from cluster_doctor.agent.supervisor.guardrail_middleware import (
     DelegationGuardrailMiddleware,
@@ -562,7 +562,7 @@ class TestToolSurface:
 
 def test_초기_후보_구간이_있으면_list_candidate_windows가_돌려준다():
     """차집합 산수는 모델이 하지 않는다. 코드가 계산해 건넨다."""
-    from cluster_doctor.application.service.window_planner import initial_windows
+    from cluster_doctor.incident.window_planner import initial_windows
 
     state = IncidentState(incident_id="inc-1")
     state.pending_windows = initial_windows(TRIGGER, TRIGGER + timedelta(minutes=2))

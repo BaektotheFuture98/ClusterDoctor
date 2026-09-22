@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import clickhouse_connect
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.application.service.incident_runner import IncidentRunner
+from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTriggerService
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
 from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter

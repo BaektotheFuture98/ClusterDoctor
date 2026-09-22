@@ -16,13 +16,13 @@ import logging
 
 from langchain_core.messages import HumanMessage
 
-from cluster_doctor.application.port.outbound.incident_agent import IncidentAgentResult
+from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
 from cluster_doctor.storage.incident_state_store import (
     IncidentStateRepository,
 )
-from cluster_doctor.application.service.guardrails import MAX_SUPERVISOR_CYCLES
-from cluster_doctor.domain.model.incident import Incident, IncidentStatus
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.guardrails import MAX_SUPERVISOR_CYCLES
+from cluster_doctor.incident.models import Incident, IncidentStatus
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.common.harness import restrict_harness
 from cluster_doctor.agent.common.kst import format_kst
 from cluster_doctor.agent.diagnosis.subagent import (

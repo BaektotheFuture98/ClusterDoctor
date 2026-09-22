@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.state import IncidentState
 
 
 @runtime_checkable

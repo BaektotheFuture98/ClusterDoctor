@@ -15,12 +15,12 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from cluster_doctor.application.service.incident_runner import IncidentOutcome
+from cluster_doctor.incident.runner import IncidentOutcome
 from cluster_doctor.application.service.slowlog_trigger_service import (
     _MAX_CONSECUTIVE_RETRIGGERS,
     SlowlogTriggerService,
 )
-from cluster_doctor.domain.model.incident import IncidentStatus, TriggerType
+from cluster_doctor.incident.models import IncidentStatus, TriggerType
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 
 TS = datetime(2026, 8, 28, 10, 20, tzinfo=timezone.utc)

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from cluster_doctor.domain.model.incident import IncidentStatus
+from cluster_doctor.incident.models import IncidentStatus
 from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
@@ -40,7 +40,7 @@ class IncidentState(BaseModel):
     # 사라지고, 리포트가 갖추지 못한 완결성을 주장하게 된다.
     accumulated_gaps: list[str] = Field(default_factory=list)
 
-    latest_report_ref: str | None = None
+    final_report_ref: str | None = None
     latest_analysis_status: LogAnalysisStatus | None = None
     latest_verification_status: VerificationStatus | None = None
     latest_analysis_summary: str = ""

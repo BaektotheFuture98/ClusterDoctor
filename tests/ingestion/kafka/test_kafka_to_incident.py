@@ -13,12 +13,12 @@ import asyncio
 import queue as stdlib_queue
 from datetime import datetime, timezone
 
-from cluster_doctor.application.port.outbound.incident_agent import IncidentAgentResult
-from cluster_doctor.application.service.incident_runner import IncidentRunner
+from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
+from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.application.service.slowlog_trigger_service import (
     SlowlogTriggerService,
 )
-from cluster_doctor.domain.model.incident import IncidentStatus, TriggerType
+from cluster_doctor.incident.models import IncidentStatus, TriggerType
 from cluster_doctor.agent.contracts import LogAnalysisStatus
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 from cluster_doctor.storage.in_memory_artifact_store import (

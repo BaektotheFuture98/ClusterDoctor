@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from cluster_doctor.agent.integrations.elasticsearch.ports import ClusterRepository
-from cluster_doctor.application.service.incident_runner import IncidentRunner
+from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 from cluster_doctor.infrastructure.config import dependencies
 from cluster_doctor.infrastructure.config import settings as settings_module

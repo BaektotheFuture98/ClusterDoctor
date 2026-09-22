@@ -21,8 +21,8 @@ import uuid
 from collections.abc import Coroutine
 from datetime import datetime, timezone
 
-from cluster_doctor.application.service.incident_runner import IncidentRunner
-from cluster_doctor.domain.model.incident import Incident, TriggerType
+from cluster_doctor.incident.runner import IncidentRunner
+from cluster_doctor.incident.models import Incident, TriggerType
 from cluster_doctor.agent.integrations.clickhouse.models import LogEntry
 
 _logger = logging.getLogger(__name__)

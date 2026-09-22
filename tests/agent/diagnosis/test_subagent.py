@@ -12,8 +12,8 @@ chat model만 대본으로 바꾼다. 파이프라인(수집기·triage·검증)
 받는다 — 같은 재료를 두 벌 만들면 한쪽만 고쳐지는 날이 온다.
 """
 
-from cluster_doctor.domain.model.incident import Incident
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.models import Incident
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
@@ -118,8 +118,8 @@ class TestAdmittedWindow:
 
         update = runnable.invoke(state_in())
 
-        assert state.latest_report_ref is not None
-        assert store.get_report(state.latest_report_ref) is not None
+        assert state.final_report_ref is not None
+        assert store.get_report(state.final_report_ref) is not None
         assert state.latest_analysis_status is LogAnalysisStatus.COMPLETED
         # 승인을 소모한다. 남겨 두면 다음 ``task``가 승인 없이 통과한다.
         assert update[ADMITTED_WINDOW] is None
@@ -409,7 +409,7 @@ class TestSuggestedWindowParsing:
 
         naive 구간은 aware인 ``analyzed_windows``와 비교되지 못해
         ``_apply_response``의 차집합에서 터진다. 그 예외가 나는 자리는
-        ``latest_report_ref``를 이미 채운 **뒤**, ``repository.save`` **앞**이다 —
+        ``final_report_ref``를 이미 채운 **뒤**, ``repository.save`` **앞**이다 —
         리포트는 ArtifactStore에 멀쩡히 있는데 저장소에도 운영자에게도 닿지
         않는다. 운영자가 보는 것은 "리포트 없음" 알림 하나뿐이다.
         """
@@ -436,9 +436,9 @@ class TestSuggestedWindowParsing:
 
         update = runnable.invoke(state_in())
 
-        assert state.latest_report_ref is not None, "리포트가 저장소 갱신 전에 사라졌다"
-        assert store.get_report(state.latest_report_ref) is not None
-        assert update[LAST_RESPONSE]["report_ref"] == state.latest_report_ref
+        assert state.final_report_ref is not None, "리포트가 저장소 갱신 전에 사라졌다"
+        assert store.get_report(state.final_report_ref) is not None
+        assert update[LAST_RESPONSE]["report_ref"] == state.final_report_ref
         assert update[LAST_RESPONSE]["status"] == str(LogAnalysisStatus.NEED_MORE_CONTEXT)
 
     def test_읽을_수_없는_구간은_거절될_뿐_위임을_깨지_않는다(self):

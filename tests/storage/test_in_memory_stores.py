@@ -16,7 +16,7 @@ from cluster_doctor.contracts.observations import (
     TimelineRow,
 )
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.domain.model.incident_state import IncidentState
+from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,

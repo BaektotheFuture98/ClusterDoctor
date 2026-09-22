@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
 from cluster_doctor.agent.integrations.elasticsearch.ports import NodeResolver
-from cluster_doctor.application.service.guardrails import truncate_raw
+from cluster_doctor.incident.guardrails import truncate_raw
 from cluster_doctor.contracts.evidence import Evidence, ProblemNodeCandidate
 from cluster_doctor.agent.common.log_format import (
     format_evidence_line,
