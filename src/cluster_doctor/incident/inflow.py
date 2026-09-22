@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from cluster_doctor.agent.integrations.clickhouse.models import LogEntry
+from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 
 _logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class InflowTracker:
     def settled(self) -> bool:
         return self.zero_streak >= SETTLED_ZERO_STREAK
 
-    def observe(self, entries: list[LogEntry], *, now: datetime) -> int:
+    def observe(self, entries: list[SlowlogTriggerEvent], *, now: datetime) -> int:
         """큐에서 꺼낸 항목을 반영하고 건수를 돌려준다.
 
         **미래 시각을 눌러 쓴다.** slowlog가 미래에 발생할 수는 없다. 노드 시계가

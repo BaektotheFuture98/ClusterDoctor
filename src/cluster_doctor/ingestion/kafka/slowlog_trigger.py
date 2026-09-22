@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.incident.models import Incident, TriggerType
-from cluster_doctor.agent.integrations.clickhouse.models import LogEntry
+from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 
 _logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class SlowlogTriggerService:
         self._first_log_time: datetime | None = None
         self._first_kafka_receive_time: datetime | None = None
 
-    async def on_slowlog(self, log_entry: LogEntry) -> None:
+    async def on_slowlog(self, log_entry: SlowlogTriggerEvent) -> None:
         """Kafka consumer가 slowlog를 수신할 때마다 호출한다."""
         self._pending.put(log_entry)
 

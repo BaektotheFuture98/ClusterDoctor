@@ -16,12 +16,12 @@ import time
 from datetime import datetime, timezone
 
 from cluster_doctor.incident.runner import IncidentOutcome
-from cluster_doctor.application.service.slowlog_trigger_service import (
+from cluster_doctor.ingestion.kafka.slowlog_trigger import (
     _MAX_CONSECUTIVE_RETRIGGERS,
     SlowlogTriggerService,
 )
 from cluster_doctor.incident.models import IncidentStatus, TriggerType
-from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
+from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 
 TS = datetime(2026, 8, 28, 10, 20, tzinfo=timezone.utc)
 
@@ -100,7 +100,7 @@ class TestIncidentCreation:
         """새 Incident는 앞선 Incident의 State도 Evidence도 이어받지 않는다.
         같은 id를 쓰면 저장소가 그 둘을 구별하지 못한다."""
         pending = stdlib_queue.Queue()
-        pending.put(SlowlogEntry(timestamp=TS))
+        pending.put(SlowlogTriggerEvent(timestamp=TS))
         runner = FakeRunner()
         service = service_for(runner, pending)
 
@@ -119,7 +119,7 @@ class TestIncidentCreation:
         runner = FakeRunner(drains=pending)
         service = service_for(runner, pending, micro_batch_seconds=0.05)
 
-        await service.on_slowlog(SlowlogEntry(timestamp=TS))
+        await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
         assert runner.calls == 0
 
         await asyncio.sleep(0.12)
@@ -131,7 +131,7 @@ class TestIncidentCreation:
         service = service_for(runner, stdlib_queue.Queue())
         service._running = True
 
-        await service.on_slowlog(SlowlogEntry(timestamp=TS))
+        await service.on_slowlog(SlowlogTriggerEvent(timestamp=TS))
 
         assert service._trigger_task is None
 
@@ -139,7 +139,7 @@ class TestIncidentCreation:
 class TestRetrigger:
     async def test_실패한_실행은_다시_걸지_않는다(self):
         pending = stdlib_queue.Queue()
-        pending.put(SlowlogEntry(timestamp=TS))
+        pending.put(SlowlogTriggerEvent(timestamp=TS))
         runner = FakeRunner(analysis_failed=True)
         service = service_for(runner, pending)
 
@@ -153,7 +153,7 @@ class TestRetrigger:
         """runner는 예외를 올리지 않기로 되어 있다. 여기 오는 것은
         원인을 모르는 실패이고, 백오프 없이 반복하면 할당량만 태운다."""
         pending = stdlib_queue.Queue()
-        pending.put(SlowlogEntry(timestamp=TS))
+        pending.put(SlowlogTriggerEvent(timestamp=TS))
         runner = FakeRunner(error=RuntimeError("ES 접속 불가"))
         service = service_for(runner, pending)
 
@@ -165,7 +165,7 @@ class TestRetrigger:
     async def test_연속_재트리거에_상한이_있다(self):
         """큐를 끝내 비우지 않으면 성공 경로에서도 무한히 돈다."""
         pending = stdlib_queue.Queue()
-        pending.put(SlowlogEntry(timestamp=TS))
+        pending.put(SlowlogTriggerEvent(timestamp=TS))
         runner = FakeRunner()
         service = service_for(runner, pending)
 
@@ -178,7 +178,7 @@ class TestRetrigger:
         """지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아, 상한에 걸릴
         때까지 할당량을 그대로 태운다."""
         pending = stdlib_queue.Queue()
-        pending.put(SlowlogEntry(timestamp=TS))
+        pending.put(SlowlogTriggerEvent(timestamp=TS))
         delay = 0.05
         runner = FakeRunner()
         service = service_for(runner, pending, micro_batch_seconds=delay)
@@ -193,7 +193,7 @@ class TestRetrigger:
 
     async def test_큐를_비웠으면_다시_걸지_않는다(self):
         pending = stdlib_queue.Queue()
-        pending.put(SlowlogEntry(timestamp=TS))
+        pending.put(SlowlogTriggerEvent(timestamp=TS))
         runner = FakeRunner(drains=pending)
         service = service_for(runner, pending)
 
