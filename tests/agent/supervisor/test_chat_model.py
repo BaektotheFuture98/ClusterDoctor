@@ -12,7 +12,7 @@ tool loop를 돌 수 없다. 그래서 DeepAgent 쪽에 두 번째 경로가 생
 
 import pytest
 
-from cluster_doctor.infrastructure.config.settings import ConfigurationError
+from cluster_doctor.config.settings import ConfigurationError
 from cluster_doctor.agent.common.litellm_client import (
     _REQUEST_TIMEOUT_SECONDS,
 )

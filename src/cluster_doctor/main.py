@@ -2,12 +2,12 @@ import asyncio
 import logging
 import os
 
-from cluster_doctor.infrastructure.config.dependencies import (
+from cluster_doctor.bootstrap.dependencies import (
     build_trigger_service,
     build_kafka_consumer,
     close_clickhouse_client,
 )
-from cluster_doctor.infrastructure.config.settings import get_settings
+from cluster_doctor.config.settings import get_settings
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _HANDLER_MARKER = "_cluster_doctor_owned_handler"

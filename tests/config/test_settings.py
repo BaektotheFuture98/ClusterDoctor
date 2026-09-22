@@ -5,8 +5,8 @@ import pytest
 from dotenv import dotenv_values
 from pydantic import BaseModel, ValidationError
 
-from cluster_doctor.infrastructure.config import settings as settings_module
-from cluster_doctor.infrastructure.config.settings import ConfigurationError, Settings, get_settings
+from cluster_doctor.config import settings as settings_module
+from cluster_doctor.config.settings import ConfigurationError, Settings, get_settings
 
 # 기본 provider가 nvidia_nim이므로 NVIDIA_API_KEY가 없으면 어떤 Settings도
 # 세워지지 않는다. 여기 빠져 있으면 provider와 무관한 테스트까지 "필수 키
@@ -255,7 +255,7 @@ def test_env_example_documents_only_settings_the_code_reads():
     # 등 네 개를 문서화했지만 Settings에는 없었고, extra="ignore" 때문에 조용히
     # 버려졌다. 운영자가 값을 넣어도 하드코딩된 기본값으로 돌았고 경고도 없었다.
     # 문서와 코드가 다시 갈라지면 여기서 걸린다.
-    env_example = Path(__file__).resolve().parents[3] / ".env.example"
+    env_example = Path(__file__).resolve().parents[2] / ".env.example"
     # dotenv_values는 없는 경로에 대해 예외 없이 빈 dict을 돌려준다. 경로
     # 계산이 깨지면 undeclared가 공집합이 되어, 아무것도 검사하지 않은 채
     # 이 가드가 통과한다 — 이 테스트가 막으려던 바로 그 조용한 실패다.

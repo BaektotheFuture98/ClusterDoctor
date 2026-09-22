@@ -20,13 +20,13 @@ from unittest.mock import MagicMock, patch
 from cluster_doctor.agent.integrations.elasticsearch.ports import ClusterRepository
 from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
-from cluster_doctor.infrastructure.config import dependencies
-from cluster_doctor.infrastructure.config import settings as settings_module
-from cluster_doctor.infrastructure.config.dependencies import (
+from cluster_doctor.bootstrap import dependencies
+from cluster_doctor.config import settings as settings_module
+from cluster_doctor.bootstrap.dependencies import (
     _parse_clickhouse_url,
     close_clickhouse_client,
 )
-from cluster_doctor.infrastructure.config.settings import Settings
+from cluster_doctor.config.settings import Settings
 from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
 )

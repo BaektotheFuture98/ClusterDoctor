@@ -43,11 +43,11 @@ from _timeargs import KST
 import cluster_doctor.main  # noqa: F401
 
 from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
-from cluster_doctor.infrastructure.config.dependencies import (
+from cluster_doctor.bootstrap.dependencies import (
     build_trigger_service,
     close_clickhouse_client,
 )
-from cluster_doctor.infrastructure.config.settings import get_settings
+from cluster_doctor.config.settings import get_settings
 from cluster_doctor.reporting.report_text import render_text
 
 # 기준 시각 판정을 다시 구현하지 않는다. 실제 동작과 어긋날 수 있고,
