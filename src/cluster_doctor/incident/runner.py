@@ -42,6 +42,7 @@ from cluster_doctor.incident.guardrails import (
 )
 from cluster_doctor.incident.inflow import InflowTracker
 from cluster_doctor.reporting.report_assembler import to_diagnosis_report
+from cluster_doctor.incident.report_merge import finalize_incident_report
 from cluster_doctor.incident.window_planner import initial_windows
 from cluster_doctor.incident.models import Incident, IncidentStatus
 from cluster_doctor.incident.state import IncidentState
@@ -262,6 +263,18 @@ class IncidentRunner:
         있었는지는 남는다. 여기서 예외를 올리면 리포트가 사라지고 운영자는
         ``logs/app.log``를 뒤져야 한다 — 실패를 알리는 일은 배너가 맡는다.
         """
+        if state.final_report_ref is None and state.report_refs:
+            # Main Agent가 finalize_report를 부르지 않고 끝났다(예산 소진,
+            # 타임아웃, 종료 선언 누락). 그래도 보고서는 항상 전달돼야 하므로
+            # 여기서 같은 규칙으로 안전망을 편다 — Main Agent의 확정 절차와
+            # 규칙이 갈리면 안 되므로 같은 함수를 쓴다.
+            fallback_ref = finalize_incident_report(
+                incident.incident_id, state.report_refs, self._store
+            )
+            if fallback_ref is not None:
+                state.final_report_ref = fallback_ref
+                self._states.save(state)
+
         observations = self._store.get_observations(incident.incident_id)
         report = (
             self._store.get_report(state.final_report_ref)

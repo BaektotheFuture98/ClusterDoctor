@@ -32,11 +32,19 @@ class IncidentState(BaseModel):
     unresolved_gaps: list[TimeRange] = Field(default_factory=list)
 
     evidence_refs: list[str] = Field(default_factory=list)
+    # 구간별 분석이 낸 보고서 참조. 위임이 끝날 때마다 순서대로 쌓인다 —
+    # Incident 전체의 최종 보고서(final_report_ref)와는 다른 것이다. 저것은
+    # 이 목록을 모아 Main Agent가(혹은 안 부르면 Runner가 안전망으로) 확정한
+    # 결과 하나를 가리킨다.
+    report_refs: list[str] = Field(default_factory=list)
     # 분석이 확보하지 못한 것을 사람이 읽을 문장으로. 리포트 배너가 이것만
     # 읽는다 — 사이클마다 쌓이므로 여기 두지 않으면 앞선 분석의 누락이
     # 사라지고, 리포트가 갖추지 못한 완결성을 주장하게 된다.
     accumulated_gaps: list[str] = Field(default_factory=list)
 
+    # Incident 전체를 대표하는 확정 보고서 참조. 위임마다 갱신되지 않는다 —
+    # Main Agent가 finalize_report를 부를 때만 채워지고, 부르지 않고 끝나면
+    # IncidentRunner._deliver가 report_refs를 모아 안전망으로 채운다.
     final_report_ref: str | None = None
     latest_analysis_status: LogAnalysisStatus | None = None
     latest_verification_status: VerificationStatus | None = None

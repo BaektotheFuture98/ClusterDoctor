@@ -89,7 +89,14 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
    적을 필요는 없다 — 분석 구간은 네 문장이 아니라 승인 기록에서 읽힌다.
    문장에 다른 시각을 적어도 그 구간이 분석되지는 않는다.
 
-3. finish_incident(outcome, reason)
+3. finalize_report()
+
+   지금까지 분석한 모든 구간의 보고서를 Incident 전체의 최종 보고서 하나로
+   확정하고 저장한다. **분석한 구간이 하나라도 있으면 finish_incident보다
+   먼저 부른다.** 새로 원인을 추론하지 않는다 — 검증을 마친 구간별 보고서를
+   합칠 뿐이다.
+
+4. finish_incident(outcome, reason)
 
    Incident를 닫는다. outcome은 COMPLETED / FAILED / CANCELLED 중 하나다.
    reason은 운영자가 읽을 한 문장이다.
@@ -148,6 +155,9 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
 
    SubAgent의 제안을 기계적으로 그대로 실행하지 않는다 — 이미 본 구간인지,
    실제로 공백을 메우는지, 지금 Incident와 관련 있는지 먼저 따진다.
+
+8. 확정: 더 볼 것이 없으면 finish_incident 전에 finalize_report를 먼저 불러
+   구간별 보고서를 하나로 합쳐 저장한다.
 
 더 볼 것이 없으면 finish_incident로 닫는다.
 </cycle>

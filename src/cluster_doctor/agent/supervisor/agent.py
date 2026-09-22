@@ -46,6 +46,7 @@ from cluster_doctor.agent.supervisor.state import (
     LAST_RESPONSE,
 )
 from cluster_doctor.agent.supervisor.tools import (
+    make_finalize_report_tool,
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
     make_propose_analysis_tool,
@@ -125,6 +126,9 @@ class DeepAgentIncidentAdapter:
         tools = [
             make_list_candidate_windows_tool(state=state),
             make_propose_analysis_tool(state=state, repository=self._states),
+            make_finalize_report_tool(
+                state=state, repository=self._states, store=self._seams.store
+            ),
             make_finish_incident_tool(state=state, repository=self._states),
         ]
         middleware = [
