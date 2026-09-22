@@ -118,11 +118,49 @@ class TestAdmittedWindow:
 
         update = runnable.invoke(state_in())
 
-        assert state.final_report_ref is not None
-        assert store.get_report(state.final_report_ref) is not None
+        assert state.report_refs == [state.report_refs[-1]]
+        assert store.get_report(state.report_refs[-1]) is not None
+        # final_report_ref는 이 시점에서 아직 채워지지 않는다 — Main Agent의
+        # finalize_report(혹은 Runner의 안전망)가 부를 때만 채워진다.
+        assert state.final_report_ref is None
         assert state.latest_analysis_status is LogAnalysisStatus.COMPLETED
         # 승인을 소모한다. 남겨 두면 다음 ``task``가 승인 없이 통과한다.
         assert update[ADMITTED_WINDOW] is None
+
+    def test_다음_위임의_state_ref는_final_report_ref가_아니라_직전_report_refs를_쓴다(self):
+        """Task 11의 핵심 갈래.
+
+        ``final_report_ref``는 이제 ``finalize_report``가 불러야만 채워지므로
+        두 번째 위임 시점까지 계속 ``None``이다. 그런데도 두 번째 위임의
+        분석 프롬프트에는 첫 구간의 결과가 "앞선 분석 결과"로 실려야 한다 —
+        ``state_ref``가 ``state.report_refs[-1]``에서 오기 때문이다.
+        """
+        llm = ScriptedLlm(GOOD_DRAFT, GOOD_DRAFT)
+        second_window = span(14, 10, 14, 20)
+        runnable, state, store, _model, _llm = build(
+            [
+                ai(COLLECT),
+                ai(write()),
+                say("첫 구간 끝"),
+                ai(COLLECT),
+                ai(write()),
+                say("둘째 구간 끝"),
+            ],
+            llm=llm,
+        )
+
+        runnable.invoke(state_in())
+        assert state.report_refs
+        # finalize_report를 부르지 않았으므로 여전히 비어 있다.
+        assert state.final_report_ref is None
+
+        runnable.invoke(state_in(window=admitted(second_window)))
+
+        analysis_prompts = [p for p in llm.prompts if "Cross-source Analysis" in p]
+        assert len(analysis_prompts) == 2
+        assert "같은 Incident의 앞선 분석 결과" not in analysis_prompts[0]
+        assert "같은 Incident의 앞선 분석 결과" in analysis_prompts[1]
+        assert state.final_report_ref is None
 
     def test_분석_구간은_description이_아니라_승인_기록에서_온다(self):
         """요구사항 15번의 SubAgent 쪽 절반.
@@ -409,7 +447,7 @@ class TestSuggestedWindowParsing:
 
         naive 구간은 aware인 ``analyzed_windows``와 비교되지 못해
         ``_apply_response``의 차집합에서 터진다. 그 예외가 나는 자리는
-        ``final_report_ref``를 이미 채운 **뒤**, ``repository.save`` **앞**이다 —
+        ``report_refs``에 이미 채운 **뒤**, ``repository.save`` **앞**이다 —
         리포트는 ArtifactStore에 멀쩡히 있는데 저장소에도 운영자에게도 닿지
         않는다. 운영자가 보는 것은 "리포트 없음" 알림 하나뿐이다.
         """
@@ -436,9 +474,9 @@ class TestSuggestedWindowParsing:
 
         update = runnable.invoke(state_in())
 
-        assert state.final_report_ref is not None, "리포트가 저장소 갱신 전에 사라졌다"
-        assert store.get_report(state.final_report_ref) is not None
-        assert update[LAST_RESPONSE]["report_ref"] == state.final_report_ref
+        assert state.report_refs, "리포트가 저장소 갱신 전에 사라졌다"
+        assert store.get_report(state.report_refs[-1]) is not None
+        assert update[LAST_RESPONSE]["report_ref"] == state.report_refs[-1]
         assert update[LAST_RESPONSE]["status"] == str(LogAnalysisStatus.NEED_MORE_CONTEXT)
 
     def test_읽을_수_없는_구간은_거절될_뿐_위임을_깨지_않는다(self):

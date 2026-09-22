@@ -24,6 +24,7 @@ from cluster_doctor.incident.guardrails import (
 )
 from cluster_doctor.incident.models import IncidentStatus
 from cluster_doctor.incident.state import IncidentState
+from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.agent.common import harness as harness_module
 from cluster_doctor.agent.supervisor.guardrail_middleware import (
     DelegationGuardrailMiddleware,
@@ -41,10 +42,12 @@ from cluster_doctor.agent.supervisor.state import (
 )
 from cluster_doctor.agent.supervisor.tools import (
     TASK_TOOL_NAME,
+    make_finalize_report_tool,
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
     make_propose_analysis_tool,
 )
+from cluster_doctor.storage.in_memory_artifact_store import InMemoryArtifactStore
 from cluster_doctor.storage.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
@@ -57,6 +60,7 @@ TRIGGER = datetime(2026, 9, 18, 14, 3, tzinfo=KST)
 EXPECTED_TOOLS = {
     "propose_analysis",
     "list_candidate_windows",
+    "finalize_report",
     "finish_incident",
     TASK_TOOL_NAME,
 }
@@ -85,6 +89,10 @@ def delegate(description: str = "이 구간에서 무엇이 먼저 무너졌는�
 
 def finish(outcome: str = "COMPLETED", reason: str = "충분하다") -> AIMessage:
     return ai(("finish_incident", {"outcome": outcome, "reason": reason}))
+
+
+def finalize() -> AIMessage:
+    return ai(("finalize_report", {}))
 
 
 class RecordingSubAgent:
@@ -127,12 +135,21 @@ class RecordingSubAgent:
         ]
 
 
-def run(script, *, state=None, subagent=None, repository=None, recursion_limit=200):
+def run(
+    script,
+    *,
+    state=None,
+    subagent=None,
+    repository=None,
+    store=None,
+    recursion_limit=200,
+):
     """대본 하나를 진짜 Main DeepAgent에 태운다."""
     state = state or IncidentState(incident_id="inc-1")
     repository = repository or InMemoryIncidentStateRepository()
     repository.create(state)
     subagent = subagent or RecordingSubAgent()
+    store = store or InMemoryArtifactStore()
     model = ScriptedChatModel(responses=list(script))
 
     graph = build_main_agent(
@@ -140,6 +157,7 @@ def run(script, *, state=None, subagent=None, repository=None, recursion_limit=2
         tools=[
             make_list_candidate_windows_tool(state=state),
             make_propose_analysis_tool(state=state, repository=repository),
+            make_finalize_report_tool(state=state, repository=repository, store=store),
             make_finish_incident_tool(state=state, repository=repository),
         ],
         middleware=[DelegationGuardrailMiddleware(state=state, repository=repository)],
@@ -317,6 +335,41 @@ class TestReviewAndDelegateAgain:
             "status": "COMPLETED",
             "report_ref": "R-1",
         }
+
+
+class TestFinalizeReport:
+    def test_finalize_report가_report_refs를_모아_final_report_ref를_확정한다(self):
+        """Task 11. Main Agent가 명시적으로 확정해야 채워진다 — 위임이 끝났다고
+        저절로 채워지지 않는다."""
+        store = InMemoryArtifactStore()
+        report_a = LogAnalysisReport(
+            incident_id="inc-1",
+            analyzed_from=datetime(2026, 9, 18, 13, 0, tzinfo=KST),
+            analyzed_to=datetime(2026, 9, 18, 13, 10, tzinfo=KST),
+            summary="A 구간 요약",
+        )
+        ref_a = store.put_report("inc-1", report_a)
+        state = IncidentState(incident_id="inc-1")
+        state.report_refs.append(ref_a)
+
+        _result, state, _subagent, _model = run(
+            [finalize(), finish(), say()], state=state, store=store
+        )
+
+        assert state.final_report_ref is not None
+        assert state.final_report_ref != ref_a
+        merged = store.get_report(state.final_report_ref)
+        assert merged is not None
+        assert "A 구간 요약" in merged.summary
+
+    def test_finalize_report_없이_finish_incident만_불러도_종료는_된다(self):
+        """구조적 보장: finish_incident는 finalize_report 호출 여부에 의존하지
+        않는다. 확정은 안내로 유도할 뿐 하드 블록이 아니다 — 전달 보장은
+        IncidentRunner._deliver의 안전망 몫이다."""
+        _result, state, _subagent, _model = run([finish(), say()])
+
+        assert state.status is IncidentStatus.COMPLETED
+        assert state.final_report_ref is None
 
 
 class TestDuplicateWindows:
@@ -688,6 +741,7 @@ def test_harness_profile_등록이_무력화돼도_도구_목록은_그대로다
     state = IncidentState(incident_id="inc-1")
     repository = InMemoryIncidentStateRepository()
     repository.create(state)
+    store = InMemoryArtifactStore()
     model = NoProfileToolSurfaceModel(responses=[finish(), say()])
 
     graph = build_main_agent(
@@ -695,6 +749,7 @@ def test_harness_profile_등록이_무력화돼도_도구_목록은_그대로다
         tools=[
             make_list_candidate_windows_tool(state=state),
             make_propose_analysis_tool(state=state, repository=repository),
+            make_finalize_report_tool(state=state, repository=repository, store=store),
             make_finish_incident_tool(state=state, repository=repository),
         ],
         middleware=[DelegationGuardrailMiddleware(state=state, repository=repository)],
@@ -737,6 +792,7 @@ def test_profile이_빠져_general_purpose가_되살아나도_위임은_막힌�
     state = IncidentState(incident_id="inc-1")
     repository = InMemoryIncidentStateRepository()
     repository.create(state)
+    store = InMemoryArtifactStore()
     subagent = RecordingSubAgent()
     model = NoProfileDelegateModel(
         responses=[
@@ -751,6 +807,7 @@ def test_profile이_빠져_general_purpose가_되살아나도_위임은_막힌�
         tools=[
             make_list_candidate_windows_tool(state=state),
             make_propose_analysis_tool(state=state, repository=repository),
+            make_finalize_report_tool(state=state, repository=repository, store=store),
             make_finish_incident_tool(state=state, repository=repository),
         ],
         middleware=[DelegationGuardrailMiddleware(state=state, repository=repository)],

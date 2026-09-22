@@ -381,6 +381,38 @@ class TestDelivery:
         assert set(outcome.gaps) == {"노드 로그 접속 실패", "마스터 로그 누락"}
         assert "노드 로그 접속 실패" in notifier.calls[0]["gaps"]
 
+    async def test_finalize_report를_안_불러도_report_refs가_있으면_안전망이_최종_보고서를_만든다(
+        self,
+    ):
+        """Task 11. Main Agent가 finalize_report를 부르지 않고 끝나도(예산
+        소진, 타임아웃, 종료 선언 누락) 리포트는 항상 전달돼야 한다 —
+        ``_deliver``가 같은 병합 규칙으로 안전망을 편다."""
+        store = InMemoryArtifactStore()
+        window = span(14, 0, 14, 10)
+        ref = store.put_report("inc-1", report_for("inc-1", window))
+
+        def leave_unfinalized(_incident, state, repository):
+            # Main Agent가 finalize_report를 부르지 않은 채 끝난 상황을
+            # 흉내낸다 — report_refs만 쌓이고 final_report_ref는 비어 있다.
+            state.report_refs.append(ref)
+            repository.save(state)
+            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+
+        runner, _agent, _store, notifier, repository = build(
+            behaviour=leave_unfinalized, store=store
+        )
+
+        await runner.run(incident())
+
+        final = repository.get("inc-1")
+        assert final.final_report_ref is not None
+        assert final.final_report_ref != ref
+        merged = store.get_report(final.final_report_ref)
+        assert merged is not None
+        assert merged.summary
+        delivered = notifier.calls[0]["report"]
+        assert "테스트 리포트" in delivered.narrative.headline
+
     async def test_전달_실패가_Incident를_죽이지_않는다(self):
         class BrokenNotifier:
             async def notify(self, report, *, gaps=(), analysis_failed=False):

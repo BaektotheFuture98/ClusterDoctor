@@ -22,9 +22,11 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from cluster_doctor.exceptions import GuardrailViolation
+from cluster_doctor.storage.artifact_store import ArtifactStore
 from cluster_doctor.storage.incident_state_store import (
     IncidentStateRepository,
 )
+from cluster_doctor.incident.report_merge import finalize_incident_report
 from cluster_doctor.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYSIS_WINDOW_MINUTES,
@@ -68,6 +70,16 @@ Incident를 종료한다. 더 볼 구간이 없거나, 더 볼 수 없을 때 �
 
 - outcome: COMPLETED / FAILED / CANCELLED 중 하나.
 - reason: 운영자가 읽을 종료 사유. 한 문장.
+"""
+
+_FINALIZE_DESCRIPTION = """\
+지금까지 분석한 모든 구간의 보고서를 모아 Incident 전체의 최종 보고서 하나로
+확정하고 저장한다. finish_incident를 부르기 전에, 분석한 구간이 하나라도
+있으면 반드시 먼저 부른다.
+
+새로 원인을 추론하지 않는다 — 이미 검증을 거친 구간별 보고서를 시간순으로
+합칠 뿐이다. 구간별 보고서가 하나도 없으면(예: 근거가 없어 write_report를
+아예 부르지 못한 경우) 확정할 것이 없다는 응답을 돌려준다.
 """
 
 _CANDIDATES_DESCRIPTION = """\
@@ -147,6 +159,43 @@ def make_propose_analysis_tool(
         )
 
     return propose_analysis
+
+
+def make_finalize_report_tool(
+    *, state: IncidentState, repository: IncidentStateRepository, store: ArtifactStore
+) -> BaseTool:
+    @tool("finalize_report", description=_FINALIZE_DESCRIPTION)
+    def finalize_report() -> str:
+        if not state.report_refs:
+            return (
+                "확정할 구간별 보고서가 없다. 분석한 구간이 없다는 뜻이다 — "
+                "더 분석할 수 있으면 propose_analysis로 진행하고, 없으면 "
+                "finish_incident로 종료해라."
+            )
+
+        ref = finalize_incident_report(state.incident_id, state.report_refs, store)
+        if ref is None:
+            return (
+                "구간별 보고서 참조를 저장소에서 찾지 못해 확정하지 못했다. "
+                "finish_incident로 종료하되 reason에 이 사실을 적어라."
+            )
+
+        state.final_report_ref = ref
+        repository.save(state)
+        merged = store.get_report(ref)
+        _logger.info(
+            "[supervisor] Incident 최종 보고서 확정 ref=%s 구간=%d개 발견=%d건 원인후보=%d건",
+            ref,
+            len(state.report_refs),
+            len(merged.findings) if merged else 0,
+            len(merged.root_causes) if merged else 0,
+        )
+        return (
+            f"Incident 전체 최종 보고서를 확정했다 (분석 구간 {len(state.report_refs)}개를 "
+            f"종합). 이제 finish_incident로 종료해라."
+        )
+
+    return finalize_report
 
 
 def make_finish_incident_tool(

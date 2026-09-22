@@ -320,8 +320,11 @@ def build_diagnosis_subagent(
             incident_id=incident.incident_id,
             cluster=incident.cluster,
             analysis_window=window,
-            # 앞선 리포트를 꺼낼 참조. 첫 호출에서는 None이다.
-            state_ref=state.final_report_ref,
+            # 앞선 리포트를 꺼낼 참조. 첫 호출에서는 None이다. 가장 최근
+            # 구간의 것을 쓴다 — final_report_ref는 더 이상 매 위임마다
+            # 갱신되지 않으므로(Main Agent가 finalize_report를 부를 때만
+            # 바뀐다) 다음 위임의 맥락으로는 쓸 수 없다.
+            state_ref=(state.report_refs[-1] if state.report_refs else None),
             analysis_goal=goal,
         )
         delegation = _Delegation(window, request)
@@ -738,7 +741,7 @@ def _apply_response(
     state.latest_verification_status = response.verification_status
     state.latest_analysis_summary = response.analysis_summary
     if response.report_ref:
-        state.final_report_ref = response.report_ref
+        state.report_refs.append(response.report_ref)
     for ref in response.evidence_refs:
         if ref not in state.evidence_refs:
             state.evidence_refs.append(ref)

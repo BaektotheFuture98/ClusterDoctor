@@ -57,6 +57,10 @@ def finish(outcome: str = "COMPLETED", reason: str = "충분하다"):
     return ai(("finish_incident", {"outcome": outcome, "reason": reason}))
 
 
+def finalize():
+    return ai(("finalize_report", {}))
+
+
 def build(script, *, monkeypatch, llm=None, recursion_limit=60):
     """대본 chat model을 물린 진짜 어댑터.
 
@@ -117,9 +121,41 @@ class TestEndToEndDelegation:
         assert final.analysis_call_count == 1
         assert final.analyzed_minutes == 10
         assert final.latest_analysis_status is LogAnalysisStatus.COMPLETED
-        assert final.final_report_ref is not None
-        assert store.get_report(final.final_report_ref) is not None
+        # finalize_report를 부르지 않고 finish_incident로 곧장 닫았다 —
+        # final_report_ref는 이 어댑터 층에서는 채워지지 않는다. 안전망은
+        # IncidentRunner._deliver의 몫이다.
+        assert final.final_report_ref is None
+        assert final.report_refs
+        assert store.get_report(final.report_refs[-1]) is not None
         assert store.list_evidence("inc-1"), "SubAgent의 근거 수집이 돌지 않았다"
+
+    def test_finalize_report를_부르면_구간별_보고서를_모은_최종_보고서가_확정된다(
+        self, monkeypatch
+    ):
+        """Task 11. Main Agent가 명시적으로 확정해야 ``final_report_ref``가 찬다."""
+        adapter, repository, store, _model = build(
+            [
+                propose("2026-09-18T14:00:00+09:00", "2026-09-18T14:10:00+09:00", "시작점"),
+                delegate(),
+                ai(("collect_evidence", {})),
+                ai(("write_report", {"focus": "무엇이 먼저 무너졌나"})),
+                say("진단을 마쳤다"),
+                finalize(),
+                finish(),
+                say("요약"),
+            ],
+            monkeypatch=monkeypatch,
+        )
+
+        run(adapter, repository)
+
+        final = repository.get("inc-1")
+        assert final.report_refs
+        assert final.final_report_ref is not None
+        # 확정된 참조는 구간별 참조 그 자체가 아니라 병합된 새 보고서다.
+        assert final.final_report_ref not in final.report_refs
+        merged = store.get_report(final.final_report_ref)
+        assert merged is not None
 
 
 class TestTermination:
