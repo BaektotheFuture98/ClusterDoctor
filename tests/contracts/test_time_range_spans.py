@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from cluster_doctor.domain.model.time_range import (
+from cluster_doctor.contracts.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     is_covered,

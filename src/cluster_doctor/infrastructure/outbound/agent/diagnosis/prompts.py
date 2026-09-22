@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
-from cluster_doctor.domain.model.evidence import Evidence
-from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
+from cluster_doctor.contracts.evidence import Evidence
+from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.infrastructure.outbound.agent.common.log_format import (
     format_evidence_line,
 )

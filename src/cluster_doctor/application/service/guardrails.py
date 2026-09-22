@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 from math import ceil
 
-from cluster_doctor.application.exception import GuardrailViolation
+from cluster_doctor.exceptions import GuardrailViolation
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.time_range import (
+from cluster_doctor.contracts.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     is_covered,

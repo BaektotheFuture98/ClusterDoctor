@@ -17,8 +17,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from cluster_doctor.application.exception import LlmApiError, LlmResponseError
-from cluster_doctor.domain.model.evidence import Evidence
+from cluster_doctor.exceptions import LlmApiError, LlmResponseError
+from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.prompt import (
     build_map_prompt,
     build_reduce_prompt,

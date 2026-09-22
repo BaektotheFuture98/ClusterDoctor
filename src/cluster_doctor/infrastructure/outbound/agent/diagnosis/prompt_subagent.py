@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.contracts.time_range import TimeRange
 
 _SYSTEM_PROMPT = """\
 너는 Elasticsearch 장애의 한 시간 구간을 조사하는 진단 담당이다.

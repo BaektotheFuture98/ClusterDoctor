@@ -22,7 +22,7 @@ from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.time_range import TimeRange, is_covered
+from cluster_doctor.contracts.time_range import TimeRange, is_covered
 
 
 class IncidentState(BaseModel):
@@ -59,7 +59,7 @@ class IncidentState(BaseModel):
 
     def remaining_of(self, window: TimeRange) -> list[TimeRange]:
         """이 구간에서 아직 보지 않은 부분만."""
-        from cluster_doctor.domain.model.time_range import subtract_spans
+        from cluster_doctor.contracts.time_range import subtract_spans
 
         return subtract_spans(window, self.analyzed_windows)
 

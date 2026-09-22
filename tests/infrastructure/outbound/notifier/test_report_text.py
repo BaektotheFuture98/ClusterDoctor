@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, TimelineRow
-from cluster_doctor.domain.model.elasticsearch.health_point import HealthPoint
+from cluster_doctor.contracts.observations import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, TimelineRow
+from cluster_doctor.contracts.health_point import HealthPoint
 from cluster_doctor.infrastructure.outbound.notifier.report_text import (
     health_lines,
     master_log_lines,
@@ -244,7 +244,7 @@ def test_관측값이_전혀_없어도_렌더링이_터지지_않는다():
 
 def test_코드_판정임을_줄에_밝힌다():
     # 모델의 severity와 나란히 놓이면 운영자가 둘을 같은 것으로 읽는다.
-    from cluster_doctor.domain.model.diagnosis_report import MasterEvent
+    from cluster_doctor.contracts.observations import MasterEvent
     from cluster_doctor.infrastructure.outbound.notifier.report_text import severity_line
 
     obs = Observations(
@@ -258,7 +258,7 @@ def test_코드_판정임을_줄에_밝힌다():
 
 
 def test_판정_근거를_반드시_붙인다():
-    from cluster_doctor.domain.model.diagnosis_report import MasterEvent
+    from cluster_doctor.contracts.observations import MasterEvent
     from cluster_doctor.infrastructure.outbound.notifier.report_text import severity_line
 
     obs = Observations(
@@ -287,7 +287,7 @@ def test_개요에_심각도_줄이_들어간다():
 
 
 def test_모델이_분류하지_않은_문제는_그_사실을_적는다():
-    from cluster_doctor.domain.model.diagnosis_report import Finding, Narrative
+    from cluster_doctor.contracts.observations import Finding, Narrative
 
     report = DiagnosisReport(
         observations=Observations(

@@ -23,15 +23,15 @@ import logging
 
 from pydantic import BaseModel, Field, field_validator
 
-from cluster_doctor.domain.model.diagnosis_report import SuspectPick as DomainSuspectPick
+from cluster_doctor.contracts.observations import SuspectPick as DomainSuspectPick
 from cluster_doctor.domain.model.log_analysis import VerificationStatus
-from cluster_doctor.domain.model.log_analysis_report import (
+from cluster_doctor.contracts.report import (
     LogAnalysisReport,
     ReportFinding,
     RootCause,
     TimelineEvent,
 )
-from cluster_doctor.domain.model.time_range import TimeRange, split_span
+from cluster_doctor.contracts.time_range import TimeRange, split_span
 from cluster_doctor.infrastructure.outbound.agent.common.kst import parse_kst
 
 _logger = logging.getLogger(__name__)

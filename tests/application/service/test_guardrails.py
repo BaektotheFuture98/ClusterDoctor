@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from cluster_doctor.application.exception import GuardrailViolation
+from cluster_doctor.exceptions import GuardrailViolation
 from cluster_doctor.application.service.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYZED_MINUTES,
@@ -27,7 +27,7 @@ from cluster_doctor.application.service.guardrails import (
 )
 from cluster_doctor.domain.model.incident_state import IncidentState
 from cluster_doctor.domain.model.log_analysis import LogAnalysisRequest
-from tests.domain.model.test_time_range_spans import span
+from tests.contracts.test_time_range_spans import span
 
 
 def request_for(window, incident_id="inc-1", cluster="es-prod") -> LogAnalysisRequest:

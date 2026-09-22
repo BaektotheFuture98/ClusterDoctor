@@ -48,7 +48,7 @@ from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import (
 from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
     InMemoryIncidentStateRepository,
 )
-from tests.domain.model.test_time_range_spans import KST, label, span
+from tests.contracts.test_time_range_spans import KST, label, span
 from tests.infrastructure.outbound.agent.scripted_model import ScriptedChatModel, ai, say
 
 TRIGGER = datetime(2026, 9, 18, 14, 3, tzinfo=KST)

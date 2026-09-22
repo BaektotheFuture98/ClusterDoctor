@@ -11,12 +11,12 @@ from cluster_doctor.application.service.window_planner import (
     plan_new_windows,
 )
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.time_range import TimeRange, split_span
+from cluster_doctor.contracts.time_range import TimeRange, split_span
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import (
     DraftReport,
     WindowSuggestion,
 )
-from tests.domain.model.test_time_range_spans import at, label, span
+from tests.contracts.test_time_range_spans import at, label, span
 
 
 def state_with(*analyzed: TimeRange) -> IncidentState:

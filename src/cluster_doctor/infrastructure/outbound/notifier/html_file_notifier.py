@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cluster_doctor.application.port.outbound.notifier import Notifier
-from cluster_doctor.domain.model.diagnosis_report import (
+from cluster_doctor.contracts.observations import (
     DiagnosisReport,
     Observations,
     observed_severity,

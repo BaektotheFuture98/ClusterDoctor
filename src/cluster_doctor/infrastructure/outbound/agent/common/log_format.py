@@ -9,7 +9,7 @@ from functools import singledispatch
 
 from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
-from cluster_doctor.domain.model.evidence import Evidence
+from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 

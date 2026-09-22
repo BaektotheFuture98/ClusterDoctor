@@ -13,7 +13,7 @@ from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
-from tests.domain.model.test_time_range_spans import span
+from tests.contracts.test_time_range_spans import span
 
 TRIGGER = datetime(2026, 9, 17, 3, 0, tzinfo=KST)
 WINDOW = span(14, 0, 14, 10)

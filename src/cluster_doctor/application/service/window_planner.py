@@ -15,7 +15,7 @@ import logging
 from datetime import timedelta
 
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.time_range import (
+from cluster_doctor.contracts.time_range import (
     TimeRange,
     merge_spans,
     split_span,

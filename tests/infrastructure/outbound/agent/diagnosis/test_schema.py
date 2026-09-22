@@ -10,7 +10,7 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import (
     DraftReport,
     parse_draft,
 )
-from tests.domain.model.test_time_range_spans import label, span
+from tests.contracts.test_time_range_spans import label, span
 
 WINDOW = span(14, 0, 14, 10)
 

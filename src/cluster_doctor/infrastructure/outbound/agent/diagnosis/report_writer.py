@@ -16,16 +16,16 @@ from collections.abc import Callable
 from datetime import timedelta
 from functools import partial
 
-from cluster_doctor.application.exception import LlmApiError, LlmResponseError
+from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
 from cluster_doctor.application.service.guardrails import MAX_REPORT_REVISIONS
-from cluster_doctor.domain.model.evidence import Evidence
+from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisRequest,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
-from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.contracts.report import LogAnalysisReport
+from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import complete
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.prompts import (
     build_analysis_prompt,
