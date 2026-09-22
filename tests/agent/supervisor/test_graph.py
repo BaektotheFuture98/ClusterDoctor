@@ -25,13 +25,13 @@ from cluster_doctor.application.service.guardrails import (
 from cluster_doctor.domain.model.incident import IncidentStatus
 from cluster_doctor.domain.model.incident_state import IncidentState
 from cluster_doctor.agent.common import harness as harness_module
-from cluster_doctor.infrastructure.outbound.agent.supervisor.guardrail_middleware import (
+from cluster_doctor.agent.supervisor.guardrail_middleware import (
     DelegationGuardrailMiddleware,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.main_agent import (
+from cluster_doctor.agent.supervisor.graph import (
     build_main_agent,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
+from cluster_doctor.agent.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
     CLUSTER,
@@ -39,7 +39,7 @@ from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
     INCIDENT_ID,
     LAST_RESPONSE,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import (
+from cluster_doctor.agent.supervisor.tools import (
     TASK_TOOL_NAME,
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
@@ -49,7 +49,7 @@ from cluster_doctor.storage.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 from tests.contracts.test_time_range_spans import KST, label, span
-from tests.infrastructure.outbound.agent.scripted_model import ScriptedChatModel, ai, say
+from tests.agent.scripted_model import ScriptedChatModel, ai, say
 
 TRIGGER = datetime(2026, 9, 18, 14, 3, tzinfo=KST)
 

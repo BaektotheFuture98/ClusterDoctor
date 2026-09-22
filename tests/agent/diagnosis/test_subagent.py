@@ -24,7 +24,7 @@ from cluster_doctor.agent.common.kst import format_kst
 from cluster_doctor.agent.diagnosis.subagent import (
     build_diagnosis_subagent,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
+from cluster_doctor.agent.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
     CLUSTER,
@@ -43,7 +43,7 @@ from tests.agent.diagnosis.test_report_writer import (
     ScriptedLlm,
     build as build_seams,
 )
-from tests.infrastructure.outbound.agent.scripted_model import ScriptedChatModel, ai, say
+from tests.agent.scripted_model import ScriptedChatModel, ai, say
 
 TRIGGER = WINDOW.start
 

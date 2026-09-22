@@ -16,7 +16,7 @@ from cluster_doctor.infrastructure.config.settings import ConfigurationError
 from cluster_doctor.agent.common.litellm_client import (
     _REQUEST_TIMEOUT_SECONDS,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor import chat_model
+from cluster_doctor.agent.supervisor import chat_model
 
 
 def build(provider="gemini", model="gemini-3.5-flash-lite"):
