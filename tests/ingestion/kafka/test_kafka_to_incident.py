@@ -19,7 +19,7 @@ from cluster_doctor.ingestion.kafka.slowlog_trigger import (
     SlowlogTriggerService,
 )
 from cluster_doctor.incident.models import IncidentStatus, TriggerType
-from cluster_doctor.agent.contracts import LogAnalysisStatus
+from cluster_doctor.contracts.report import LogAnalysisStatus
 from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,

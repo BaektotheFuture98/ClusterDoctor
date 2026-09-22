@@ -12,7 +12,7 @@ chat model만 대본이다. 그래프도 미들웨어도 진단 파이프라인�
 
 from cluster_doctor.incident.models import Incident, IncidentStatus
 from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.agent.contracts import LogAnalysisStatus
+from cluster_doctor.contracts.report import LogAnalysisStatus
 from cluster_doctor.agent.supervisor import agent as agent_module
 from cluster_doctor.agent.supervisor.agent import (
     DeepAgentIncidentAdapter,

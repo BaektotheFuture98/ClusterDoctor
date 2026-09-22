@@ -343,7 +343,7 @@ Incident 실행은 문자열이 아니라 `IncidentOutcome`을 돌려주고, 그
 ## 설정
 
 환경 변수 또는 프로젝트 루트의 `.env`에서
-`src/cluster_doctor/infrastructure/config/settings.py`가 읽는다. `.env.example`을 `.env`로
+`src/cluster_doctor/config/settings.py`가 읽는다. `.env.example`을 `.env`로
 복사해 실제 값을 채운다 — 실제 키를 커밋하지 않는다.
 
 필수 값이 없으면 **기동 시점에** 시끄럽게 실패한다. 첫 슬로우 로그가 올 때까지 미루지
@@ -391,12 +391,12 @@ Incident 실행은 문자열이 아니라 `IncidentOutcome`을 돌려주고, 그
 환경 변수가 아니라 컴파일 시점 상수다. 몇몇은 조용히 작업을 버리거나 거절할 수 있으므로,
 로그를 읽는 운영자를 위해 여기 적는다.
 
-런타임 상한은 대부분 `application/service/guardrails.py` 한 곳에 있다. Agent가 우회할 수
+런타임 상한은 대부분 `incident/guardrails.py` 한 곳에 있다. Agent가 우회할 수
 있는 자리에 두지 않는다.
 
 | 한도 | 값 | 정의 위치 | 비고 |
 |---|---|---|---|
-| 분석 윈도 | 10분 | `domain/model/time_range.py` (`MAX_TIME_RANGE_DURATION`) | ClickHouse 팬아웃과 호출당 LLM 비용을 묶는다. 더 긴 제안은 거절하지 않고 **쪼갠다** — 상한의 근거는 한 번의 조회 비용이지 "그 시간대를 보면 안 된다"가 아니다. |
+| 분석 윈도 | 10분 | `contracts/time_range.py` (`MAX_TIME_RANGE_DURATION`) | ClickHouse 팬아웃과 호출당 LLM 비용을 묶는다. 더 긴 제안은 거절하지 않고 **쪼갠다** — 상한의 근거는 한 번의 조회 비용이지 "그 시간대를 보면 안 된다"가 아니다. |
 | Incident당 분석한 분 | 60분 | `guardrails.py` (`MAX_ANALYZED_MINUTES`) | **주 예산.** 남은 예산보다 긴 요청은 앞쪽만 잘라 분석한다. 통째로 거절하면 남은 예산을 못 쓴 채 끝난다. |
 | Incident당 분석 호출 | 12회 | 같은 파일 (`MAX_ANALYSIS_CALLS`) | 2차 안전장치. 1분짜리 요청을 수십 번 하는 폭주는 분 예산만으로는 늦게 잡힌다. |
 | Supervisor 사이클 | 16회, 연속 거절 3회 | 같은 파일 (`MAX_SUPERVISOR_CYCLES`, `MAX_REJECTED_DECISIONS`) | 거절된 사이클은 분석을 하지 않아 예산을 늘리지 않는다. 모델이 같은 요청을 되풀이하면 거절 상한에서 끊는다. |
@@ -406,19 +406,19 @@ Incident 실행은 문자열이 아니라 `IncidentOutcome`을 돌려주고, 그
 | Incident 실행 시간 | 30분 | 같은 파일 (`INCIDENT_TIMEOUT_SECONDS`) | 대기·조회·LLM이 각자 상한을 가져도 그 곱은 묶이지 않는다. |
 | Evidence 수 | 소스당 25, 전체 80 | 같은 파일 (`MAX_EVIDENCE_PER_SOURCE`, `MAX_EVIDENCE_TOTAL`) | Reduce가 아무것도 걸러 내지 못하면 Cross-source 프롬프트가 원문 크기로 돌아간다. 잘린 사실은 `WARNING`으로 남는다. |
 | 한 번에 조사할 노드 | 2대 | `.../diagnosis/node_investigation.py` (`MAX_NODES_PER_ANALYSIS`) | 후보가 많다는 것은 대개 클러스터 전체가 흔들렸다는 뜻이고, 그때는 마스터 로그 쪽이 더 말해 준다. |
-| 연속 재트리거 | 3회 | `application/service/slowlog_trigger_service.py` (`_MAX_CONSECUTIVE_RETRIGGERS`) | 성공한 실행만 재트리거하고, 매번 `MICRO_BATCH_SECONDS`를 먼저 기다린다. |
+| 연속 재트리거 | 3회 | `ingestion/kafka/slowlog_trigger.py` (`_MAX_CONSECUTIVE_RETRIGGERS`) | 성공한 실행만 재트리거하고, 매번 `MICRO_BATCH_SECONDS`를 먼저 기다린다. |
 | 분 구간·소스당 행 수 | 10,000 | `.../clickhouse/clickhouse_log_adapter.py` (`_MAX_ROWS_PER_SEGMENT_PER_SOURCE`) | 1분 구간마다 소스별 질의에 `LIMIT`으로 걸린다. `ORDER BY`가 없으므로 상한에 닿으면 ClickHouse가 임의의 부분집합을 돌려주고, 보고되는 건수도 잘린 값이다. 상한에 닿은 질의마다 소스와 구간을 적은 `WARNING`이 남는다. |
 | 쿼리 로그 줄당 키워드 | 5개 | `.../agent/common/log_format.py` (`_MAX_KEYWORDS_SHOWN`) | 어떤 쿼리는 키워드가 200개가 넘어 프롬프트 한 줄이 2,000자를 넘는다. 나머지는 `외 N개`로 요약하고, 도메인 객체는 전부 들고 있다. |
 | 구간당 마스터 로그 줄 | 300 | `.../workflows/datasource/master_log.py` (`MASTER_LOG_MAX_LINES`) | 로거 화이트리스트가 이미 걸러 주고, Triage가 한 번 더 줄인다. |
 | 리포트에 싣는 마스터 로그 줄 | 120 | `.../diagnosis/run_state.py` (`MASTER_LOG_REPORT_MAX`) | 잘린 사실은 `"N건 중 M건"`으로 머리글에 드러난다. |
-| 노드 로그 조회 행 | 기본 300, 하드 캡 2,000 | `application/port/outbound/log_repository.py` (`DEFAULT_NODE_LOG_LIMIT`, `MAX_NODE_LOG_LIMIT`) | 클램프가 포트에 있어 호출부와 어댑터가 같은 유효값을 본다. `ORDER BY timestamp`라 **가장 이른** 행이 남는다. 사고는 시작이 끝보다 중요하다. |
+| 노드 로그 조회 행 | 기본 300, 하드 캡 2,000 | `agent/integrations/clickhouse/port.py` (`DEFAULT_NODE_LOG_LIMIT`, `MAX_NODE_LOG_LIMIT`) | 클램프가 포트에 있어 호출부와 어댑터가 같은 유효값을 본다. `ORDER BY timestamp`라 **가장 이른** 행이 남는다. 사고는 시작이 끝보다 중요하다. |
 | SSH 노드 로그 줄 | 호출당 300, 서버에서 `tail -n 2000` | `.../ssh/node_log_fetcher.py` | ClickHouse 경로와 반대 편향 — `tail`은 **가장 늦은** 줄을 남긴다. |
 | SSH 명령 | `grep`/`tail`만 | 같은 파일 (`_ALLOWED_COMMANDS`) | 조립된 명령의 파이프라인 각 단계와 파일 경로 문자를 검사한다. ES 응답도 노드 설정도 이 프로세스가 통제하지 않는 입력이다. |
 | SSH 타임아웃 | 접속 10초, 명령 30초 | `guardrails.py` (`SSH_*_TIMEOUT_SECONDS`) | |
 | 프롬프트에 싣는 원문 | 60,000자 | `guardrails.py` (`MAX_RAW_LOG_CHARS`) | 잘린 사실을 본문에 적는다. 조용히 자르면 검증이 "인용이 원문에 없다"고 잘못 말한다. |
 | LLM 출력 토큰 | Map 1,024 · Reduce 2,048 · RCA 8,192 · Decision 2,048 | `triage/nodes.py`, `diagnosis/agent.py`, `supervisor/agent.py` | |
 | LLM 요청 타임아웃 | 120초 | `.../agent/common/litellm_client.py` (`_REQUEST_TIMEOUT_SECONDS`) | |
-| ClickHouse 송수신 타임아웃 | 30초 | `infrastructure/config/dependencies.py` | 없으면 멈춘 ClickHouse가 워커 스레드를 무한정 붙잡을 수 있다. |
+| ClickHouse 송수신 타임아웃 | 30초 | `bootstrap/dependencies.py` | 없으면 멈춘 ClickHouse가 워커 스레드를 무한정 붙잡을 수 있다. |
 
 ### 재시도를 끈 것은 의도다
 

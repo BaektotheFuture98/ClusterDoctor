@@ -2,7 +2,7 @@
 
 ``RawRecord``가 이 설계의 축이다. 모델은 **번호만** 돌려주고 시각·노드·원문은
 코드가 이 레코드에서 옮긴다. 모델이 로그 줄을 옮겨 적게 하면 틀린다는 것을 이
-저장소는 실측으로 두 번 확인했다(``diagnosis_report`` 모듈 docstring) —
+저장소는 실측으로 두 번 확인했다(``contracts/observations.py`` 모듈 docstring) —
 Evidence 단계에서 같은 함정을 다시 파지 않는다.
 """
 

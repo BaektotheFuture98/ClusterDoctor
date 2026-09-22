@@ -18,10 +18,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from cluster_doctor.incident.models import IncidentStatus
-from cluster_doctor.agent.contracts import (
-    LogAnalysisStatus,
-    VerificationStatus,
-)
+from cluster_doctor.contracts.report import LogAnalysisStatus, VerificationStatus
 from cluster_doctor.contracts.time_range import TimeRange, is_covered
 
 

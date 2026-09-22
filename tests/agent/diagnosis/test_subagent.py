@@ -14,7 +14,7 @@ chat model만 대본으로 바꾼다. 파이프라인(수집기·triage·검증)
 
 from cluster_doctor.incident.models import Incident
 from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.agent.contracts import (
+from cluster_doctor.contracts.report import (
     LogAnalysisStatus,
     VerificationStatus,
 )

@@ -45,10 +45,7 @@ from cluster_doctor.reporting.report_assembler import to_diagnosis_report
 from cluster_doctor.incident.window_planner import initial_windows
 from cluster_doctor.incident.models import Incident, IncidentStatus
 from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.agent.contracts import (
-    LogAnalysisStatus,
-    VerificationStatus,
-)
+from cluster_doctor.contracts.report import LogAnalysisStatus, VerificationStatus
 
 _logger = logging.getLogger(__name__)
 

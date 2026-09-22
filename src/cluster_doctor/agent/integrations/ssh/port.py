@@ -19,7 +19,7 @@ from datetime import datetime
 
 # 이 경로가 한 번에 돌려주는 기본 줄 수.
 #
-# ``log_repository.DEFAULT_NODE_LOG_LIMIT``과 값이 같지만 뜻이 다르다. 저쪽은
+# ``clickhouse/port.py``의 ``DEFAULT_NODE_LOG_LIMIT``과 값이 같지만 뜻이 다르다. 저쪽은
 # ClickHouse 질의의 행 수 상한이라 ``ORDER BY timestamp``로 **가장 이른** 행이
 # 남고, 이쪽은 서버에서 ``tail``로 자르므로 **가장 늦은** 줄이 남는다. 같은
 # 숫자라고 한 상수로 묶으면 그 반대 편향이 가려진다.
