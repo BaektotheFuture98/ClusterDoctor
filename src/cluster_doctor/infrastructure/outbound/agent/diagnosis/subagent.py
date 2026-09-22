@@ -60,7 +60,7 @@ from typing import Any
 
 from deepagents import CompiledSubAgent, create_deep_agent
 
-from cluster_doctor.infrastructure.outbound.agent.common.harness import (
+from cluster_doctor.agent.common.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
     RefuseDelegationMiddleware,
@@ -99,7 +99,7 @@ from cluster_doctor.contracts.time_range import (
     TimeRange,
     split_span,
 )
-from cluster_doctor.infrastructure.outbound.agent.common.kst import parse_kst
+from cluster_doctor.agent.common.kst import parse_kst
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.collector import (
     CollectedEvidence,
     EvidenceCollector,

@@ -16,7 +16,7 @@ from cluster_doctor.application.service.incident_runner import IncidentRunner
 from cluster_doctor.application.service.slowlog_trigger_service import SlowlogTriggerService
 from cluster_doctor.infrastructure.config.settings import Settings, get_settings
 from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAdapter
-from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import (
+from cluster_doctor.agent.common.litellm_client import (
     require_supported_provider,
 )
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.report_writer import (

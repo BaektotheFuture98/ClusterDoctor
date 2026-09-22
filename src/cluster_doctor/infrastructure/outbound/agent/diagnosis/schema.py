@@ -32,7 +32,7 @@ from cluster_doctor.contracts.report import (
     TimelineEvent,
 )
 from cluster_doctor.contracts.time_range import TimeRange, split_span
-from cluster_doctor.infrastructure.outbound.agent.common.kst import parse_kst
+from cluster_doctor.agent.common.kst import parse_kst
 
 _logger = logging.getLogger(__name__)
 

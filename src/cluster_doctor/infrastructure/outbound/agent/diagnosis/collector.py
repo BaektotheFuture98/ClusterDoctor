@@ -40,7 +40,7 @@ from cluster_doctor.agent.integrations.clickhouse.models import (
     SlowlogEntry,
 )
 from cluster_doctor.contracts.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
+from cluster_doctor.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis import node_investigation
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
     AnalysisRunState,

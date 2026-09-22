@@ -38,7 +38,7 @@ from cluster_doctor.infrastructure.config.settings import (  # noqa: E402
 # 일부러 가져다 쓴다. 이 둘은 "litellm에 어떤 문자열로 어떤 조건으로
 # 부르는가"이고, 그것이 두 모듈에서 달라지면 provider를 하나 추가할 때
 # 한쪽만 고쳐진다. 복제본을 만드는 것보다 사유를 적고 참조하는 쪽이 낫다.
-from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import (  # noqa: E402
+from cluster_doctor.agent.common.litellm_client import (  # noqa: E402
     _PROVIDER_PREFIX,
     _REQUEST_TIMEOUT_SECONDS,
     require_supported_provider,

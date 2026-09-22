@@ -16,7 +16,7 @@ from cluster_doctor.agent.integrations.clickhouse.models import (
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.infrastructure.outbound.agent.common.observations import (
+from cluster_doctor.agent.common.observations import (
     candidate_key,
     count_by_source,
     merge_node_rows,

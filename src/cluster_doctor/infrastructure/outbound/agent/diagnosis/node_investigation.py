@@ -33,7 +33,7 @@ from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
 from cluster_doctor.agent.integrations.elasticsearch.ports import NodeResolver
 from cluster_doctor.application.service.guardrails import truncate_raw
 from cluster_doctor.contracts.evidence import Evidence, ProblemNodeCandidate
-from cluster_doctor.infrastructure.outbound.agent.common.log_format import (
+from cluster_doctor.agent.common.log_format import (
     format_evidence_line,
 )
 from cluster_doctor.agent.integrations.elasticsearch.resolved_node import ResolvedNode

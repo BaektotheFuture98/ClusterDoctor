@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry
-from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
+from cluster_doctor.agent.common.log_format import format_log_line
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
 

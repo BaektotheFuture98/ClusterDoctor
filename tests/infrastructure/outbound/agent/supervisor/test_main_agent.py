@@ -24,7 +24,7 @@ from cluster_doctor.application.service.guardrails import (
 )
 from cluster_doctor.domain.model.incident import IncidentStatus
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.infrastructure.outbound.agent.common import harness as harness_module
+from cluster_doctor.agent.common import harness as harness_module
 from cluster_doctor.infrastructure.outbound.agent.supervisor.guardrail_middleware import (
     DelegationGuardrailMiddleware,
 )

@@ -18,7 +18,7 @@ from collections.abc import Sequence
 
 from deepagents import CompiledSubAgent, create_deep_agent
 
-from cluster_doctor.infrastructure.outbound.agent.common.harness import (
+from cluster_doctor.agent.common.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
     restrict_harness,
