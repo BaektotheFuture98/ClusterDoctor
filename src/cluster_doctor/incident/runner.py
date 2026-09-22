@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -82,6 +83,7 @@ class IncidentRunner:
         artifact_store: ArtifactStore,
         notifier: Notifier,
         drain_pending,
+        on_incident_complete: Callable[[str], None] | None = None,
         incident_timeout_seconds: float = INCIDENT_TIMEOUT_SECONDS,
         wait_step_seconds: float = _WAIT_STEP_SECONDS,
     ) -> None:
@@ -90,6 +92,7 @@ class IncidentRunner:
         self._store = artifact_store
         self._notifier = notifier
         self._drain_pending = drain_pending
+        self._on_incident_complete = on_incident_complete
         self._incident_timeout_seconds = incident_timeout_seconds
         self._wait_step_seconds = wait_step_seconds
 
@@ -137,6 +140,8 @@ class IncidentRunner:
 
         gaps = tuple(state.accumulated_gaps)
         await self._deliver(incident, state, analysis_failed, gaps)
+        if self._on_incident_complete is not None:
+            self._on_incident_complete(incident.incident_id)
 
         outcome = IncidentOutcome(
             incident_id=incident.incident_id,

@@ -117,3 +117,6 @@ class InMemoryArtifactStore:
             prefix = f"R-{incident_id}-"
             for ref in [key for key in self._raw if key.startswith(prefix)]:
                 self._raw.pop(ref, None)
+            suffix = f":{incident_id}"
+            for key in [k for k in self._counters if k.endswith(suffix)]:
+                self._counters.pop(key, None)

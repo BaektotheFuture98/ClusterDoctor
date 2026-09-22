@@ -131,7 +131,9 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
     provider = require_supported_provider(s.llm_provider)
 
     # pending 큐를 먼저 만들고 drain 클로저와 runner가 같은 객체를 공유한다.
-    pending: stdlib_queue.Queue = stdlib_queue.Queue()
+    # maxsize: 유입이 분석 속도를 초과할 때 무제한 증가를 막는 상한.
+    # 초과 시 SlowlogTriggerService가 해당 이벤트를 버리고 경고를 남긴다.
+    pending: stdlib_queue.Queue = stdlib_queue.Queue(maxsize=10_000)
 
     def drain_pending():
         items = []
@@ -143,7 +145,12 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
         return items
 
     log_repository = _get_log_repository()
+    state_repo = _get_state_repository()
     store = _get_artifact_store()
+
+    def _cleanup_incident(incident_id: str) -> None:
+        state_repo.discard(incident_id)
+        store.discard(incident_id)
 
     # provider별 키·모델을 직접 읽지 않는다. llm_api_key/llm_model이
     # LLM_PROVIDER에 따라 고른 값을 돌려주므로 여기서 분기할 일이 없다.
@@ -182,17 +189,18 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
         model=s.llm_model,
         api_key=s.llm_api_key,
         seams=seams,
-        state_repository=_get_state_repository(),
+        state_repository=state_repo,
     )
 
     runner = IncidentRunner(
         incident_agent=incident_agent,
-        state_repository=_get_state_repository(),
+        state_repository=state_repo,
         artifact_store=store,
         # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
         # 떨어뜨린다.
         notifier=HtmlFileNotifier(output_dir=s.report_dir),
         drain_pending=drain_pending,
+        on_incident_complete=_cleanup_incident,
     )
 
     return SlowlogTriggerService(

@@ -51,7 +51,14 @@ class SlowlogTriggerService:
 
     async def on_slowlog(self, log_entry: SlowlogTriggerEvent) -> None:
         """Kafka consumer가 slowlog를 수신할 때마다 호출한다."""
-        self._pending.put(log_entry)
+        try:
+            self._pending.put_nowait(log_entry)
+        except stdlib_queue.Full:
+            _logger.warning(
+                "pending 큐가 가득 찼다 (maxsize=%d). slowlog 1건을 버린다.",
+                self._pending.maxsize,
+            )
+            return
 
         if self._running:
             return
@@ -81,21 +88,20 @@ class SlowlogTriggerService:
         """
         self._incident_task = asyncio.create_task(coro)
 
-    async def _delayed_incident(
-        self, log_time: datetime, kafka_receive_time: datetime
+    async def _run_incident(
+        self,
+        log_time: datetime,
+        kafka_receive_time: datetime,
+        *,
+        delay: float = 0,
     ) -> None:
-        """재실행 전에 배치 창만큼 쉰다.
+        """delay > 0이면 먼저 그만큼 쉰다.
 
-        첫 실행은 ``_wait_and_trigger``가 이미 기다렸으므로 이 경로를 타지
-        않는다. 재실행에 지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아,
+        재실행에 지연이 없으면 실패한 실행이 지연 0으로 연달아 돌아,
         상한에 걸릴 때까지 할당량을 그대로 태운다.
         """
-        await asyncio.sleep(self._micro_batch_seconds)
-        await self._run_incident(log_time, kafka_receive_time)
-
-    async def _run_incident(
-        self, log_time: datetime, kafka_receive_time: datetime
-    ) -> None:
+        if delay:
+            await asyncio.sleep(delay)
         incident = Incident(
             incident_id=uuid.uuid4().hex[:12],
             cluster=self._cluster,
@@ -153,4 +159,4 @@ class SlowlogTriggerService:
         self._consecutive_retriggers += 1
         self._running = True
         now = datetime.now(timezone.utc)
-        self._spawn(self._delayed_incident(now, now))
+        self._spawn(self._run_incident(now, now, delay=self._micro_batch_seconds))
