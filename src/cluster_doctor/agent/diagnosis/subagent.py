@@ -33,7 +33,7 @@ DeepAgent다. 모델이 자기 루프를 도는 것이 원래 설계와 어긋�
 위임 시작 시 **한 번** 읽어 고정하고, 루프 도중 다시 읽지 않는다.
 
 **둘. 부모에게 돌려보내는 payload에 원문이 없다.** 참조와 개수와 결정적으로
-만들어진 요약뿐이다. ``domain/model/log_analysis.py``가 설명하듯 ArtifactStore
+만들어진 요약뿐이다. ``agent/contracts.py``가 설명하듯 ArtifactStore
 간접참조가 존재하는 이유 전체가 이것이다 — Main Agent의 Context에 raw 로그가
 쌓이면 사이클마다 Context가 불어나고 비용 경계가 사라진다. 도구가 모델에게
 돌려주는 값에도 근거 본문은 없다. SubAgent의 Context도 Context다.
@@ -89,10 +89,12 @@ from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.contracts import (
     LogAnalysisRequest,
     LogAnalysisResponse,
+)
+from cluster_doctor.contracts.report import (
+    LogAnalysisReport,
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.agent.integrations.clickhouse.models import LogEntry, NodeLogEntry
 from cluster_doctor.contracts.time_range import (
     InvalidTimeRangeError,

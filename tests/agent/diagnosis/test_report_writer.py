@@ -17,10 +17,8 @@ from dataclasses import replace
 from datetime import datetime
 
 from cluster_doctor.exceptions import LlmApiError
-from cluster_doctor.agent.contracts import (
-    LogAnalysisRequest,
-    VerificationStatus,
-)
+from cluster_doctor.agent.contracts import LogAnalysisRequest
+from cluster_doctor.contracts.report import VerificationStatus
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 from cluster_doctor.agent.diagnosis.collector import (
     EvidenceCollector,

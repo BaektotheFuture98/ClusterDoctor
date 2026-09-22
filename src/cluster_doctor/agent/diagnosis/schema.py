@@ -2,7 +2,7 @@
 
 관측값(분 단위 건수·노드 최대값·상태 이력)은 여기 없다. 코드가 모아 리포트에
 직접 싣는다 — 모델이 옮겨 적게 시키면 틀린다는 것을 이 저장소는 실측으로 두 번
-확인했다(``domain/model/diagnosis_report.py`` docstring).
+확인했다(``contracts/observations.py`` docstring).
 
 **모든 주장이 evidence_refs를 달고 다닌다.** 그것이 Validator를 가능하게 하는
 구조다. 근거 참조가 없는 주장은 "검증할 수 없다"가 아니라 "근거가 없다"로
@@ -24,12 +24,12 @@ import logging
 from pydantic import BaseModel, Field, field_validator
 
 from cluster_doctor.contracts.observations import SuspectPick as DomainSuspectPick
-from cluster_doctor.agent.contracts import VerificationStatus
 from cluster_doctor.contracts.report import (
     LogAnalysisReport,
     ReportFinding,
     RootCause,
     TimelineEvent,
+    VerificationStatus,
 )
 from cluster_doctor.contracts.time_range import TimeRange, split_span
 from cluster_doctor.agent.common.kst import parse_kst

@@ -20,11 +20,11 @@ from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.contracts.observations import Observations, TimelineRow
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident.models import Incident, IncidentStatus
-from cluster_doctor.agent.contracts import (
+from cluster_doctor.contracts.report import (
+    LogAnalysisReport,
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )

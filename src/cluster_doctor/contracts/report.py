@@ -11,11 +11,33 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from cluster_doctor.contracts.observations import SuspectPick
-from cluster_doctor.agent.contracts import VerificationStatus
+
+
+class LogAnalysisStatus(StrEnum):
+    """SubAgent가 한 번의 분석을 어떻게 끝냈는가."""
+
+    COMPLETED = "COMPLETED"
+    # 현재 요청 범위 밖의 시간이 필요하다. Scope 확장은 Supervisor가 승인한다.
+    NEED_MORE_CONTEXT = "NEED_MORE_CONTEXT"
+    # 허용된 revision을 다 쓰고도 Evidence와 Report가 맞지 않았다.
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class VerificationStatus(StrEnum):
+    """Report Consistency Validator의 판정."""
+
+    PASSED = "PASSED"
+    # 검증은 돌았고 불일치가 남았다. 리포트는 존재한다.
+    MISMATCH = "MISMATCH"
+    # 검증을 돌리지 못했다. 통과와 구별해야 한다.
+    NOT_VERIFIED = "NOT_VERIFIED"
 
 
 class TimelineEvent(BaseModel):

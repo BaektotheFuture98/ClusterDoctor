@@ -20,11 +20,8 @@ from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.storage.artifact_store import ArtifactStore
 from cluster_doctor.incident.guardrails import MAX_REPORT_REVISIONS
 from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.agent.contracts import (
-    LogAnalysisRequest,
-    VerificationStatus,
-)
-from cluster_doctor.contracts.report import LogAnalysisReport
+from cluster_doctor.agent.contracts import LogAnalysisRequest
+from cluster_doctor.contracts.report import LogAnalysisReport, VerificationStatus
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.agent.common.litellm_client import complete
 from cluster_doctor.agent.diagnosis.prompts import (
