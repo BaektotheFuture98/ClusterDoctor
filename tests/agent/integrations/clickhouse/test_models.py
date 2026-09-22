@@ -15,10 +15,12 @@ from decimal import Decimal
 
 import pytest
 
-from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
-from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
+from cluster_doctor.agent.integrations.clickhouse.models import (
+    LogEntry,
+    NodeMetricEntry,
+    QueryLogEntry,
+    SlowlogEntry,
+)
 
 TS = datetime(2026, 8, 27, 18, 33, 2)
 

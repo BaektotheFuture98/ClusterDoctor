@@ -7,7 +7,7 @@
 
 import pytest
 
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import (
+from cluster_doctor.agent.integrations.ssh.fetcher import (
     _ALLOWED_COMMANDS,
     _SEVERITY_PATTERN,
     UnsafeSshCommandError,

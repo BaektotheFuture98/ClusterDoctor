@@ -7,7 +7,7 @@ slowlog와 달리 **성공한 요청도 들어온다.** 그래서 이쪽에서�
 from __future__ import annotations
 
 from cluster_doctor.contracts.evidence import EvidenceSource
-from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import QueryLogEntry
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
 

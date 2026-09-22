@@ -32,17 +32,17 @@ from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_metric import (
     NodeMetricThresholds,
 )
-from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import (
+from cluster_doctor.agent.integrations.clickhouse.reader import (
     ClickHouseLogAdapter,
 )
-from cluster_doctor.infrastructure.outbound.elasticsearch.es_cluster_adapter import (
+from cluster_doctor.agent.integrations.elasticsearch.cluster_adapter import (
     ElasticsearchClusterAdapter,
 )
-from cluster_doctor.infrastructure.outbound.elasticsearch.es_node_resolver import (
+from cluster_doctor.agent.integrations.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
 from cluster_doctor.infrastructure.outbound.notifier.html_file_notifier import HtmlFileNotifier
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import SshNodeLogFetcher
+from cluster_doctor.agent.integrations.ssh.fetcher import SshNodeLogFetcher
 from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )

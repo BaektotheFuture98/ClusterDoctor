@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from cluster_doctor.domain.model.log_entry import LogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import LogEntry
 
 _logger = logging.getLogger(__name__)
 

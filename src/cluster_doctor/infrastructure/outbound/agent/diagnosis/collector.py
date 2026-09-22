@@ -21,20 +21,24 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
-from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
-from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
-from cluster_doctor.application.port.outbound.node_resolver import NodeResolver
+from cluster_doctor.agent.integrations.elasticsearch.ports import (
+    ClusterRepository,
+    NodeResolver,
+)
+from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
 from cluster_doctor.application.service.guardrails import (
     MAX_EVIDENCE_TOTAL,
     clamp_evidence,
     truncate_raw,
 )
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
-from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
-from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
+from cluster_doctor.agent.integrations.clickhouse.models import (
+    LogEntry,
+    NodeLogEntry,
+    NodeMetricEntry,
+    QueryLogEntry,
+    SlowlogEntry,
+)
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis import node_investigation

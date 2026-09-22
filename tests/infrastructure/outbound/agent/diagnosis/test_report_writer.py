@@ -21,7 +21,7 @@ from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisRequest,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.collector import (
     EvidenceCollector,
 )
