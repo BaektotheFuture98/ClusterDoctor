@@ -30,7 +30,7 @@ import litellm  # noqa: E402
 from langchain_core.language_models import BaseChatModel  # noqa: E402
 from langchain_litellm import ChatLiteLLM  # noqa: E402
 
-from cluster_doctor.infrastructure.config.settings import (  # noqa: E402
+from cluster_doctor.config.settings import (  # noqa: E402
     ConfigurationError,
 )
 
