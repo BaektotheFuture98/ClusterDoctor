@@ -48,8 +48,6 @@ class SlowlogTriggerService:
         self._trigger_task: asyncio.Task | None = None
         self._incident_task: asyncio.Task | None = None
         self._consecutive_retriggers = 0
-        self._first_log_time: datetime | None = None
-        self._first_kafka_receive_time: datetime | None = None
 
     async def on_slowlog(self, log_entry: SlowlogTriggerEvent) -> None:
         """Kafka consumer가 slowlog를 수신할 때마다 호출한다."""
@@ -59,19 +57,21 @@ class SlowlogTriggerService:
             return
 
         if self._trigger_task is None:
-            self._first_log_time = log_entry.timestamp
-            self._first_kafka_receive_time = datetime.now(timezone.utc)
-            self._trigger_task = asyncio.create_task(self._wait_and_trigger())
+            self._trigger_task = asyncio.create_task(
+                self._wait_and_trigger(
+                    log_entry.timestamp, datetime.now(timezone.utc)
+                )
+            )
 
-    async def _wait_and_trigger(self) -> None:
+    async def _wait_and_trigger(
+        self, log_time: datetime, kafka_receive_time: datetime
+    ) -> None:
         """micro_batch_seconds 후 Incident를 연다."""
         await asyncio.sleep(self._micro_batch_seconds)
         self._trigger_task = None
         self._running = True
         self._consecutive_retriggers = 0
-        self._spawn(
-            self._run_incident(self._first_log_time, self._first_kafka_receive_time)
-        )
+        self._spawn(self._run_incident(log_time, kafka_receive_time))
 
     def _spawn(self, coro: Coroutine) -> None:
         """태스크를 띄우고 핸들을 보관한다.
