@@ -118,7 +118,7 @@ from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (
     DEFAULT_THRESHOLDS,
     NodeMetricThresholds,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
+from cluster_doctor.agent.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
     CLUSTER,

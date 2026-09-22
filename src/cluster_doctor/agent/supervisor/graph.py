@@ -28,11 +28,11 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
-from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
+from cluster_doctor.agent.supervisor.state import (
     DIAGNOSIS_SUBAGENT,
     IncidentAgentState,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import TASK_TOOL_NAME
+from cluster_doctor.agent.supervisor.tools import TASK_TOOL_NAME
 
 # 문자열 보간을 쓰지 않는다(f-string 아님). 본문에 중괄호가 들어가면 어느
 # 단계에서든 서식으로 해석되어 프롬프트가 조용히 망가진다 — diagnosis

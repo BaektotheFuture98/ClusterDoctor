@@ -30,7 +30,7 @@ from cluster_doctor.infrastructure.config.settings import Settings
 from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
+from cluster_doctor.agent.supervisor.agent import (
     DeepAgentIncidentAdapter,
 )
 

@@ -13,12 +13,12 @@ chat model만 대본이다. 그래프도 미들웨어도 진단 파이프라인�
 from cluster_doctor.domain.model.incident import Incident, IncidentStatus
 from cluster_doctor.domain.model.incident_state import IncidentState
 from cluster_doctor.agent.contracts import LogAnalysisStatus
-from cluster_doctor.infrastructure.outbound.agent.supervisor import agent as agent_module
-from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
+from cluster_doctor.agent.supervisor import agent as agent_module
+from cluster_doctor.agent.supervisor.agent import (
     DeepAgentIncidentAdapter,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.state import DIAGNOSIS_SUBAGENT
-from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import TASK_TOOL_NAME
+from cluster_doctor.agent.supervisor.state import DIAGNOSIS_SUBAGENT
+from cluster_doctor.agent.supervisor.tools import TASK_TOOL_NAME
 from cluster_doctor.storage.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
@@ -29,7 +29,7 @@ from tests.agent.diagnosis.test_report_writer import (
     ScriptedLlm,
     build as build_seams,
 )
-from tests.infrastructure.outbound.agent.scripted_model import ScriptedChatModel, ai, say
+from tests.agent.scripted_model import ScriptedChatModel, ai, say
 
 TRIGGER = WINDOW.start
 

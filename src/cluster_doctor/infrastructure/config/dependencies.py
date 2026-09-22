@@ -26,7 +26,7 @@ from cluster_doctor.agent.diagnosis.report_writer import (
 from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
+from cluster_doctor.agent.supervisor.agent import (
     DeepAgentIncidentAdapter,
 )
 from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (

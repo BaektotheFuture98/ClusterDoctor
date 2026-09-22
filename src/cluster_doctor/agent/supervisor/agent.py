@@ -29,23 +29,23 @@ from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
     build_diagnosis_subagent,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.chat_model import (
+from cluster_doctor.agent.supervisor.chat_model import (
     build_chat_model,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.guardrail_middleware import (
+from cluster_doctor.agent.supervisor.guardrail_middleware import (
     DelegationGuardrailMiddleware,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.main_agent import (
+from cluster_doctor.agent.supervisor.graph import (
     build_main_agent,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
+from cluster_doctor.agent.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
     CLUSTER,
     INCIDENT_ID,
     LAST_RESPONSE,
 )
-from cluster_doctor.infrastructure.outbound.agent.supervisor.tools import (
+from cluster_doctor.agent.supervisor.tools import (
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
     make_propose_analysis_tool,
