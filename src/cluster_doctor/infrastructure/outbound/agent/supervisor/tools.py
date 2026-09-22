@@ -21,7 +21,7 @@ from langchain.tools import BaseTool, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from cluster_doctor.application.exception import GuardrailViolation
+from cluster_doctor.exceptions import GuardrailViolation
 from cluster_doctor.application.port.outbound.incident_state_repository import (
     IncidentStateRepository,
 )
@@ -38,7 +38,7 @@ from cluster_doctor.application.service.guardrails import (
 from cluster_doctor.application.service.window_planner import plan_new_windows
 from cluster_doctor.domain.model.incident import IncidentStatus
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.contracts.time_range import InvalidTimeRangeError, TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.kst import format_kst, parse_kst
 from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
     ADMITTED_GOAL,

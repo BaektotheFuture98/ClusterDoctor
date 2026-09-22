@@ -17,21 +17,21 @@ import pytest
 from cluster_doctor.application.port.outbound.incident_agent import IncidentAgentResult
 from cluster_doctor.application.service.guardrails import CancellationToken
 from cluster_doctor.application.service.incident_runner import IncidentRunner
-from cluster_doctor.domain.model.diagnosis_report import Observations, TimelineRow
-from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.contracts.observations import Observations, TimelineRow
+from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
 from cluster_doctor.domain.model.incident import Incident, IncidentStatus
 from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
+from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
 from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
     InMemoryIncidentStateRepository,
 )
-from tests.domain.model.test_time_range_spans import KST, span
+from tests.contracts.test_time_range_spans import KST, span
 
 TRIGGER = datetime(2026, 9, 18, 14, 3, tzinfo=KST)
 

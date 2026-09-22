@@ -29,13 +29,13 @@ from cluster_doctor.application.service.guardrails import (
     clamp_evidence,
     truncate_raw,
 )
-from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
 from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
 from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
-from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis import node_investigation
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (

@@ -9,22 +9,22 @@ from datetime import datetime
 
 import pytest
 
-from cluster_doctor.application.exception import IncidentNotFoundError
-from cluster_doctor.domain.model.diagnosis_report import (
+from cluster_doctor.exceptions import IncidentNotFoundError
+from cluster_doctor.contracts.observations import (
     NodeMetricRow,
     Observations,
     TimelineRow,
 )
-from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
+from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
 from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
     InMemoryIncidentStateRepository,
 )
-from tests.domain.model.test_time_range_spans import KST, span
+from tests.contracts.test_time_range_spans import KST, span
 
 
 def at(minute: int) -> datetime:

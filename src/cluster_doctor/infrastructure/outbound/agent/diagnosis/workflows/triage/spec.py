@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cluster_doctor.application.service.guardrails import MAX_EVIDENCE_PER_SOURCE
-from cluster_doctor.domain.model.evidence import EvidenceSource
+from cluster_doctor.contracts.evidence import EvidenceSource
 
 
 @dataclass(frozen=True)

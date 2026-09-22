@@ -18,7 +18,7 @@ from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common import harness as harness_module
 from cluster_doctor.infrastructure.outbound.agent.common.kst import format_kst
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.subagent import (
@@ -36,7 +36,7 @@ from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repo
 )
 from langchain_core.messages import HumanMessage
 
-from tests.domain.model.test_time_range_spans import span
+from tests.contracts.test_time_range_spans import span
 from tests.infrastructure.outbound.agent.diagnosis.test_report_writer import (
     GOOD_DRAFT,
     WINDOW,

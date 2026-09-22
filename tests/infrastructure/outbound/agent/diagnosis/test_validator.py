@@ -7,8 +7,8 @@
 
 from datetime import datetime, timedelta
 
-from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource
-from cluster_doctor.domain.model.log_analysis_report import (
+from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
+from cluster_doctor.contracts.report import (
     LogAnalysisReport,
     ReportFinding,
     RootCause,
@@ -17,7 +17,7 @@ from cluster_doctor.domain.model.log_analysis_report import (
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.validator import (
     validate_report,
 )
-from tests.domain.model.test_time_range_spans import KST
+from tests.contracts.test_time_range_spans import KST
 
 
 def at(minute: int, second: int = 0) -> datetime:
@@ -278,7 +278,7 @@ class TestCandidatePicks:
     def test_제시되지_않은_후보를_지목하면_잡는다(self):
         """근거 참조와 같은 규칙이다. 목록 밖의 id를 고르면 코드가 수치를
         조인할 수 없다."""
-        from cluster_doctor.domain.model.diagnosis_report import SuspectPick
+        from cluster_doctor.contracts.observations import SuspectPick
 
         result = validate_report(
             report(suspect_picks=(SuspectPick(candidate_id="C9", reason="r"),)),
@@ -289,7 +289,7 @@ class TestCandidatePicks:
         assert "C9" in issues_of(result)
 
     def test_제시된_후보는_통과한다(self):
-        from cluster_doctor.domain.model.diagnosis_report import SuspectPick
+        from cluster_doctor.contracts.observations import SuspectPick
 
         result = validate_report(
             report(suspect_picks=(SuspectPick(candidate_id="C1", reason="r"),)),

@@ -16,7 +16,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.contracts.time_range import TimeRange
 
 
 class LogAnalysisStatus(StrEnum):

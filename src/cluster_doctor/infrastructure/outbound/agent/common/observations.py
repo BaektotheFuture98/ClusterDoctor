@@ -14,7 +14,7 @@ import re
 from dataclasses import replace
 from datetime import datetime
 
-from cluster_doctor.domain.model.diagnosis_report import (
+from cluster_doctor.contracts.observations import (
     NodeMetricRow,
     SlowCandidate,
     TimelineRow,

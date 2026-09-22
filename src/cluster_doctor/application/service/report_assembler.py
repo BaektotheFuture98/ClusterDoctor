@@ -15,14 +15,14 @@ application 계층에 있는 이유: 들어오는 것도 나가는 것도 전부
 
 from __future__ import annotations
 
-from cluster_doctor.domain.model.diagnosis_report import (
+from cluster_doctor.contracts.observations import (
     DiagnosisReport,
     Finding,
     Narrative,
     Observations,
 )
-from cluster_doctor.domain.model.evidence import Evidence
-from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
+from cluster_doctor.contracts.evidence import Evidence
+from cluster_doctor.contracts.report import LogAnalysisReport
 
 
 def to_diagnosis_report(

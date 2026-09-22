@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from cluster_doctor.domain.model.diagnosis_report import MasterEvent, NodeMetricRow, Observations, TimelineRow, observed_severity
-from cluster_doctor.domain.model.elasticsearch.health_point import HealthPoint
+from cluster_doctor.contracts.observations import MasterEvent, NodeMetricRow, Observations, TimelineRow, observed_severity
+from cluster_doctor.contracts.health_point import HealthPoint
 
 KST = timezone(timedelta(hours=9))
 _WINDOW = (datetime(2026, 9, 16, 4, 17, tzinfo=KST), datetime(2026, 9, 16, 4, 23, tzinfo=KST))

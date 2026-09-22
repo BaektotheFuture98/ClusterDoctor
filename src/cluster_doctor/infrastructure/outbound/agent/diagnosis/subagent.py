@@ -81,7 +81,7 @@ from cluster_doctor.application.port.outbound.incident_state_repository import (
 from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.application.port.outbound.node_resolver import NodeResolver
 from cluster_doctor.application.service.window_planner import plan_new_windows
-from cluster_doctor.domain.model.evidence import Evidence
+from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.domain.model.incident import Incident
 from cluster_doctor.domain.model.incident_state import IncidentState
 from cluster_doctor.domain.model.log_analysis import (
@@ -90,10 +90,10 @@ from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.domain.model.log_analysis_report import LogAnalysisReport
+from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
-from cluster_doctor.domain.model.time_range import (
+from cluster_doctor.contracts.time_range import (
     InvalidTimeRangeError,
     TimeRange,
     split_span,

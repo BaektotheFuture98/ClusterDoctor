@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from cluster_doctor.application.exception import IncidentNotFoundError
+from cluster_doctor.exceptions import IncidentNotFoundError
 from cluster_doctor.domain.model.incident_state import IncidentState
 
 _logger = logging.getLogger(__name__)

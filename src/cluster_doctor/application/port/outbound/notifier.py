@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from cluster_doctor.domain.model.diagnosis_report import DiagnosisReport
+from cluster_doctor.contracts.observations import DiagnosisReport
 
 
 class Notifier(ABC):

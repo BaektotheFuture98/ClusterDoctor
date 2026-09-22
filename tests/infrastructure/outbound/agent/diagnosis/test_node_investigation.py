@@ -10,14 +10,14 @@ Resolver와 Fetcher가 LLM이 아니라는 것도 함께 확인한다. 노드 �
 import json
 from datetime import datetime
 
-from cluster_doctor.application.exception import LlmApiError
-from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource, ProblemNodeCandidate
+from cluster_doctor.exceptions import LlmApiError
+from cluster_doctor.contracts.evidence import Evidence, EvidenceSource, ProblemNodeCandidate
 from cluster_doctor.domain.model.elasticsearch.resolved_node import ResolvedNode
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.node_investigation import (
     find_problem_nodes,
     investigate_nodes,
 )
-from tests.domain.model.test_time_range_spans import KST, span
+from tests.contracts.test_time_range_spans import KST, span
 
 WINDOW = span(14, 0, 14, 10)
 

@@ -9,8 +9,8 @@
 import json
 from datetime import datetime
 
-from cluster_doctor.application.exception import LlmApiError
-from cluster_doctor.domain.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.exceptions import LlmApiError
+from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.graph import run_triage
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nodes import (
     MapOutput,
@@ -18,7 +18,7 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nod
 )
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
-from tests.domain.model.test_time_range_spans import KST
+from tests.contracts.test_time_range_spans import KST
 
 SPEC = TriageSpec(
     source=EvidenceSource.SLOWLOG,

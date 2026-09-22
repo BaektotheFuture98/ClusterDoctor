@@ -19,7 +19,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm  # noqa: E402
 import openai  # noqa: E402
 
-from cluster_doctor.application.exception import (  # noqa: E402
+from cluster_doctor.exceptions import (  # noqa: E402
     LlmApiError,
     LlmResponseError,
 )

@@ -16,11 +16,11 @@ import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from cluster_doctor.domain.model.diagnosis_report import MasterEvent, NodeMetricRow, Observations, SlowCandidate, TimelineRow
-from cluster_doctor.domain.model.elasticsearch.health_point import HealthPoint
+from cluster_doctor.contracts.observations import MasterEvent, NodeMetricRow, Observations, SlowCandidate, TimelineRow
+from cluster_doctor.contracts.health_point import HealthPoint
 from cluster_doctor.domain.model.log_entry import LogEntry
 from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
-from cluster_doctor.domain.model.time_range import TimeRange
+from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
 from cluster_doctor.infrastructure.outbound.agent.common.observations import (

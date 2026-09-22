@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from cluster_doctor.domain.model.evidence import EvidenceSource
+from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord

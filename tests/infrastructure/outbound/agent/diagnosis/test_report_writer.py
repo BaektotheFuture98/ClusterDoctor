@@ -16,7 +16,7 @@ import re
 from dataclasses import replace
 from datetime import datetime
 
-from cluster_doctor.application.exception import LlmApiError
+from cluster_doctor.exceptions import LlmApiError
 from cluster_doctor.domain.model.log_analysis import (
     LogAnalysisRequest,
     VerificationStatus,
@@ -42,7 +42,7 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nod
 from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
-from tests.domain.model.test_time_range_spans import KST, span
+from tests.contracts.test_time_range_spans import KST, span
 
 WINDOW = span(14, 0, 14, 10)
 EVENT_AT = datetime(2026, 9, 18, 14, 2, tzinfo=KST)
