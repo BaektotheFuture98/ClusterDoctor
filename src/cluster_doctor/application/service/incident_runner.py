@@ -45,7 +45,7 @@ from cluster_doctor.application.service.report_assembler import to_diagnosis_rep
 from cluster_doctor.application.service.window_planner import initial_windows
 from cluster_doctor.domain.model.incident import Incident, IncidentStatus
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
 )

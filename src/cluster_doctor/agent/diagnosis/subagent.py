@@ -86,7 +86,7 @@ from cluster_doctor.application.service.window_planner import plan_new_windows
 from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.domain.model.incident import Incident
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisRequest,
     LogAnalysisResponse,
     LogAnalysisStatus,
@@ -100,21 +100,21 @@ from cluster_doctor.contracts.time_range import (
     split_span,
 )
 from cluster_doctor.agent.common.kst import parse_kst
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.collector import (
+from cluster_doctor.agent.diagnosis.collector import (
     CollectedEvidence,
     EvidenceCollector,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.prompt_subagent import (
+from cluster_doctor.agent.diagnosis.prompt_subagent import (
     build_subagent_prompt,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.report_writer import (
+from cluster_doctor.agent.diagnosis.report_writer import (
     ReportWriter,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
+from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import DraftReport
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_metric import (
+from cluster_doctor.agent.diagnosis.schema import DraftReport
+from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (
     DEFAULT_THRESHOLDS,
     NodeMetricThresholds,
 )

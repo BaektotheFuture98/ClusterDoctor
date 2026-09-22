@@ -15,7 +15,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from cluster_doctor.contracts.observations import SuspectPick
-from cluster_doctor.domain.model.log_analysis import VerificationStatus
+from cluster_doctor.agent.contracts import VerificationStatus
 
 
 class TimelineEvent(BaseModel):

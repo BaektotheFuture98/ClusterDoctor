@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry, SlowlogEntry
 from cluster_doctor.agent.common.kst import KST
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
+from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
 from tests.contracts.test_time_range_spans import span

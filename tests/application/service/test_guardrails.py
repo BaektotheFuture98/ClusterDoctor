@@ -26,7 +26,7 @@ from cluster_doctor.application.service.guardrails import (
     window_minutes,
 )
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.log_analysis import LogAnalysisRequest
+from cluster_doctor.agent.contracts import LogAnalysisRequest
 from tests.contracts.test_time_range_spans import span
 
 

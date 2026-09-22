@@ -5,8 +5,8 @@
 0으로 둔 것, 관측값을 코드가 세게 한 것)에서 나온 제약이다.
 """
 
-from cluster_doctor.domain.model.log_analysis import VerificationStatus
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import (
+from cluster_doctor.agent.contracts import VerificationStatus
+from cluster_doctor.agent.diagnosis.schema import (
     DraftReport,
     parse_draft,
 )

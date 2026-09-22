@@ -17,8 +17,8 @@ from datetime import datetime
 
 from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.agent.common.kst import KST
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
+from cluster_doctor.agent.diagnosis.workflows.triage.state import RawRecord
 
 # ES 로그 한 줄의 머리: [시각][레벨][로거]. 로거 이름은 오른쪽이 공백으로
 # 채워져 있다(``[o.e.c.c.C          ]``).

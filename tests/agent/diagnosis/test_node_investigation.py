@@ -13,7 +13,7 @@ from datetime import datetime
 from cluster_doctor.exceptions import LlmApiError
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource, ProblemNodeCandidate
 from cluster_doctor.agent.integrations.elasticsearch.resolved_node import ResolvedNode
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.node_investigation import (
+from cluster_doctor.agent.diagnosis.node_investigation import (
     find_problem_nodes,
     investigate_nodes,
 )

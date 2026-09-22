@@ -13,8 +13,8 @@ from __future__ import annotations
 from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry
 from cluster_doctor.agent.common.log_format import format_log_line
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
+from cluster_doctor.agent.diagnosis.workflows.triage.state import RawRecord
 
 # 조회 조건. 레벨만으로는 안 된다 — 실측(packetbeat.loki_logs)에서 INFO 10건 중
 # 진단에 필요한 것은 AllocationService 1건이었고 나머지 9건은 ML 유지보수·만료

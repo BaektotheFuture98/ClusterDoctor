@@ -19,12 +19,12 @@ from pydantic import BaseModel, Field
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.prompt import (
+from cluster_doctor.agent.diagnosis.workflows.triage.prompt import (
     build_map_prompt,
     build_reduce_prompt,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import (
+from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
+from cluster_doctor.agent.diagnosis.workflows.triage.state import (
     MinuteBucket,
     MinuteResult,
     RawRecord,

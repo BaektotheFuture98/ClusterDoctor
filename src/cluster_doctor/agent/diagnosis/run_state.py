@@ -29,7 +29,7 @@ from cluster_doctor.agent.common.observations import (
     slow_candidates,
     timeline_row,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_log import (
+from cluster_doctor.agent.diagnosis.workflows.datasource.node_log import (
     ES_LOG_LINE_RE,
 )
 from cluster_doctor.infrastructure.outbound.notifier.report_text import candidate_line

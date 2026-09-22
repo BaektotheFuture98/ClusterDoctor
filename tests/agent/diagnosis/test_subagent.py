@@ -14,14 +14,14 @@ chat model만 대본으로 바꾼다. 파이프라인(수집기·triage·검증)
 
 from cluster_doctor.domain.model.incident import Incident
 from cluster_doctor.domain.model.incident_state import IncidentState
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisStatus,
     VerificationStatus,
 )
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.agent.common import harness as harness_module
 from cluster_doctor.agent.common.kst import format_kst
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.subagent import (
     build_diagnosis_subagent,
 )
 from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
@@ -37,7 +37,7 @@ from cluster_doctor.storage.in_memory_incident_state_store import (
 from langchain_core.messages import HumanMessage
 
 from tests.contracts.test_time_range_spans import span
-from tests.infrastructure.outbound.agent.diagnosis.test_report_writer import (
+from tests.agent.diagnosis.test_report_writer import (
     GOOD_DRAFT,
     WINDOW,
     ScriptedLlm,

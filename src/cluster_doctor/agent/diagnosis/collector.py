@@ -41,22 +41,22 @@ from cluster_doctor.agent.integrations.clickhouse.models import (
 )
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.agent.common.kst import KST
-from cluster_doctor.infrastructure.outbound.agent.diagnosis import node_investigation
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
+from cluster_doctor.agent.diagnosis import node_investigation
+from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource import (
+from cluster_doctor.agent.diagnosis.workflows.datasource import (
     master_log,
     node_log,
     node_metric,
     query_log,
     slowlog,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_metric import (
+from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (
     DEFAULT_THRESHOLDS,
     NodeMetricThresholds,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.graph import (
+from cluster_doctor.agent.diagnosis.workflows.triage.graph import (
     TriageResult,
     run_triage,
 )

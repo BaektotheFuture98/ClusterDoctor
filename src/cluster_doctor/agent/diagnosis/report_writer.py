@@ -20,25 +20,25 @@ from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.storage.artifact_store import ArtifactStore
 from cluster_doctor.application.service.guardrails import MAX_REPORT_REVISIONS
 from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.domain.model.log_analysis import (
+from cluster_doctor.agent.contracts import (
     LogAnalysisRequest,
     VerificationStatus,
 )
 from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.agent.common.litellm_client import complete
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.prompts import (
+from cluster_doctor.agent.diagnosis.prompts import (
     build_analysis_prompt,
     build_revision_prompt,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.run_state import (
+from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.schema import (
+from cluster_doctor.agent.diagnosis.schema import (
     DraftReport,
     parse_draft,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.validator import (
+from cluster_doctor.agent.diagnosis.validator import (
     validate_report,
 )
 

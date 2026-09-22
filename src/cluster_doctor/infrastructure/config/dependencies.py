@@ -19,17 +19,17 @@ from cluster_doctor.infrastructure.inbound.kafka.consumer import KafkaConsumerAd
 from cluster_doctor.agent.common.litellm_client import (
     require_supported_provider,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.report_writer import (
+from cluster_doctor.agent.diagnosis.report_writer import (
     ReportWriter,
     build_structured_call,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
 )
 from cluster_doctor.infrastructure.outbound.agent.supervisor.agent import (
     DeepAgentIncidentAdapter,
 )
-from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.datasource.node_metric import (
+from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (
     NodeMetricThresholds,
 )
 from cluster_doctor.agent.integrations.clickhouse.reader import (
