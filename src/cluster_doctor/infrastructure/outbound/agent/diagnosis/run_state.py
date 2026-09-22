@@ -20,9 +20,9 @@ from cluster_doctor.contracts.observations import MasterEvent, NodeMetricRow, Ob
 from cluster_doctor.contracts.health_point import HealthPoint
 from cluster_doctor.agent.integrations.clickhouse.models import LogEntry, NodeLogEntry
 from cluster_doctor.contracts.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
-from cluster_doctor.infrastructure.outbound.agent.common.log_format import format_log_line
-from cluster_doctor.infrastructure.outbound.agent.common.observations import (
+from cluster_doctor.agent.common.kst import KST
+from cluster_doctor.agent.common.log_format import format_log_line
+from cluster_doctor.agent.common.observations import (
     candidate_key,
     merge_node_rows,
     node_metric_summary,

@@ -16,7 +16,7 @@ import re
 from datetime import datetime
 
 from cluster_doctor.contracts.evidence import EvidenceSource
-from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
+from cluster_doctor.agent.common.kst import KST
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.spec import TriageSpec
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.state import RawRecord
 

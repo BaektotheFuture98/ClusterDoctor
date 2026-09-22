@@ -10,7 +10,7 @@ from cluster_doctor.contracts.time_range import (
     split_span,
     subtract_spans,
 )
-from cluster_doctor.infrastructure.outbound.agent.common.kst import KST
+from cluster_doctor.agent.common.kst import KST
 
 
 def at(hour: int, minute: int) -> datetime:

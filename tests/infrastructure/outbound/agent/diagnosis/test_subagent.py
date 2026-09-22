@@ -19,8 +19,8 @@ from cluster_doctor.domain.model.log_analysis import (
     VerificationStatus,
 )
 from cluster_doctor.contracts.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common import harness as harness_module
-from cluster_doctor.infrastructure.outbound.agent.common.kst import format_kst
+from cluster_doctor.agent.common import harness as harness_module
+from cluster_doctor.agent.common.kst import format_kst
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.subagent import (
     build_diagnosis_subagent,
 )

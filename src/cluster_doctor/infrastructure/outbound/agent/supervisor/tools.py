@@ -39,7 +39,7 @@ from cluster_doctor.application.service.window_planner import plan_new_windows
 from cluster_doctor.domain.model.incident import IncidentStatus
 from cluster_doctor.domain.model.incident_state import IncidentState
 from cluster_doctor.contracts.time_range import InvalidTimeRangeError, TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common.kst import format_kst, parse_kst
+from cluster_doctor.agent.common.kst import format_kst, parse_kst
 from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,

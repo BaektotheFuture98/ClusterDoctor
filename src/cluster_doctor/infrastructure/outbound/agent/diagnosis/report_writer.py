@@ -26,7 +26,7 @@ from cluster_doctor.domain.model.log_analysis import (
 )
 from cluster_doctor.contracts.report import LogAnalysisReport
 from cluster_doctor.contracts.time_range import TimeRange
-from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import complete
+from cluster_doctor.agent.common.litellm_client import complete
 from cluster_doctor.infrastructure.outbound.agent.diagnosis.prompts import (
     build_analysis_prompt,
     build_revision_prompt,

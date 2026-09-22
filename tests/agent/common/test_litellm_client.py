@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cluster_doctor.exceptions import LlmResponseError
-from cluster_doctor.infrastructure.outbound.agent.common.litellm_client import (
+from cluster_doctor.agent.common.litellm_client import (
     complete,
     require_supported_provider,
 )
