@@ -108,11 +108,12 @@ class QueryLogEntry(LogEntry):
 class SlowlogEntry(LogEntry):
     """ES가 임계치 초과로 남긴 느린 쿼리 한 건.
 
-    ``timestamp``를 뺀 나머지에 기본값을 둔 이유: Kafka consumer는 트리거용으로
-    도착 시각만 아는 항목을 만든다(메시지 파싱에 실패하면 그마저도 수신 시각으로
-    폴백한다). ClickHouse 경로만 전부를 채운다 — 그래서 이 타입은 kafka와
-    clickhouse 두 소스가 함께 채운다. 어느 한쪽 폴더에만 있을 수 없는 타입이라
-    유입 지점인 kafka에 둔다.
+    ``timestamp``를 뺀 나머지에 기본값을 둔 이유: 이 타입을 채우는 곳은
+    ClickHouse 조회(``agent/integrations/clickhouse/reader.py``)뿐이다.
+    Kafka consumer는 트리거용으로 발생 시각만 필요하므로
+    ``ingestion/kafka/event.py``의 ``SlowlogTriggerEvent``를 따로 쓰고, 이
+    타입을 재사용하지 않는다 — 재사용하면 그 목적에 없는 여섯 필드가 항상
+    기본값으로만 채워진다.
     """
 
     source: ClassVar[str] = "slowlog"
