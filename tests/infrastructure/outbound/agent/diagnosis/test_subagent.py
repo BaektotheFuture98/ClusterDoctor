@@ -31,7 +31,7 @@ from cluster_doctor.infrastructure.outbound.agent.supervisor.state import (
     INCIDENT_ID,
     LAST_RESPONSE,
 )
-from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
+from cluster_doctor.storage.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 from langchain_core.messages import HumanMessage

@@ -39,7 +39,7 @@ from cluster_doctor.infrastructure.outbound.agent.diagnosis.workflows.triage.nod
     MapOutput,
     ReduceOutput,
 )
-from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
+from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
 from tests.contracts.test_time_range_spans import KST, span

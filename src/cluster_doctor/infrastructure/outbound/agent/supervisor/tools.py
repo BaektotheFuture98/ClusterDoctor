@@ -22,7 +22,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.application.port.outbound.incident_state_repository import (
+from cluster_doctor.storage.incident_state_store import (
     IncidentStateRepository,
 )
 from cluster_doctor.application.service.guardrails import (

@@ -73,12 +73,12 @@ from langchain_core.tools import tool
 from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
 
-from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
+from cluster_doctor.storage.artifact_store import ArtifactStore
 from cluster_doctor.agent.integrations.elasticsearch.ports import (
     ClusterRepository,
     NodeResolver,
 )
-from cluster_doctor.application.port.outbound.incident_state_repository import (
+from cluster_doctor.storage.incident_state_store import (
     IncidentStateRepository,
 )
 from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher

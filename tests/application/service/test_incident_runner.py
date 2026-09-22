@@ -25,10 +25,10 @@ from cluster_doctor.domain.model.log_analysis import (
     VerificationStatus,
 )
 from cluster_doctor.contracts.report import LogAnalysisReport
-from cluster_doctor.infrastructure.outbound.memory.in_memory_artifact_store import (
+from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
-from cluster_doctor.infrastructure.outbound.memory.in_memory_incident_state_repository import (
+from cluster_doctor.storage.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 from tests.contracts.test_time_range_spans import KST, span
