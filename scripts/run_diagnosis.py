@@ -48,12 +48,12 @@ from cluster_doctor.infrastructure.config.dependencies import (
     close_clickhouse_client,
 )
 from cluster_doctor.infrastructure.config.settings import get_settings
-from cluster_doctor.infrastructure.outbound.notifier.report_text import render_text
+from cluster_doctor.reporting.report_text import render_text
 
 # 기준 시각 판정을 다시 구현하지 않는다. 실제 동작과 어긋날 수 있고,
 # 어긋난 안내는 없느니만 못하다.
 from cluster_doctor.incident.inflow import base_time
-from cluster_doctor.application.service.report_assembler import to_diagnosis_report
+from cluster_doctor.reporting.report_assembler import to_diagnosis_report
 from cluster_doctor.incident.models import Incident, TriggerType
 
 

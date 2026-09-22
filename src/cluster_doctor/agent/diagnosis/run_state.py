@@ -32,7 +32,7 @@ from cluster_doctor.agent.common.observations import (
 from cluster_doctor.agent.diagnosis.workflows.datasource.node_log import (
     ES_LOG_LINE_RE,
 )
-from cluster_doctor.infrastructure.outbound.notifier.report_text import candidate_line
+from cluster_doctor.reporting.report_text import candidate_line
 
 _logger = logging.getLogger(__name__)
 
