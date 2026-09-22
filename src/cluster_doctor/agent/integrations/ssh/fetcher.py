@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import paramiko
 
-from cluster_doctor.application.port.outbound.node_log_fetcher import (
+from cluster_doctor.agent.integrations.ssh.port import (
     DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )

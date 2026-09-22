@@ -20,10 +20,12 @@ from cluster_doctor.contracts.observations import (
     TimelineRow,
     merge_node_row,
 )
-from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
-from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
+from cluster_doctor.agent.integrations.clickhouse.models import (
+    LogEntry,
+    NodeMetricEntry,
+    QueryLogEntry,
+    SlowlogEntry,
+)
 
 # ES가 slowlog의 took을 내보내는 표기. 실측(packetbeat.slowlog_v2 612건)에서는
 # "37.1s"와 "1m" 두 가지만 나왔지만, ES는 아래 단위를 모두 쓸 수 있으므로

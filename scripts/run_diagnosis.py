@@ -42,7 +42,7 @@ from _timeargs import KST
 # import 시점에 configure_logging()이 돌아 stderr와 logs/app.log에 로그가 붙는다.
 import cluster_doctor.main  # noqa: F401
 
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
 from cluster_doctor.infrastructure.config.dependencies import (
     build_trigger_service,
     close_clickhouse_client,

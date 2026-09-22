@@ -4,14 +4,14 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from cluster_doctor.infrastructure.outbound.clickhouse.clickhouse_log_adapter import (
+from cluster_doctor.agent.integrations.clickhouse.reader import (
     _MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     ClickHouseLogAdapter,
     _split_by_minute,
 )
-from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
-from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
+from cluster_doctor.agent.integrations.clickhouse.models import QueryLogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import NodeMetricEntry
 from cluster_doctor.contracts.time_range import TimeRange
 
 # ``TimeRange``는 naive datetime을 거부한다. 구간이 만들어진 자리에서 거절되지

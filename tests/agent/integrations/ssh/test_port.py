@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import inspect
 
-from cluster_doctor.application.port.outbound.node_log_fetcher import (
+from cluster_doctor.agent.integrations.ssh.port import (
     DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )
-from cluster_doctor.infrastructure.outbound.ssh.node_log_fetcher import (
+from cluster_doctor.agent.integrations.ssh.fetcher import (
     SshNodeLogFetcher,
 )
 

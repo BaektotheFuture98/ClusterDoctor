@@ -74,12 +74,14 @@ from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
 
 from cluster_doctor.application.port.outbound.artifact_store import ArtifactStore
-from cluster_doctor.application.port.outbound.cluster_repository import ClusterRepository
+from cluster_doctor.agent.integrations.elasticsearch.ports import (
+    ClusterRepository,
+    NodeResolver,
+)
 from cluster_doctor.application.port.outbound.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.application.port.outbound.node_log_fetcher import NodeLogFetcher
-from cluster_doctor.application.port.outbound.node_resolver import NodeResolver
+from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
 from cluster_doctor.application.service.window_planner import plan_new_windows
 from cluster_doctor.contracts.evidence import Evidence
 from cluster_doctor.domain.model.incident import Incident
@@ -91,8 +93,7 @@ from cluster_doctor.domain.model.log_analysis import (
     VerificationStatus,
 )
 from cluster_doctor.contracts.report import LogAnalysisReport
-from cluster_doctor.domain.model.log_entry import LogEntry
-from cluster_doctor.domain.model.clickhouse.node_log_entry import NodeLogEntry
+from cluster_doctor.agent.integrations.clickhouse.models import LogEntry, NodeLogEntry
 from cluster_doctor.contracts.time_range import (
     InvalidTimeRangeError,
     TimeRange,

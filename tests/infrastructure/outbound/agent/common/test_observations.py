@@ -11,9 +11,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from cluster_doctor.domain.model.clickhouse.query_log_entry import QueryLogEntry
-from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
-from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
+from cluster_doctor.agent.integrations.clickhouse.models import (
+    NodeMetricEntry,
+    QueryLogEntry,
+    SlowlogEntry,
+)
 from cluster_doctor.infrastructure.outbound.agent.common.observations import (
     candidate_key,
     count_by_source,
