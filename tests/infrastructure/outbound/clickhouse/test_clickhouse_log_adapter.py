@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -14,17 +14,17 @@ from cluster_doctor.domain.model.kafka.slowlog_entry import SlowlogEntry
 from cluster_doctor.domain.model.clickhouse.node_metric_entry import NodeMetricEntry
 from cluster_doctor.contracts.time_range import TimeRange
 
-# ``TimeRange``??naive datetime??嫄곕??쒕떎. 援ш컙??留뚮뱾?댁쭊 ?먮━?먯꽌 嫄곗젅?섏?
-# ?딆쑝硫??쒖갭 ?ㅼ쓽 李⑥쭛???곗닔?먯꽌 ?곗?湲??뚮Ц?대떎. ???뚯씪???쒓컖???꾨?
-# aware?ъ빞 ?섍퀬, ?댁쁺?먯꽌 ClickHouse媛 ?뚮젮二쇰뒗 媛믩룄 洹몃젃??
+# ``TimeRange``는 naive datetime을 거부한다. 구간이 만들어진 자리에서 거절되지
+# 않으면 한참 뒤의 차집합 산수에서 터지기 때문이다. 이 파일의 시각도 전부
+# aware여야 하고, 운영에서 ClickHouse가 돌려주는 값도 그렇다.
 KST = timezone(timedelta(hours=9))
 
 TR       = TimeRange(start=datetime(2026, 8, 20, 2, 9, 0, tzinfo=KST), end=datetime(2026, 8, 20, 2, 10, 0, tzinfo=KST))
 TR_MULTI = TimeRange(start=datetime(2026, 8, 20, 2, 9, 30, tzinfo=KST), end=datetime(2026, 8, 20, 2, 11, 15, tzinfo=KST))
 
-# slowlog row 怨꾩빟: ?ㅼ젣 ?쒕쾭?먯꽌 ?뺤씤???쒖꽌쨌??낆씠??
-#   0=諛쒖깮 ?쒓컖(_source.`@timestamp`, aware), 1=?몃뜳?ㅻ챸, 2=?몃뱶紐? 3=took,
-#   4=total_hits, 5=total_shards(int), 6=x-opaque-id, 7=荑쇰━ ?먮Ц
+# slowlog row 계약: 실제 서버에서 확인한 순서·타입이다.
+#   0=발생 시각(_source.`@timestamp`, aware), 1=인덱스명, 2=노드명, 3=took,
+#   4=total_hits, 5=total_shards(int), 6=x-opaque-id, 7=쿼리 원문
 SLOWLOG_ROW = (
     datetime(2026, 8, 20, 2, 9, 5, tzinfo=KST),
     "app_index_v1_20250721",
@@ -33,7 +33,7 @@ SLOWLOG_ROW = (
     "68 hits",
     902,
     "service=web,project=search_app,env=prod,company=1,user=2,action=count",
-    '{"size":0,"query":{"query_string":{"query":"?앹꽑"}}}',
+    '{"size":0,"query":{"query_string":{"query":"생선"}}}',
 )
 
 
@@ -86,20 +86,20 @@ def test_fetch_logs_maps_slowlog():
     assert e.timestamp    == datetime(2026, 8, 20, 2, 9, 5, tzinfo=KST)
     assert e.index_name   == "app_index_v1_20250721"
     assert e.node         == "node-a01"
-    assert e.took         == "32.4s"       # ?먮┛ ?뺣룄
-    assert e.total_hits   == "68 hits"     # 寃곌낵??
-    assert e.total_shards == 902           # 議고쉶???ㅻ뱶 ????int濡??⑤뒗??
-    assert "company=1"    in e.opaque_id   # company/user 洹??
-    assert "?앹꽑"          in e.query       # 荑쇰━ ?먮Ц
+    assert e.took         == "32.4s"       # 느린 정도
+    assert e.total_hits   == "68 hits"     # 결과량
+    assert e.total_shards == 902           # 조회된 샤드 수 — int로 남는다
+    assert "company=1"    in e.opaque_id   # company/user 귀속
+    assert "생선"          in e.query       # 쿼리 원문
 
 
 def test_slowlog_projects_named_subcolumns_instead_of_the_whole_source():
-    # _source瑜??듭㎏濡?媛?몄삤硫???媛吏媛 ?숈떆??源⑥쭊??
-    #  1) clickhouse-connect??JSON ??낆쓣 dict濡??뚮젮以??-> LogEntry.message??
-    #     str 怨꾩빟??源⑥?怨??꾨＼?꾪듃??dict repr???ㅻ┛??
-    #  2) host.mac/agent.ephemeral_id/host.os.kernel 媛숈? 吏꾨떒怨?臾닿????꾨뱶媛
-    #     ?됰떦 2.7KB 以?73%瑜?李⑥??쒕떎(?ㅼ륫).
-    # ?뚯뒪???붾툝? ?대뒓 履쎈룄 ?ы쁽?섏? 紐삵븯誘濡?SQL???ъ쁺??吏곸젒 寃利앺븳??
+    # _source를 통째로 가져오면 두 가지가 동시에 깨진다.
+    #  1) clickhouse-connect는 JSON 타입을 dict로 돌려준다 -> LogEntry.message의
+    #     str 계약이 깨지고 프롬프트에 dict repr이 실린다.
+    #  2) host.mac/agent.ephemeral_id/host.os.kernel 같은 진단과 무관한 필드가
+    #     행당 2.7KB 중 73%를 차지한다(실측).
+    # 테스트 더블은 어느 쪽도 재현하지 못하므로 SQL의 투영을 직접 검증한다.
     client  = _make_client()
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
@@ -110,14 +110,14 @@ def test_slowlog_projects_named_subcolumns_instead_of_the_whole_source():
     select = sql.lower().split("from", 1)[0]
     assert "_source.elasticsearch.slowlog.took" in select
     assert "_source.elasticsearch.index.name" in select
-    # ?듭㎏ ?ъ쁺(SELECT ... _source, ... / SELECT _source FROM)???⑥븘 ?덉쑝硫????쒕떎.
+    # 통째 투영(SELECT ... _source, ... / SELECT _source FROM)이 남아 있으면 안 된다.
     assert not re.search(r"[\s,]_source\s*(,|$)", select), select
 
 
 def test_slowlog_is_filtered_by_occurrence_time_not_ingestion_time():
-    # ch_ingested_at? ClickHouse ?곸옱 ?쒓컖?대떎. ?ㅼ륫 吏?곗씠 23~41珥덈씪
-    # 遺?寃쎄퀎瑜??섍린硫??몃━嫄곕? ?좊컻??洹?slowlog媛 議고쉶 援ш컙?먯꽌 鍮좎?怨?
-    # 遺??⑥쐞 踰꾪궥???쒓컖 ?쇰꺼???듭㎏濡?諛由곕떎.
+    # ch_ingested_at은 ClickHouse 적재 시각이다. 실측 지연이 23~41초라
+    # 분 경계를 넘기면 트리거를 유발한 그 slowlog가 조회 구간에서 빠지고,
+    # 분 단위 버킷의 시각 라벨도 통째로 밀린다.
     client  = _make_client()
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     adapter.fetch_logs(TR)
@@ -149,13 +149,13 @@ def test_fetch_logs_maps_query_log_success():
     assert e.host     == "host1"
     assert e.cmd      == "GET"
     assert e.project  == "proj"
-    assert e.run_time == Decimal("0.5")     # Decimal 洹몃?濡? 臾몄옄?댁씠 ?꾨땲??
+    assert e.run_time == Decimal("0.5")     # Decimal 그대로. 문자열이 아니다
     assert e.company  == "acme"
     assert e.user     == "alice"
 
 
 def test_query_log_keywords_become_a_hashable_tuple():
-    # ClickHouse??list瑜?以?? frozen dataclass?먯꽌 list ?꾨뱶???댁떆瑜?源⑤쑉由곕떎.
+    # ClickHouse는 list를 준다. frozen dataclass에서 list 필드는 해시를 깨뜨린다.
     client = _make_client(query_rows=[QUERY_ROW])
     adapter = ClickHouseLogAdapter(client, "slowlog_v2", "log", "es_node_metric", "es_node_log")
     e = [l for l in adapter.fetch_logs(TR) if l.source == "es_query_log"][0]
@@ -183,7 +183,7 @@ def test_fetch_logs_maps_node_metric():
     assert isinstance(e, NodeMetricEntry)
     assert e.node_name             == "node1"
     assert e.node_ip               == "10.0.0.1"
-    assert e.os_cpu_percent        == 30      # int濡??⑥븘 ?꾧퀎移?鍮꾧탳媛 媛?ν븯??
+    assert e.os_cpu_percent        == 30      # int로 남아 임계치 비교가 가능하다
     assert e.jvm_heap_used_percent == 70
     assert e.search_active         == 2
     assert e.write_active          == 1
@@ -295,4 +295,3 @@ def test_fetch_logs_sorted_descending():
     logs    = adapter.fetch_logs(TR)
     times   = [l.timestamp for l in logs]
     assert times == sorted(times, reverse=True)
-
