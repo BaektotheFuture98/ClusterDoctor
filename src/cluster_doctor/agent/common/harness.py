@@ -74,7 +74,7 @@ def restrict_harness(model: BaseChatModel) -> None:
     그래서 호출부는 Agent를 만들기 **전에** 이것을 한 번 부르면 된다.
 
     general-purpose SubAgent도 함께 끈다. 켜 두면 ``task``의 위임처가 둘이 되고,
-    모델이 그쪽을 고르는 순간 Triage도 Evidence 선별도 검증도 없이 만들어진
+    모델이 그쪽을 고르는 순간 분 단위 선별도 Evidence 선별도 검증도 없이 만들어진
     무언가가 리포트처럼 돌아온다. 예산은 예산대로 나가고 결과는 믿을 수 없다.
     """
     provider = get_model_provider(model)
@@ -140,7 +140,7 @@ class RefuseDelegationMiddleware(AgentMiddleware):
     """``task`` 호출을 전부 거절한다.
 
     Diagnosis SubAgent를 위한 것이다. 이 Agent는 **위임의 끝**이어야 한다 —
-    여기서 또 넘기면 Triage도 Evidence 선별도 Validator도 거치지 않은 무언가가
+    여기서 또 넘기면 분 단위 선별도 Evidence 선별도 Validator도 거치지 않은 무언가가
     리포트 재료로 섞여 들고, 그 비용은 이미 예약이 끝난 예산 안에서 나간다.
 
     평소에는 할 일이 없다. ``restrict_harness``가 general-purpose SubAgent를

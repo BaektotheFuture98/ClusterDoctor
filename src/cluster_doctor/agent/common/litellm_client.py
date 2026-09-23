@@ -173,7 +173,7 @@ def complete(
             # 토큰 → 재시도 포함 2,052,488 토큰, 한도 250,000의 821%).
             # litellm.completion()은 오류 종류별 재시도 정책을 받지 않으므로
             # 일시적 오류까지 함께 포기한다 — 분 하나가 실패해도 분석
-            # 전체는 살아남게 되어 있어(Triage의 failed=True) 감당된다.
+            # 전체는 살아남게 되어 있어(MinuteResult.failed=True) 감당된다.
             "num_retries": 0,
         }
         if response_format is not None:

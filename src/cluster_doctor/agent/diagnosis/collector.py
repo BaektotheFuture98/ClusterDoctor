@@ -60,9 +60,22 @@ from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import (
     AnalysisResult,
     run_analysis,
 )
-from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import group_into_buckets
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import (
+    MinuteBucket,
+    group_into_buckets,
+)
 
 _logger = logging.getLogger(__name__)
+
+
+def _shift_ids(records: list, start: int) -> list:
+    """record_id를 start부터 시작하도록 재번호 매긴다.
+
+    분마다 to_records()를 호출하면 각 분이 1부터 시작한다. reduce 단계가
+    모든 분의 레코드를 하나의 dict로 합치므로 분 경계를 넘어 유일해야 한다.
+    """
+    from dataclasses import replace
+    return [replace(r, record_id=start + i) for i, r in enumerate(records)]
 
 
 @dataclass
@@ -116,12 +129,16 @@ class EvidenceCollector:
         self._failed_minutes = set()
 
         collected.evidence.extend(self._collect_cluster_health(state))
-        entries = self._fetch_window_logs(window, state)
-        if entries:
-            state.record_log_observations(entries)
-            collected.evidence.extend(self._analyze_slowlog(entries, state))
-            collected.evidence.extend(self._analyze_query_log(entries, state))
-            collected.evidence.extend(self._node_metric_evidence(entries))
+        slowlog_buckets, query_log_buckets, metric_entries = self._fetch_and_bucket(
+            window, state
+        )
+        collected.evidence.extend(
+            self._run_analysis(slowlog.SPEC, slowlog_buckets, state).evidence
+        )
+        collected.evidence.extend(
+            self._run_analysis(query_log.SPEC, query_log_buckets, state).evidence
+        )
+        collected.evidence.extend(self._node_metric_evidence(metric_entries))
 
         master = self._collect_master(window, state)
         collected.master_evidence = master
@@ -152,52 +169,60 @@ class EvidenceCollector:
         return collected
 
     # ── 개별 소스 ────────────────────────────────────────────────────
-    def _fetch_window_logs(
+    def _fetch_and_bucket(
         self, window: TimeRange, state: AnalysisRunState
-    ) -> list[LogEntry]:
-        all_entries: list[LogEntry] = []
+    ) -> tuple[list[MinuteBucket], list[MinuteBucket], list[NodeMetricEntry]]:
+        """분마다 조회 → 즉시 datasource별 버킷으로 변환. LogEntry는 분 단위로 버린다.
+
+        반환값: (slowlog_buckets, query_log_buckets, metric_entries)
+        """
+        slowlog_buckets: list[MinuteBucket] = []
+        query_log_buckets: list[MinuteBucket] = []
+        metric_entries: list[NodeMetricEntry] = []
+        slow_next_id = 1
+        query_next_id = 1
         failed: list[str] = []
+
         for minute_range in split_by_minute(window):
             label = minute_range.start.strftime("%H:%M")
             try:
-                all_entries.extend(self._fetch_logs(minute_range))
+                entries = self._fetch_logs(minute_range)
             except Exception as exc:
                 _logger.warning("[collector] %s 로그 조회 실패: %s", label, exc)
                 failed.append(label)
+                continue
+
+            state.record_log_observations(entries)
+            minute = minute_range.start.replace(second=0, microsecond=0)
+
+            slow_items = [e for e in entries if isinstance(e, SlowlogEntry)]
+            if slow_items:
+                records = _shift_ids(slowlog.to_records(slow_items), slow_next_id)
+                slow_next_id += len(records)
+                slowlog_buckets.append(MinuteBucket(minute=minute, records=records))
+
+            query_items = [e for e in entries if isinstance(e, QueryLogEntry)]
+            if query_items:
+                records = _shift_ids(query_log.to_records(query_items), query_next_id)
+                query_next_id += len(records)
+                query_log_buckets.append(MinuteBucket(minute=minute, records=records))
+
+            metric_entries.extend(e for e in entries if isinstance(e, NodeMetricEntry))
+
         if failed:
-            if not all_entries:
+            if not slowlog_buckets and not query_log_buckets and not metric_entries:
                 state.degraded = True
             state.mark_gap(
                 f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({', '.join(failed)}분)"
             )
-        return all_entries
 
-    def _analyze_slowlog(
-        self, entries: list[LogEntry], state: AnalysisRunState
-    ) -> list[Evidence]:
-        items = [entry for entry in entries if isinstance(entry, SlowlogEntry)]
-        if not items:
-            return []
-        return self._run_analysis(
-            slowlog.SPEC, group_into_buckets(slowlog.to_records(items)), state
-        ).evidence
+        return slowlog_buckets, query_log_buckets, metric_entries
 
-    def _analyze_query_log(
-        self, entries: list[LogEntry], state: AnalysisRunState
-    ) -> list[Evidence]:
-        items = [entry for entry in entries if isinstance(entry, QueryLogEntry)]
-        if not items:
-            return []
-        return self._run_analysis(
-            query_log.SPEC, group_into_buckets(query_log.to_records(items)), state
-        ).evidence
-
-    def _node_metric_evidence(self, entries: list[LogEntry]) -> list[Evidence]:
-        items = [entry for entry in entries if isinstance(entry, NodeMetricEntry)]
-        if not items:
+    def _node_metric_evidence(self, entries: list[NodeMetricEntry]) -> list[Evidence]:
+        if not entries:
             return []
         return node_metric.to_evidence(
-            items,
+            entries,
             new_evidence_id=self._new_evidence_id,
             put_raw=self._put_raw,
             thresholds=self._metric_thresholds,

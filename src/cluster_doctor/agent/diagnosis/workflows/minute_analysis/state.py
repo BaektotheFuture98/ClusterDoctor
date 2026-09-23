@@ -18,7 +18,7 @@ from cluster_doctor.contracts.evidence import Evidence
 
 @dataclass(frozen=True)
 class RawRecord:
-    """Triage 대상 한 줄. datasource가 무엇이든 같은 모양이 된다.
+    """Analysis 대상 한 줄. datasource가 무엇이든 같은 모양이 된다.
 
     ``record_id``는 이 워크플로 실행 안에서만 유효한 번호다. Evidence에 붙는
     영구 id와 다르다 — 그쪽은 Incident 전체에서 유일해야 하므로 저장소가

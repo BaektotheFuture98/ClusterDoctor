@@ -25,7 +25,7 @@ from cluster_doctor.incident.models import Incident, IncidentStatus
 from cluster_doctor.incident.state import IncidentState
 from cluster_doctor.agent.common.harness import restrict_harness
 from cluster_doctor.agent.common.kst import format_kst
-from cluster_doctor.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.agent import (
     DiagnosisSeams,
     build_diagnosis_subagent,
 )

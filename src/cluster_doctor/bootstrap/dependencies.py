@@ -23,7 +23,7 @@ from cluster_doctor.agent.diagnosis.report_writer import (
     ReportWriter,
     build_structured_call,
 )
-from cluster_doctor.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.state import (
     DiagnosisSeams,
 )
 from cluster_doctor.agent.supervisor.agent import (
