@@ -1,6 +1,6 @@
 """datasource workflow가 골라낸 의미 있는 근거 하나.
 
-Triage가 요약 문자열만 돌려주면 Cross-source 분석이 그 문장을 다시 파싱해야
+분 단위 선별이 요약 문자열만 돌려주면 Cross-source 분석이 그 문장을 다시 파싱해야
 하고, 그 순간 시각·노드·수치가 모델이 옮겨 적은 값이 된다. 이 저장소가 두 번
 당한 실패가 그것이다(``contracts/observations.py`` 모듈 docstring). 그래서 근거는
 **필드로** 나른다.
