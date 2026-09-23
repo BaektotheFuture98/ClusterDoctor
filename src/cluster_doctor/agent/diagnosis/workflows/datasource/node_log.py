@@ -17,8 +17,8 @@ from datetime import datetime
 
 from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.agent.common.kst import KST
-from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.agent.diagnosis.workflows.triage.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import RawRecord
 
 # ES 로그 한 줄의 머리: [시각][레벨][로거]. 로거 이름은 오른쪽이 공백으로
 # 채워져 있다(``[o.e.c.c.C          ]``).
@@ -28,7 +28,7 @@ ES_LOG_LINE_RE = re.compile(
     r"\[([^\]]+)\]"
 )
 
-SPEC = TriageSpec(
+SPEC = AnalysisSpec(
     source=EvidenceSource.NODE_LOG,
     label="node log (문제 노드의 ES 로그)",
     what_matters=(
@@ -48,7 +48,7 @@ SPEC = TriageSpec(
 
 
 def to_records(text: str, *, fallback_time: datetime) -> list[RawRecord]:
-    """SSH로 읽은 로그 원문을 Triage 레코드로.
+    """SSH로 읽은 로그 원문을 선별 레코드로.
 
     ``fallback_time``은 첫 줄부터 시각을 뽑지 못했을 때 쓸 값이다. 보통 분석
     구간의 시작을 준다 — 시각이 없는 줄을 버리면 예외 본문이 통째로 사라지고,

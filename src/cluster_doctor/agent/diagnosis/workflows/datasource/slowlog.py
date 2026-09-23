@@ -1,4 +1,4 @@
-"""slowlog datasource의 Triage 설정과 레코드 변환.
+"""slowlog datasource의 선별 설정과 레코드 변환.
 
 slowlog는 임계치를 넘은 쿼리만 기록된다. 그래서 "느린 쿼리가 있다"는 것 자체는
 정보가 아니다 — 전부 느리다. 의미는 얼마나, 언제부터, 어느 노드·인덱스에
@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
-from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.agent.diagnosis.workflows.triage.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import RawRecord
 
-SPEC = TriageSpec(
+SPEC = AnalysisSpec(
     source=EvidenceSource.SLOWLOG,
     label="slowlog (느린 쿼리 로그)",
     what_matters=(
@@ -31,7 +31,7 @@ SPEC = TriageSpec(
 
 
 def to_records(entries: list[SlowlogEntry]) -> list[RawRecord]:
-    """slowlog 항목을 Triage 레코드로. 시간순 번호를 붙인다."""
+    """slowlog 항목을 선별 레코드로. 시간순 번호를 붙인다."""
     ordered = sorted(entries, key=lambda entry: entry.timestamp)
     return [
         RawRecord(

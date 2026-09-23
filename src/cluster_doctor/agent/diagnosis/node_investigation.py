@@ -7,7 +7,7 @@
     ResolvedNode
         ↓  (SSH — LLM 아님)
     Raw Node Logs
-        ↓  (Triage 그래프)
+        ↓  (분 단위 선별)
     Meaningful Node Evidence
 
 **조건부인 것이 요점이다.** 후보가 없으면 SSH에 붙지 않는다. 접속 하나가
@@ -39,7 +39,8 @@ from cluster_doctor.agent.common.log_format import (
 from cluster_doctor.agent.integrations.elasticsearch.resolved_node import ResolvedNode
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.agent.diagnosis.workflows.datasource import node_log
-from cluster_doctor.agent.diagnosis.workflows.triage.graph import run_triage
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import run_analysis
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import group_into_buckets
 
 _logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def investigate_nodes(
     new_evidence_id: Callable[[], str],
     put_raw: Callable[[str], str],
 ) -> NodeInvestigationResult:
-    """후보 노드를 풀고, 붙고, Triage한다.
+    """후보 노드를 풀고, 붙고, 분 단위 선별한다.
 
     **후보가 비어 있으면 아무것도 하지 않는다.** resolver도 fetcher도 부르지
     않는다 — 그것이 이 함수의 계약이다.
@@ -217,9 +218,9 @@ def investigate_nodes(
         records = node_log.to_records(
             truncate_raw(text), fallback_time=window.start
         )
-        triage = run_triage(
+        analysis = run_analysis(
             node_log.SPEC,
-            records,
+            group_into_buckets(records),
             call_llm,
             new_evidence_id=new_evidence_id,
             put_raw=put_raw,
@@ -233,12 +234,12 @@ def investigate_nodes(
                     "node_name": resolved.node_name or resolved.node_id,
                 }
             )
-            for item in triage.evidence
+            for item in analysis.evidence
         )
-        if triage.failed_minutes:
+        if analysis.failed_minutes:
             result.gaps.append(
-                f"{candidate.node_id} 노드 로그 중 {triage.failed_minutes}개 분의 "
-                f"선별이 실패했다(전체 {triage.analyzed_minutes}개 분)."
+                f"{candidate.node_id} 노드 로그 중 {analysis.failed_minutes}개 분의 "
+                f"선별이 실패했다(전체 {analysis.analyzed_minutes}개 분)."
             )
 
     return result

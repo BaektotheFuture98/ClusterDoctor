@@ -1,8 +1,8 @@
 """datasource workflow를 조율해 한 window의 Evidence를 모은다.
 
     fetch_logs (ClickHouse)          fetch_node_logs (ClickHouse)
-        ├── slowlog   ─ Triage ─┐        └── master log ─ Triage ─┐
-        ├── query log ─ Triage ─┤                 (실패 시 SSH 폴백)│
+        ├── slowlog   ─ 선별 ─┐        └── master log ─ 선별 ─┐
+        ├── query log ─ 선별 ─┤                (실패 시 SSH 폴백)│
         └── node metric ─ 규칙 ─┤                                  │
                                 ↓                                  ↓
                           Evidence[] ←───────────────────── Node Investigation
@@ -39,7 +39,7 @@ from cluster_doctor.agent.integrations.clickhouse.models import (
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.contracts.time_range import TimeRange
+from cluster_doctor.contracts.time_range import TimeRange, split_by_minute
 from cluster_doctor.agent.common.kst import KST
 from cluster_doctor.agent.diagnosis import node_investigation
 from cluster_doctor.agent.diagnosis.run_state import (
@@ -56,10 +56,11 @@ from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (
     DEFAULT_THRESHOLDS,
     NodeMetricThresholds,
 )
-from cluster_doctor.agent.diagnosis.workflows.triage.graph import (
-    TriageResult,
-    run_triage,
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import (
+    AnalysisResult,
+    run_analysis,
 )
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import group_into_buckets
 
 _logger = logging.getLogger(__name__)
 
@@ -118,8 +119,8 @@ class EvidenceCollector:
         entries = self._fetch_window_logs(window, state)
         if entries:
             state.record_log_observations(entries)
-            collected.evidence.extend(self._triage_slowlog(entries, state))
-            collected.evidence.extend(self._triage_query_log(entries, state))
+            collected.evidence.extend(self._analyze_slowlog(entries, state))
+            collected.evidence.extend(self._analyze_query_log(entries, state))
             collected.evidence.extend(self._node_metric_evidence(entries))
 
         master = self._collect_master(window, state)
@@ -154,33 +155,42 @@ class EvidenceCollector:
     def _fetch_window_logs(
         self, window: TimeRange, state: AnalysisRunState
     ) -> list[LogEntry]:
-        try:
-            return self._fetch_logs(window)
-        except Exception as exc:
-            _logger.exception("[collector] 로그 조회 실패")
-            # 주 소스가 통째로 실패한 것이다. 마스터 로그만으로도 리포트는
-            # 만들 수 있으므로 중단하지는 않되, 분석이 성립하지 않았다고 본다.
-            state.degraded = True
-            state.mark_gap(f"slowlog/쿼리 로그/노드 메트릭 조회 실패: {exc}")
-            return []
+        all_entries: list[LogEntry] = []
+        failed: list[str] = []
+        for minute_range in split_by_minute(window):
+            label = minute_range.start.strftime("%H:%M")
+            try:
+                all_entries.extend(self._fetch_logs(minute_range))
+            except Exception as exc:
+                _logger.warning("[collector] %s 로그 조회 실패: %s", label, exc)
+                failed.append(label)
+        if failed:
+            if not all_entries:
+                state.degraded = True
+            state.mark_gap(
+                f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({', '.join(failed)}분)"
+            )
+        return all_entries
 
-    def _triage_slowlog(
+    def _analyze_slowlog(
         self, entries: list[LogEntry], state: AnalysisRunState
     ) -> list[Evidence]:
         items = [entry for entry in entries if isinstance(entry, SlowlogEntry)]
         if not items:
             return []
-        result = self._run_triage(slowlog.SPEC, slowlog.to_records(items), state)
-        return result.evidence
+        return self._run_analysis(
+            slowlog.SPEC, group_into_buckets(slowlog.to_records(items)), state
+        ).evidence
 
-    def _triage_query_log(
+    def _analyze_query_log(
         self, entries: list[LogEntry], state: AnalysisRunState
     ) -> list[Evidence]:
         items = [entry for entry in entries if isinstance(entry, QueryLogEntry)]
         if not items:
             return []
-        result = self._run_triage(query_log.SPEC, query_log.to_records(items), state)
-        return result.evidence
+        return self._run_analysis(
+            query_log.SPEC, group_into_buckets(query_log.to_records(items)), state
+        ).evidence
 
     def _node_metric_evidence(self, entries: list[LogEntry]) -> list[Evidence]:
         items = [entry for entry in entries if isinstance(entry, NodeMetricEntry)]
@@ -193,20 +203,20 @@ class EvidenceCollector:
             thresholds=self._metric_thresholds,
         )
 
-    def _run_triage(self, spec, records, state: AnalysisRunState) -> TriageResult:
-        """Triage 하나를 돌리고 실패를 gap으로 남긴다."""
+    def _run_analysis(self, spec, buckets, state: AnalysisRunState) -> AnalysisResult:
+        """분 단위 선별 하나를 돌리고 실패를 gap으로 남긴다."""
         try:
-            result = run_triage(
+            result = run_analysis(
                 spec,
-                records,
+                buckets,
                 self._call_llm,
                 new_evidence_id=self._new_evidence_id,
                 put_raw=self._put_raw,
             )
         except Exception as exc:
-            _logger.exception("[collector] %s triage 오류", spec.label)
+            _logger.exception("[collector] %s 선별 오류", spec.label)
             state.mark_gap(f"{spec.label} 선별이 오류로 중단됐다: {exc}")
-            return TriageResult(evidence=[])
+            return AnalysisResult(evidence=[])
 
         self._failed_minutes.update(result.failed_minutes_at)
         if result.fully_failed:
@@ -283,7 +293,7 @@ class EvidenceCollector:
     def _collect_master(
         self, window: TimeRange, state: AnalysisRunState
     ) -> list[Evidence]:
-        """마스터 로그를 모아 Triage한다. ClickHouse를 먼저, 실패하면 SSH.
+        """마스터 로그를 모아 분 단위 선별한다. ClickHouse를 먼저, 실패하면 SSH.
 
         0건에서는 SSH로 내려가지 않는다. 로거를 좁혀 뒀으므로 건강한 창에서
         0건은 정상이고, 그때마다 내려가면 분석 호출마다 ES 왕복 + 새 SSH 접속을
@@ -316,7 +326,9 @@ class EvidenceCollector:
 
         if not records:
             return []
-        return self._run_triage(master_log.SPEC, records, state).evidence
+        return self._run_analysis(
+            master_log.SPEC, group_into_buckets(records), state
+        ).evidence
 
     def _master_via_ssh(self, window: TimeRange, state: AnalysisRunState) -> str:
         try:

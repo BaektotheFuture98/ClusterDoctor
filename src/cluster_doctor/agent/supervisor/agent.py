@@ -7,7 +7,7 @@ application 계층은 ``deepagents``도 ``langchain``도 모른다. 아는 것�
 ``IncidentState``를 클로저로 쥐기 때문이다 — 프로세스 전역에 하나를 만들어
 두고 incident_id를 인자로 받게 하면, 모델이 그 인자를 채우게 되고 남의
 Incident 예산을 쓰는 길이 열린다. 조립 비용은 LLM 왕복 수십 번에 비하면
-무시할 수 있다(``workflows/triage/graph.py``가 같은 판단을 이미 적어 뒀다).
+무시할 수 있다(``workflows/minute_analysis/graph.py``가 같은 판단을 이미 적어 뒀다).
 """
 
 from __future__ import annotations

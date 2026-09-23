@@ -1,4 +1,4 @@
-"""Triage 그래프 안을 흐르는 값들.
+"""분 단위 선별 그래프를 흐르는 값들.
 
 ``RawRecord``가 이 설계의 축이다. 모델은 **번호만** 돌려주고 시각·노드·원문은
 코드가 이 레코드에서 옮긴다. 모델이 로그 줄을 옮겨 적게 하면 틀린다는 것을 이
@@ -75,7 +75,7 @@ class MinuteResult:
     record_count: int = 0
 
 
-class TriageState(TypedDict):
+class AnalysisState(TypedDict):
     """노드 사이를 오가는 상태.
 
     ``minute_results``에 ``operator.add``를 붙인 이유: 분별 노드는 팬아웃으로
@@ -83,10 +83,18 @@ class TriageState(TypedDict):
     reducer가 없으면 마지막에 끝난 노드가 나머지를 덮어쓴다.
     """
 
-    records: list[RawRecord]
     buckets: list[MinuteBucket]
     minute_results: Annotated[list[MinuteResult], operator.add]
     evidence: list[Evidence]
     # Reduce가 LLM 없이 끝났는가. 근거는 남았지만 "반복·정상 이벤트 제거"가
     # 수행되지 않았다는 뜻이라 호출자가 gap으로 남긴다.
     reduce_degraded: bool
+
+
+def group_into_buckets(records: list[RawRecord]) -> list[MinuteBucket]:
+    """RawRecord 목록을 분(minute) 단위 버킷으로 묶는다. 빈 분은 만들지 않는다."""
+    grouped: dict[datetime, list[RawRecord]] = {}
+    for record in records:
+        minute = record.event_time.replace(second=0, microsecond=0)
+        grouped.setdefault(minute, []).append(record)
+    return [MinuteBucket(minute=m, records=grouped[m]) for m in sorted(grouped)]
