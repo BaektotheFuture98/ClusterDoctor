@@ -12,14 +12,14 @@ datasource만 보고 내려진 것이 되며, 뒤 단계는 이미 내려진 결
 
 from __future__ import annotations
 
-from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.agent.diagnosis.workflows.triage.state import (
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import (
     MinuteBucket,
     MinuteResult,
     RawRecord,
 )
 
-_MAP_HEADER = """너는 Elasticsearch 장애 분석 파이프라인의 로그 Triage 단계다.
+_MAP_HEADER = """너는 Elasticsearch 장애 분석 파이프라인의 로그 선별 단계다.
 
 지금 하는 일은 **선별**이다. 원인을 추론하지 않는다. 결론을 쓰지 않는다.
 아래 1분치 로그에서 후속 장애 분석에 의미가 있을 줄의 번호만 고른다.
@@ -38,7 +38,7 @@ _MAP_RULES = """
 """
 
 
-def build_map_prompt(spec: TriageSpec, bucket: MinuteBucket) -> str:
+def build_map_prompt(spec: AnalysisSpec, bucket: MinuteBucket) -> str:
     """한 분의 레코드에서 후보를 고르게 하는 프롬프트."""
     lines = "\n".join(record.as_prompt_line() for record in bucket.records)
     return "\n".join(
@@ -60,7 +60,7 @@ def build_map_prompt(spec: TriageSpec, bucket: MinuteBucket) -> str:
     )
 
 
-_REDUCE_HEADER = """너는 Elasticsearch 장애 분석 파이프라인의 로그 Triage 단계다.
+_REDUCE_HEADER = """너는 Elasticsearch 장애 분석 파이프라인의 로그 선별 단계다.
 
 분 단위로 고른 후보들이 아래에 모여 있다. 이제 **전체 구간을 함께 보고**
 정말로 남길 것만 고른다.
@@ -91,7 +91,7 @@ _REDUCE_RULES = """
 
 
 def build_reduce_prompt(
-    spec: TriageSpec,
+    spec: AnalysisSpec,
     results: list[MinuteResult],
     records: dict[int, RawRecord],
     *,

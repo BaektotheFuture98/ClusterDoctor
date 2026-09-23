@@ -1,9 +1,9 @@
-"""datasource 하나를 Triage 그래프에 물리는 방법.
+"""datasource 하나를 분 단위 선별 그래프에 물리는 방법.
 
-그래프는 slowlog도 마스터 로그도 모른다. 아는 것은 "레코드 목록을 받아 분으로
-쪼개고, 분마다 골라내고, 전체를 다시 훑어 남긴다"는 절차뿐이다. datasource마다
-다른 것 — 무엇이 의미 있는 이벤트인가, 한 줄을 어떻게 그리는가 — 은 전부
-``TriageSpec``에 담아 주입한다.
+그래프는 slowlog도 마스터 로그도 모른다. 아는 것은 "버킷 목록을 받아 분마다
+골라내고, 전체를 다시 훑어 남긴다"는 절차뿐이다. datasource마다 다른 것 —
+무엇이 의미 있는 이벤트인가, 한 줄을 어떻게 그리는가 — 은 전부
+``AnalysisSpec``에 담아 주입한다.
 
 Strategy 패턴을 쓰는 자리가 여기인 이유: datasource는 실제로 늘어난다(지금
 넷, 앞으로 더). 절차가 같고 판단 기준만 다르다면 그것이 바로 전략이다.
@@ -18,8 +18,8 @@ from cluster_doctor.contracts.evidence import EvidenceSource
 
 
 @dataclass(frozen=True)
-class TriageSpec:
-    """한 datasource의 Triage 설정.
+class AnalysisSpec:
+    """한 datasource의 분 단위 선별 설정.
 
     ``what_matters``와 ``what_is_noise``를 나눠 받는 이유: 모델에게 "중요한 것을
     고르라"만 주면 전부 중요해진다. 실측에서 마스터 로그 INFO 10건 중 진단에

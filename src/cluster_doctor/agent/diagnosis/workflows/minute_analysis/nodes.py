@@ -1,4 +1,4 @@
-"""Triage 그래프의 노드.
+"""분 단위 선별 그래프의 노드.
 
 노드는 LLM 호출 방법을 모른다. provider/model/api_key가 이미 묶인 호출자를
 받아 쓴다 — 덕분에 테스트가 litellm을 몽키패치하지 않고 선별 로직만 검증할 수
@@ -13,23 +13,22 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.agent.diagnosis.workflows.triage.prompt import (
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.prompt import (
     build_map_prompt,
     build_reduce_prompt,
 )
-from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.agent.diagnosis.workflows.triage.state import (
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import (
+    AnalysisState,
     MinuteBucket,
     MinuteResult,
     RawRecord,
     SelectedRecord,
-    TriageState,
 )
 
 _logger = logging.getLogger(__name__)
@@ -66,34 +65,7 @@ class ReduceOutput(BaseModel):
     keep: list[ReduceSelection] = Field(default_factory=list)
 
 
-def make_chunk_by_minute() -> Callable[[TriageState], dict]:
-    """레코드를 1분 버킷으로 나눈다. 빈 분은 만들지 않는다.
-
-    로그가 하나도 없는 분에 LLM을 부르는 것은 순수한 낭비다 — 새벽처럼 한산한
-    시간대에는 대부분의 구간이 비어 있다.
-    """
-
-    def chunk_by_minute(state: TriageState) -> dict:
-        grouped: dict[datetime, list[RawRecord]] = {}
-        for record in state["records"]:
-            minute = record.event_time.replace(second=0, microsecond=0)
-            grouped.setdefault(minute, []).append(record)
-
-        buckets = [
-            MinuteBucket(minute=minute, records=grouped[minute])
-            for minute in sorted(grouped)
-        ]
-        _logger.info(
-            "[triage] %d개 레코드를 비어 있지 않은 분 %d개로 나눴다",
-            len(state["records"]),
-            len(buckets),
-        )
-        return {"buckets": buckets}
-
-    return chunk_by_minute
-
-
-def make_map_minute(spec: TriageSpec, call_llm: StructuredLlmCaller):
+def make_map_minute(spec: AnalysisSpec, call_llm: StructuredLlmCaller):
     """한 분에서 후보를 고르는 노드를 만든다.
 
     실패해도 예외를 올리지 않고 ``failed=True`` 결과를 돌려준다. 한 분이 rate
@@ -111,7 +83,7 @@ def make_map_minute(spec: TriageSpec, call_llm: StructuredLlmCaller):
                 response_format=MapOutput,
             )
         except (LlmApiError, LlmResponseError) as exc:
-            _logger.warning("[triage] %s %s 선별 실패: %s", spec.label, label, exc)
+            _logger.warning("[minute_analysis] %s %s 선별 실패: %s", spec.label, label, exc)
             return {
                 "minute_results": [
                     MinuteResult(
@@ -135,7 +107,7 @@ def make_map_minute(spec: TriageSpec, call_llm: StructuredLlmCaller):
             if item.get("record_id") in valid_ids
         ]
         _logger.info(
-            "[triage] %s %s → %d/%d줄 선별",
+            "[minute_analysis] %s %s → %d/%d줄 선별",
             spec.label,
             label,
             len(selected),
@@ -155,7 +127,7 @@ def make_map_minute(spec: TriageSpec, call_llm: StructuredLlmCaller):
 
 
 def make_reduce_to_evidence(
-    spec: TriageSpec,
+    spec: AnalysisSpec,
     call_llm: StructuredLlmCaller,
     *,
     new_evidence_id: EvidenceIdFactory,
@@ -171,8 +143,8 @@ def make_reduce_to_evidence(
     gap으로 남긴다 — 조용히 넘기면 걸러지지 않은 목록이 걸러진 것처럼 쓰인다.
     """
 
-    def reduce(state: TriageState) -> dict:
-        records = {record.record_id: record for record in state["records"]}
+    def reduce(state: AnalysisState) -> dict:
+        records = {r.record_id: r for b in state["buckets"] for r in b.records}
         results = state["minute_results"]
         selections = {
             item.record_id: item
@@ -194,7 +166,7 @@ def make_reduce_to_evidence(
                 response_format=ReduceOutput,
             )
         except (LlmApiError, LlmResponseError) as exc:
-            _logger.warning("[triage] %s reduce 실패: %s", spec.label, exc)
+            _logger.warning("[minute_analysis] %s reduce 실패: %s", spec.label, exc)
             degraded = True
         else:
             chosen = [
@@ -243,7 +215,7 @@ def make_reduce_to_evidence(
 
         evidence.sort(key=lambda item: item.event_time)
         _logger.info(
-            "[triage] %s → Evidence %d건 (후보 %d건, degraded=%s)",
+            "[minute_analysis] %s → Evidence %d건 (후보 %d건, degraded=%s)",
             spec.label,
             len(evidence),
             len(selections),
@@ -264,7 +236,7 @@ def _parse_items(text: str, key: str) -> list[dict]:
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, TypeError):
-        _logger.warning("[triage] 응답이 JSON이 아니다 — 선별을 비운다")
+        _logger.warning("[minute_analysis] 응답이 JSON이 아니다 — 선별을 비운다")
         return []
     if not isinstance(data, dict):
         return []

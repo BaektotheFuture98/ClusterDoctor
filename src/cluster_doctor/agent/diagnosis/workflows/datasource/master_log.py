@@ -13,8 +13,8 @@ from __future__ import annotations
 from cluster_doctor.contracts.evidence import EvidenceSource
 from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry
 from cluster_doctor.agent.common.log_format import format_log_line
-from cluster_doctor.agent.diagnosis.workflows.triage.spec import TriageSpec
-from cluster_doctor.agent.diagnosis.workflows.triage.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import RawRecord
 
 # 조회 조건. 레벨만으로는 안 된다 — 실측(packetbeat.loki_logs)에서 INFO 10건 중
 # 진단에 필요한 것은 AllocationService 1건이었고 나머지 9건은 ML 유지보수·만료
@@ -37,7 +37,7 @@ MASTER_EVENT_LOGGERS = (
 # 로거를 좁혔으므로 300은 과하다. 사고 중 비용 천장을 낮게 유지한다.
 MASTER_LOG_MAX_LINES = 300
 
-SPEC = TriageSpec(
+SPEC = AnalysisSpec(
     source=EvidenceSource.MASTER_LOG,
     label="master log (마스터 노드 ES 로그)",
     what_matters=(
@@ -59,7 +59,7 @@ SPEC = TriageSpec(
 
 
 def to_records(entries: list[NodeLogEntry]) -> list[RawRecord]:
-    """ClickHouse에서 온 마스터 로그를 Triage 레코드로."""
+    """ClickHouse에서 온 마스터 로그를 선별 레코드로."""
     ordered = sorted(entries, key=lambda entry: entry.timestamp)
     return [
         RawRecord(

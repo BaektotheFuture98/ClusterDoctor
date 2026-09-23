@@ -119,6 +119,20 @@ def is_covered(
     return not subtract_spans(target, covered)
 
 
+_ONE_MINUTE = timedelta(minutes=1)
+
+
+def split_by_minute(window: TimeRange) -> list[TimeRange]:
+    """window를 1분 단위 조각으로 나눈다. 최대 10개(MAX_TIME_RANGE_DURATION 기준)."""
+    pieces: list[TimeRange] = []
+    cursor = window.start
+    while cursor < window.end:
+        chunk_end = min(cursor + _ONE_MINUTE, window.end)
+        pieces.append(TimeRange(start=cursor, end=chunk_end))
+        cursor = chunk_end
+    return pieces
+
+
 def split_span(start: datetime, end: datetime) -> list[TimeRange]:
     """긴 구간을 ``MAX_TIME_RANGE_DURATION`` 이하 조각으로 나눈다.
 

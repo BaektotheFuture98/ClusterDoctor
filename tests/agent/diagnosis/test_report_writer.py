@@ -33,7 +33,7 @@ from cluster_doctor.agent.diagnosis.schema import DraftReport
 from cluster_doctor.agent.diagnosis.subagent import (
     DiagnosisSeams,
 )
-from cluster_doctor.agent.diagnosis.workflows.triage.nodes import (
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.nodes import (
     MapOutput,
     ReduceOutput,
 )
