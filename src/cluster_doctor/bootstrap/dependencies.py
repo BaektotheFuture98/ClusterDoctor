@@ -16,21 +16,10 @@ from cluster_doctor.adapters.inbound.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
 from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
 from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
-from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import (
-    require_supported_provider,
-)
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import (
-    ReportWriter,
-    build_structured_call,
-)
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import (
-    DiagnosisSeams,
-)
-from cluster_doctor.adapters.outbound.deepagents.adapter import (
-    DeepAgentIncidentAnalyzer,
-)
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
-    NodeMetricThresholds,
+from cluster_doctor.application.ports.slowlog_handler import SlowlogHandler
+from cluster_doctor.adapters.outbound.deepagents import (
+    DeepAgentsConfig,
+    build_deepagents_incident_analyzer,
 )
 from cluster_doctor.adapters.outbound.clickhouse.reader import (
     ClickHouseLogAdapter,
@@ -128,10 +117,6 @@ def _build_diagnose_incident(s: Settings) -> DiagnoseIncident:
     if s is None:
         s = get_settings()
 
-    # provider를 조립 시점에 검증한다. 잘못된 값을 첫 호출까지 끌고 가면
-    # Incident 한 건을 통째로 날린 뒤에야 오타를 알게 된다.
-    provider = require_supported_provider(s.llm_provider)
-
     log_repository = _get_log_repository()
     state_repo = _get_state_repository()
     store = _get_artifact_store()
@@ -140,44 +125,24 @@ def _build_diagnose_incident(s: Settings) -> DiagnoseIncident:
         state_repo.discard(incident_id)
         store.discard(incident_id)
 
-    # provider별 키·모델을 직접 읽지 않는다. llm_api_key/llm_model이
-    # LLM_PROVIDER에 따라 고른 값을 돌려주므로 여기서 분기할 일이 없다.
-    #
-    # 누구에게 묻는가는 여기서 한 번만 정한다. 아래 계층(수집기, 워크플로 노드,
-    # ReportWriter)은 호출자 하나만 받고 provider를 모른다.
-    call_llm = build_structured_call(
-        provider=provider, model=s.llm_model, api_key=s.llm_api_key
-    )
-
-    # 진단 SubAgent가 도구로 내놓는 조각들. 구체 타입을 고르는 일은 조립부의
-    # 몫이므로 여기서 이름을 부른다 — SubAgent는 받은 조각을 쓰기만 한다.
-    seams = DiagnosisSeams(
-        store=store,
-        fetch_logs=log_repository.fetch_logs,
-        fetch_node_logs=log_repository.fetch_node_logs,
-        cluster=_get_cluster_repository(),
+    incident_analyzer = build_deepagents_incident_analyzer(
+        config=DeepAgentsConfig(
+            provider=s.llm_provider,
+            model=s.llm_model,
+            api_key=s.llm_api_key,
+            heap_warn_percent=s.node_heap_warn_percent,
+            queue_warn=s.node_queue_warn,
+        ),
+        state_repository=state_repo,
+        artifact_store=store,
+        log_repository=log_repository,
+        cluster_repository=_get_cluster_repository(),
         node_resolver=_get_node_resolver(),
         node_log_fetcher=SshNodeLogFetcher(
             ssh_user=s.ssh_user,
             ssh_password=s.ssh_password,
             ssh_port=s.ssh_port,
         ),
-        call_llm=call_llm,
-        report_writer=ReportWriter(store=store, call_llm=call_llm),
-        metric_thresholds=NodeMetricThresholds(
-            heap_warn_percent=s.node_heap_warn_percent,
-            queue_warn=s.node_queue_warn,
-        ),
-    )
-
-    # Main DeepAgent. 진단 SubAgent는 이 어댑터가 Incident마다 등록한다 —
-    # 도구와 Guardrail이 그 Incident의 State를 쥐어야 하기 때문이다.
-    incident_analyzer = DeepAgentIncidentAnalyzer(
-        provider=provider,
-        model=s.llm_model,
-        api_key=s.llm_api_key,
-        seams=seams,
-        state_repository=state_repo,
     )
 
     return DiagnoseIncident(
@@ -208,7 +173,7 @@ def build_manual_diagnosis(s: Settings | None = None) -> RunManualDiagnosis:
     )
 
 def build_kafka_consumer(
-    intake: SlowlogIntake, s: Settings | None = None
+    intake: SlowlogHandler, s: Settings | None = None
 ) -> KafkaConsumerAdapter:
     if s is None:
         s = get_settings()

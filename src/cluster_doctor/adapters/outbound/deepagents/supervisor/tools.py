@@ -26,7 +26,7 @@ from cluster_doctor.application.ports.artifact_store import ArtifactStore
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.domain.incident.report_merge import finalize_incident_report
+from cluster_doctor.application.report_finalization import finalize_incident_report
 from cluster_doctor.domain.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYSIS_WINDOW_MINUTES,
@@ -255,7 +255,7 @@ def make_list_candidate_windows_tool(*, state: IncidentState) -> BaseTool:
 
     @tool("list_candidate_windows", description=_CANDIDATES_DESCRIPTION)
     def list_candidate_windows(limit: int = 4) -> str:
-        # ``incident_orchestrator._candidate_windows``와 같은 재료를 쓴다.
+        # 이미 분석한 구간과 남은 예산으로 후보를 계산한다.
         # 제안(pending)과 미해결 구간(unresolved gaps)을 합쳐 이미 분석한 것을
         # 뺀다. 빼는 일은 ``plan_new_windows``가 한다.
         proposed: list[TimeRange] = list(state.pending_windows)

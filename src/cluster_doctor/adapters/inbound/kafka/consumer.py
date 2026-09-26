@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from aiokafka import AIOKafkaConsumer
 
-from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
+from cluster_doctor.application.ports.slowlog_handler import SlowlogHandler
 from cluster_doctor.domain.incident.models import SlowlogTrigger
 
 _logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ _logger = logging.getLogger(__name__)
 class KafkaConsumerAdapter:
     def __init__(
         self,
-        intake: SlowlogIntake,
+        intake: SlowlogHandler,
         bootstrap_servers: str,
         topic: str,
         group_id: str,
