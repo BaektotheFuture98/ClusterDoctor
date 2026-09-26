@@ -12,7 +12,7 @@ from cluster_doctor.domain.incident.window_planner import (
 )
 from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.diagnosis.time_range import TimeRange, split_span
-from cluster_doctor.agent.diagnosis.schema import (
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.schema import (
     DraftReport,
     WindowSuggestion,
 )
