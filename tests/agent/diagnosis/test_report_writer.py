@@ -30,7 +30,7 @@ from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )
 from cluster_doctor.agent.diagnosis.schema import DraftReport
-from cluster_doctor.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.state import (
     DiagnosisSeams,
 )
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.nodes import (

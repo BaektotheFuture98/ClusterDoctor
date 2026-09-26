@@ -21,7 +21,7 @@ from cluster_doctor.contracts.report import (
 from cluster_doctor.contracts.time_range import TimeRange
 from cluster_doctor.agent.common import harness as harness_module
 from cluster_doctor.agent.common.kst import format_kst
-from cluster_doctor.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.agent import (
     build_diagnosis_subagent,
 )
 from cluster_doctor.agent.supervisor.state import (
