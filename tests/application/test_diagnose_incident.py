@@ -15,7 +15,7 @@ from cluster_doctor.storage.in_memory_incident_state_store import (
 TS = datetime(2026, 9, 26, 10, 0, tzinfo=UTC)
 
 
-def command() -> StartIncident:
+def command(*, settling_wait_seconds: float = 0.01) -> StartIncident:
     incident = Incident(
         incident_id="inc-1",
         cluster="es-prod",
@@ -23,7 +23,7 @@ def command() -> StartIncident:
         kafka_receive_time=TS,
         trigger_type=TriggerType.SLOWLOG,
     )
-    return StartIncident(incident, TS, TS, settling_wait_seconds=0.01)
+    return StartIncident(incident, TS, TS, settling_wait_seconds=settling_wait_seconds)
 
 
 class RecordingAnalyzer:
@@ -145,6 +145,24 @@ async def test_시간초과는_마지막_저장상태를_FAILED로_강제_종료
     assert outcome.analysis_failed is True
     assert "상한" in outcome.reason
     assert len(notifier.calls) == 1
+
+
+async def test_정착에_전체_시간_예산을_썼으면_analyzer를_부르지_않는다():
+    repository = InMemoryIncidentStateRepository()
+    analyzer = RecordingAnalyzer(repository)
+    notifier = RecordingNotifier()
+
+    outcome = await diagnosis_for(
+        analyzer,
+        repository,
+        notifier,
+        incident_timeout_seconds=0.01,
+    ).handle(command(settling_wait_seconds=0.01))
+
+    assert analyzer.incidents == []
+    assert outcome.status is IncidentStatus.FAILED
+    assert outcome.analysis_failed is True
+    assert "상한" in outcome.reason
 
 
 async def test_취소는_analyzer를_부르지_않고_CANCELLED로_닫고_전달한다():

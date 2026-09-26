@@ -11,6 +11,10 @@ from datetime import UTC, datetime
 
 from cluster_doctor.application.commands import StartIncident
 from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
+from cluster_doctor.domain.incident.guardrails import (
+    MAX_SINGLE_WAIT_SECONDS,
+    MAX_TOTAL_WAIT_SECONDS,
+)
 from cluster_doctor.domain.incident.inflow import InflowTracker
 from cluster_doctor.domain.incident.models import Incident, SlowlogTrigger, TriggerType
 
@@ -32,12 +36,14 @@ class SlowlogIntake:
         cluster: str = "elasticsearch",
         micro_batch_seconds: float = 10.0,
         quiet_period_seconds: float = 15.0,
+        max_settling_wait_seconds: float = MAX_TOTAL_WAIT_SECONDS,
         max_pending: int = 0,
     ) -> None:
         self._diagnose = diagnose_incident
         self._cluster = cluster
         self._micro_batch_seconds = micro_batch_seconds
         self._quiet_period_seconds = quiet_period_seconds
+        self._max_settling_wait_seconds = max_settling_wait_seconds
         self._pending: queue.Queue[_Arrival] = queue.Queue(maxsize=max_pending)
         self._task: asyncio.Task | None = None
         self._running = False
@@ -99,8 +105,12 @@ class SlowlogIntake:
     async def _settle(self, first: _Arrival) -> InflowTracker:
         tracker = InflowTracker.from_trigger(first.trigger.timestamp, first.received_at)
         while not tracker.settled:
-            await asyncio.sleep(self._quiet_period_seconds)
-            tracker.total_wait_seconds += self._quiet_period_seconds
+            remaining = self._max_settling_wait_seconds - tracker.total_wait_seconds
+            if remaining <= 0:
+                break
+            wait = min(self._quiet_period_seconds, MAX_SINGLE_WAIT_SECONDS, remaining)
+            await asyncio.sleep(wait)
+            tracker.total_wait_seconds += wait
             tracker.observe(
                 [arrival.trigger for arrival in self._drain_pending()],
                 now=datetime.now(UTC),
