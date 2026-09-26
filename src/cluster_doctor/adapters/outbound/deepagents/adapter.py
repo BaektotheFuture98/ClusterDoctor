@@ -129,7 +129,7 @@ def build_deepagents_incident_analyzer(
             queue_warn=config.queue_warn,
         ),
     )
-    return DeepAgentIncidentAnalyzer(
+    return _DeepAgentIncidentAnalyzer(
         provider=provider,
         model=config.model,
         api_key=config.api_key,
@@ -138,7 +138,7 @@ def build_deepagents_incident_analyzer(
     )
 
 
-class DeepAgentIncidentAnalyzer:
+class _DeepAgentIncidentAnalyzer:
     """Main DeepAgent 구현. ``IncidentAnalyzer`` 포트를 만족한다."""
 
     def __init__(

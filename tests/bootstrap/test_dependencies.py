@@ -6,7 +6,7 @@ Supervisor와 진단 Agent를 **둘 다** 직접 들고 있었다. 지금 Runner
 
     SlowlogTriggerService
         └ IncidentRunner
-            └ DeepAgentIncidentAnalyzer   (Main DeepAgent)
+            └ _DeepAgentIncidentAnalyzer  (Main DeepAgent implementation)
                 └ DiagnosisSeams         (진단 SubAgent가 도구로 내놓는 조각들)
 
 이 파일이 지키는 것은 그 사슬이 실제로 이어져 있는가와, ``LLM_PROVIDER``가
@@ -29,7 +29,7 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import (
     DiagnosisSeams,
 )
 from cluster_doctor.adapters.outbound.deepagents.adapter import (
-    DeepAgentIncidentAnalyzer,
+    _DeepAgentIncidentAnalyzer,
 )
 
 REQUIRED_ENV = {
@@ -174,7 +174,7 @@ def test_build_slowlog_intake_wires_the_graph_and_preserves_backpressure(monkeyp
 
         assert isinstance(intake, SlowlogIntake)
         # Runner가 아는 것은 포트 하나뿐이다. 진단 Agent는 그 뒤에 있다.
-        assert isinstance(intake._diagnose._analyzer, DeepAgentIncidentAnalyzer)
+        assert isinstance(intake._diagnose._analyzer, _DeepAgentIncidentAnalyzer)
         assert isinstance(intake._diagnose._analyzer._seams, DiagnosisSeams)
 
         # SubAgent는 raw Elasticsearch 클라이언트가 아니라 포트를 받아야 한다.
