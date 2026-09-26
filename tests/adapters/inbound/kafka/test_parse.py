@@ -9,7 +9,7 @@ naive 값에 대해서는 호스트 로컬 시간대를 가정해 구간을 9시
 
 import pytest
 
-from cluster_doctor.ingestion.kafka.consumer import _parse_message
+from cluster_doctor.adapters.inbound.kafka.consumer import _parse_message
 
 KST_ISO = "2026-08-28T10:20:15.123000+09:00"
 UTC_ISO = "2026-08-28T01:20:15.123000Z"

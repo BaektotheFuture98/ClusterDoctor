@@ -8,7 +8,7 @@
 from unittest.mock import MagicMock
 
 from cluster_doctor.application.ports.cluster_repository import ClusterRepository
-from cluster_doctor.agent.integrations.elasticsearch.cluster_adapter import (
+from cluster_doctor.adapters.outbound.elasticsearch.cluster_adapter import (
     ElasticsearchClusterAdapter,
 )
 

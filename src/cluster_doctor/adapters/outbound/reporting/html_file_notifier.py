@@ -1,4 +1,4 @@
-"""진단 리포트를 HTML 파일로 남기는 Notifier 구현.
+"""진단 리포트를 HTML 파일로 남기는 ReportPublisher 구현.
 
 리포트는 LLM이 쓴 **평문**이다(프롬프트가 마크다운을 금지한다). 형식은
 "1. 섹션 제목" + ``──`` 구분선 + ``•`` 불렛 + 두 칸 들여쓴 ``-`` 세부로 정해져
@@ -35,8 +35,8 @@ from cluster_doctor.domain.diagnosis.observations import (
     Observations,
     observed_severity,
 )
-from cluster_doctor.application.ports.report_publisher import Notifier
-from cluster_doctor.reporting.report_text import (
+from cluster_doctor.application.ports.report_publisher import ReportPublisher
+from cluster_doctor.adapters.outbound.reporting.report_text import (
     SEVERITY_PREFIX,
     candidate_details,
     candidate_line,
@@ -74,7 +74,7 @@ _RAW_HINTS = ('{"', '":', "took=", "node=", "[SLOWLOG]", "[METRIC]")
 _FILENAME_FORMAT = "report-%Y%m%d-%H%M%S"
 
 
-class HtmlFileNotifier(Notifier):
+class HtmlFileReportPublisher(ReportPublisher):
     """리포트를 ``output_dir`` 아래 HTML 파일 한 건으로 저장한다.
 
     디렉터리는 생성자가 아니라 첫 저장 시점에 만든다. 생성자에서 만들면
@@ -85,7 +85,7 @@ class HtmlFileNotifier(Notifier):
     def __init__(self, output_dir: str | Path = "reports") -> None:
         self._output_dir = Path(output_dir)
 
-    async def notify(
+    async def publish(
         self,
         report: DiagnosisReport,
         *,

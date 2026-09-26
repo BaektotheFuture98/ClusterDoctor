@@ -18,10 +18,10 @@ from cluster_doctor.domain.diagnosis.observations import (
 from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
 from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
-from cluster_doctor.storage.in_memory_artifact_store import (
+from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
-from cluster_doctor.storage.in_memory_incident_state_store import (
+from cluster_doctor.adapters.outbound.persistence.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 from tests.contracts.test_time_range_spans import KST, span

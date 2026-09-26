@@ -3,9 +3,9 @@ from abc import ABC, abstractmethod
 from cluster_doctor.domain.diagnosis.observations import DiagnosisReport
 
 
-class Notifier(ABC):
+class ReportPublisher(ABC):
     @abstractmethod
-    async def notify(
+    async def publish(
         self,
         report: DiagnosisReport,
         *,

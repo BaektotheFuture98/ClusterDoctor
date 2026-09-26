@@ -13,7 +13,7 @@ from cluster_doctor.application.ports.incident_analyzer import IncidentAnalyzer
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.application.ports.report_publisher import Notifier
+from cluster_doctor.application.ports.report_publisher import ReportPublisher
 from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
 from cluster_doctor.domain.incident.guardrails import (
     INCIDENT_TIMEOUT_SECONDS,
@@ -24,7 +24,7 @@ from cluster_doctor.domain.incident.models import IncidentStatus
 from cluster_doctor.domain.incident.report_merge import finalize_incident_report
 from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.incident.window_planner import initial_windows
-from cluster_doctor.reporting.report_assembler import to_diagnosis_report
+from cluster_doctor.application.report_assembler import to_diagnosis_report
 
 _logger = logging.getLogger(__name__)
 
@@ -49,14 +49,14 @@ class DiagnoseIncident:
         incident_analyzer: IncidentAnalyzer,
         state_repository: IncidentStateRepository,
         artifact_store: ArtifactStore,
-        notifier: Notifier,
+        report_publisher: ReportPublisher,
         on_incident_complete: Callable[[str], None] | None = None,
         incident_timeout_seconds: float = INCIDENT_TIMEOUT_SECONDS,
     ) -> None:
         self._analyzer = incident_analyzer
         self._states = state_repository
         self._store = artifact_store
-        self._notifier = notifier
+        self._report_publisher = report_publisher
         self._on_incident_complete = on_incident_complete
         self._incident_timeout_seconds = incident_timeout_seconds
 
@@ -176,7 +176,7 @@ class DiagnoseIncident:
         if state.closing_reason and state.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {state.closing_reason}")
         try:
-            await self._notifier.notify(
+            await self._report_publisher.publish(
                 to_diagnosis_report(report, observations, evidence),
                 gaps=tuple(all_gaps),
                 analysis_failed=analysis_failed,

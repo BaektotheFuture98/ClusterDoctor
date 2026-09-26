@@ -5,17 +5,17 @@
 여기 하나다.
 """
 
-import queue as stdlib_queue
 from functools import lru_cache
 from urllib.parse import urlparse
 
 import clickhouse_connect
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.ingestion.kafka.slowlog_trigger import SlowlogTriggerService
 from cluster_doctor.config.settings import Settings, get_settings
-from cluster_doctor.ingestion.kafka.consumer import KafkaConsumerAdapter
+from cluster_doctor.adapters.inbound.kafka.consumer import KafkaConsumerAdapter
+from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
+from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
+from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
 from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import (
     require_supported_provider,
 )
@@ -32,21 +32,23 @@ from cluster_doctor.adapters.outbound.deepagents.adapter import (
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
     NodeMetricThresholds,
 )
-from cluster_doctor.agent.integrations.clickhouse.reader import (
+from cluster_doctor.adapters.outbound.clickhouse.reader import (
     ClickHouseLogAdapter,
 )
-from cluster_doctor.agent.integrations.elasticsearch.cluster_adapter import (
+from cluster_doctor.adapters.outbound.elasticsearch.cluster_adapter import (
     ElasticsearchClusterAdapter,
 )
-from cluster_doctor.agent.integrations.elasticsearch.node_resolver import (
+from cluster_doctor.adapters.outbound.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
-from cluster_doctor.reporting.html_file_notifier import HtmlFileNotifier
-from cluster_doctor.agent.integrations.ssh.fetcher import SshNodeLogFetcher
-from cluster_doctor.storage.in_memory_artifact_store import (
+from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
+    HtmlFileReportPublisher,
+)
+from cluster_doctor.adapters.outbound.ssh.fetcher import SshNodeLogFetcher
+from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
-from cluster_doctor.storage.in_memory_incident_state_store import (
+from cluster_doctor.adapters.outbound.persistence.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 
@@ -122,27 +124,13 @@ def _get_artifact_store() -> InMemoryArtifactStore:
     return InMemoryArtifactStore()
 
 
-def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
+def _build_diagnose_incident(s: Settings) -> DiagnoseIncident:
     if s is None:
         s = get_settings()
 
     # provider를 조립 시점에 검증한다. 잘못된 값을 첫 호출까지 끌고 가면
     # Incident 한 건을 통째로 날린 뒤에야 오타를 알게 된다.
     provider = require_supported_provider(s.llm_provider)
-
-    # pending 큐를 먼저 만들고 drain 클로저와 runner가 같은 객체를 공유한다.
-    # maxsize: 유입이 분석 속도를 초과할 때 무제한 증가를 막는 상한.
-    # 초과 시 SlowlogTriggerService가 해당 이벤트를 버리고 경고를 남긴다.
-    pending: stdlib_queue.Queue = stdlib_queue.Queue(maxsize=10_000)
-
-    def drain_pending():
-        items = []
-        while True:
-            try:
-                items.append(pending.get_nowait())
-            except stdlib_queue.Empty:
-                break
-        return items
 
     log_repository = _get_log_repository()
     state_repo = _get_state_repository()
@@ -192,32 +180,40 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
         state_repository=state_repo,
     )
 
-    runner = IncidentRunner(
+    return DiagnoseIncident(
         incident_analyzer=incident_analyzer,
         state_repository=state_repo,
         artifact_store=store,
         # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
         # 떨어뜨린다.
-        notifier=HtmlFileNotifier(output_dir=s.report_dir),
-        drain_pending=drain_pending,
+        report_publisher=HtmlFileReportPublisher(output_dir=s.report_dir),
         on_incident_complete=_cleanup_incident,
     )
 
-    return SlowlogTriggerService(
-        runner=runner,
-        pending=pending,
+def build_slowlog_intake(s: Settings | None = None) -> SlowlogIntake:
+    if s is None:
+        s = get_settings()
+    return SlowlogIntake(
+        diagnose_incident=_build_diagnose_incident(s),
         cluster=s.cluster_name,
         micro_batch_seconds=s.micro_batch_seconds,
+        max_pending=10_000,
     )
 
+def build_manual_diagnosis(s: Settings | None = None) -> RunManualDiagnosis:
+    if s is None:
+        s = get_settings()
+    return RunManualDiagnosis(
+        diagnose_incident=_build_diagnose_incident(s), cluster=s.cluster_name
+    )
 
 def build_kafka_consumer(
-    service: SlowlogTriggerService, s: Settings | None = None
+    intake: SlowlogIntake, s: Settings | None = None
 ) -> KafkaConsumerAdapter:
     if s is None:
         s = get_settings()
     return KafkaConsumerAdapter(
-        service=service,
+        intake=intake,
         bootstrap_servers=s.kafka_bootstrap_servers,
         topic=s.kafka_topic,
         group_id=s.kafka_group_id,

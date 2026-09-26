@@ -3,7 +3,7 @@ import logging
 import os
 
 from cluster_doctor.bootstrap.dependencies import (
-    build_trigger_service,
+    build_slowlog_intake,
     build_kafka_consumer,
     close_clickhouse_client,
 )
@@ -39,8 +39,8 @@ configure_logging()
 
 async def main() -> None:
     settings = get_settings()
-    service = build_trigger_service(settings)
-    consumer = build_kafka_consumer(service, settings)
+    intake = build_slowlog_intake(settings)
+    consumer = build_kafka_consumer(intake, settings)
 
     try:
         await consumer.run()
