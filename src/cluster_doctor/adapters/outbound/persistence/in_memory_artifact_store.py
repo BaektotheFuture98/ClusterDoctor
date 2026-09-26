@@ -106,10 +106,11 @@ class InMemoryArtifactStore:
             return self._observations.get(incident_id) or Observations()
 
     def discard(self, incident_id: str) -> None:
-        """끝난 Incident의 산출물을 지운다. 리포트는 남긴다.
+        """끝난 Incident의 프로세스 내 산출물을 모두 지운다.
 
-        리포트를 남기는 이유는 운영자가 나중에 참조로 다시 꺼낼 수 있어야
-        하기 때문이다. 부피가 큰 것은 원문과 Evidence 쪽이다.
+        운영자가 읽는 최종 리포트는 이 메서드가 호출되기 전에 publisher가
+        외부 저장소에 남긴다. 이 저장소의 리포트는 분석 중 참조하기 위한
+        임시 객체이므로 완료 뒤까지 붙들면 장기 실행 프로세스에서 계속 누적된다.
         """
         with self._lock:
             self._evidence.pop(incident_id, None)
@@ -117,6 +118,9 @@ class InMemoryArtifactStore:
             prefix = f"R-{incident_id}-"
             for ref in [key for key in self._raw if key.startswith(prefix)]:
                 self._raw.pop(ref, None)
+            report_count = self._counters.get(f"RPT:{incident_id}", 0)
+            for sequence in range(1, report_count + 1):
+                self._reports.pop(f"RPT-{incident_id}-{sequence}", None)
             suffix = f":{incident_id}"
             for key in [k for k in self._counters if k.endswith(suffix)]:
                 self._counters.pop(key, None)

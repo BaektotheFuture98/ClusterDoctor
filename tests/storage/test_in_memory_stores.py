@@ -157,6 +157,32 @@ class TestArtifactStore:
     def test_없는_리포트는_None이다(self):
         assert InMemoryArtifactStore().get_report("RPT-없음") is None
 
+    def test_Incident를_정리하면_그_Incident의_리포트만_삭제한다(self):
+        store = InMemoryArtifactStore()
+        first = store.put_report(
+            "inc-1",
+            LogAnalysisReport(
+                incident_id="inc-1",
+                analyzed_from=at(0),
+                analyzed_to=at(10),
+                summary="first",
+            ),
+        )
+        second = store.put_report(
+            "inc-2",
+            LogAnalysisReport(
+                incident_id="inc-2",
+                analyzed_from=at(0),
+                analyzed_to=at(10),
+                summary="second",
+            ),
+        )
+
+        store.discard("inc-1")
+
+        assert store.get_report(first) is None
+        assert store.get_report(second) is not None
+
 
 class TestObservationMerging:
     def test_분을_키로_덮어쓴다(self):
