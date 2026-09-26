@@ -49,6 +49,7 @@ Thumbs.db
 
 # Superpowers scratch
 .superpowers/
+.worktrees/
 
 # 설계·계획 문서는 로컬에만 둔다
 docs/
