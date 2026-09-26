@@ -13,7 +13,10 @@ from cluster_doctor.application.ports.incident_analyzer import IncidentAnalyzer
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.application.ports.report_publisher import ReportPublisher
+from cluster_doctor.application.ports.report_publisher import (
+    ReportPublication,
+    ReportPublisher,
+)
 from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
 from cluster_doctor.domain.incident.guardrails import (
     INCIDENT_TIMEOUT_SECONDS,
@@ -51,9 +54,7 @@ class IncidentDiagnostics:
     report: LogAnalysisReport | None = None
     observations: Observations = field(default_factory=Observations)
     evidence: tuple[Evidence, ...] = ()
-    rendered_report: DiagnosisReport = field(
-        default_factory=lambda: DiagnosisReport(observations=Observations())
-    )
+    publication: ReportPublication = field(default_factory=ReportPublication)
 
 
 class DiagnoseIncident:
@@ -193,8 +194,9 @@ class DiagnoseIncident:
         if state.closing_reason and state.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {state.closing_reason}")
         rendered_report = to_diagnosis_report(report, observations, evidence)
+        publication = ReportPublication()
         try:
-            await self._report_publisher.publish(
+            publication = await self._report_publisher.publish(
                 rendered_report,
                 gaps=tuple(all_gaps),
                 analysis_failed=analysis_failed,
@@ -207,5 +209,5 @@ class DiagnoseIncident:
             report=report,
             observations=observations,
             evidence=tuple(evidence),
-            rendered_report=rendered_report,
+            publication=publication,
         )

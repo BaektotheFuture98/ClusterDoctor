@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from cluster_doctor.application.commands import StartIncident
 from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisResult
+from cluster_doctor.application.ports.report_publisher import ReportPublication
 from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
 from cluster_doctor.domain.diagnosis.observations import Observations
@@ -59,8 +60,29 @@ class RecordingReportPublisher:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    async def publish(self, report, *, gaps=(), analysis_failed=False) -> None:
+    async def publish(self, report, *, gaps=(), analysis_failed=False) -> ReportPublication:
         self.calls.append((report, gaps, analysis_failed))
+        return ReportPublication(text_length=123)
+
+
+class RacingStateRepository(InMemoryIncidentStateRepository):
+    """Returns one stale ANALYZING snapshot at the post-decision reload."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._inject_stale = False
+
+    def create(self, state):
+        super().create(state)
+        self._inject_stale = True
+
+    def get(self, incident_id):
+        state = super().get(incident_id)
+        if self._inject_stale:
+            self._inject_stale = False
+            state.status = IncidentStatus.ANALYZING
+            state.closing_reason = "stale"
+        return state
 
 
 def diagnosis_for(analyzer, repository, notifier, **kwargs) -> DiagnoseIncident:
@@ -163,6 +185,40 @@ async def test_시간초과는_마지막_저장상태를_FAILED로_강제_종료
     assert outcome.analysis_failed is True
     assert "상한" in outcome.reason
     assert len(notifier.calls) == 1
+
+
+async def test_timeout_forced_closure_wins_over_stale_state():
+    repository = RacingStateRepository()
+    release = threading.Event()
+
+    class BlockingAnalyzer:
+        def analyze(self, _incident):
+            release.wait(1)
+            return IncidentAnalysisResult(IncidentStatus.COMPLETED)
+
+    try:
+        outcome = await diagnosis_for(
+            BlockingAnalyzer(), repository, RecordingReportPublisher(),
+            incident_timeout_seconds=0.01,
+        ).handle(command())
+    finally:
+        release.set()
+
+    assert outcome.status is IncidentStatus.FAILED
+    assert repository.get("inc-1").status is IncidentStatus.FAILED
+
+
+async def test_cancellation_forced_closure_wins_over_stale_state():
+    repository = RacingStateRepository()
+    token = CancellationToken()
+    token.cancel("operator")
+
+    outcome = await diagnosis_for(
+        RecordingAnalyzer(repository), repository, RecordingReportPublisher()
+    ).handle(command(), cancellation=token)
+
+    assert outcome.status is IncidentStatus.CANCELLED
+    assert repository.get("inc-1").status is IncidentStatus.CANCELLED
 
 
 async def test_analyzer_runs_off_the_event_loop_thread():
