@@ -184,7 +184,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
 
     # Main DeepAgent. 진단 SubAgent는 이 어댑터가 Incident마다 등록한다 —
     # 도구와 Guardrail이 그 Incident의 State를 쥐어야 하기 때문이다.
-    incident_agent = DeepAgentIncidentAdapter(
+    incident_analyzer = DeepAgentIncidentAdapter(
         provider=provider,
         model=s.llm_model,
         api_key=s.llm_api_key,
@@ -193,7 +193,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
     )
 
     runner = IncidentRunner(
-        incident_agent=incident_agent,
+        incident_analyzer=incident_analyzer,
         state_repository=state_repo,
         artifact_store=store,
         # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로

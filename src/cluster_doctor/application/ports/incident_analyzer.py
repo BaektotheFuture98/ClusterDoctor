@@ -20,13 +20,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from cluster_doctor.incident.models import Incident, IncidentStatus
-from cluster_doctor.incident.state import IncidentState
+from cluster_doctor.domain.incident.models import Incident, IncidentStatus
 
 
 @dataclass(frozen=True)
-class IncidentAgentResult:
-    """Agent가 Incident를 어떻게 끝냈는가.
+class IncidentAnalysisResult:
+    """Analyzer가 Incident를 어떻게 끝냈는가.
 
     분석 결과 자체는 여기 없다. ``IncidentState``와 ``ArtifactStore``가 이미
     들고 있고, 같은 것을 두 곳에 두면 한쪽만 갱신되는 순간 조용히 갈린다.
@@ -40,15 +39,14 @@ class IncidentAgentResult:
     gaps: tuple[str, ...] = ()
 
 
-class IncidentAgent(Protocol):
+class IncidentAnalyzer(Protocol):
     """Incident 하나의 분석을 끝까지 진행한다."""
 
-    def run(self, incident: Incident, state: IncidentState) -> IncidentAgentResult:
+    def analyze(self, incident: Incident) -> IncidentAnalysisResult:
         """분석을 진행하고 종료 상태를 돌려준다.
 
-        ``state``를 제자리에서 갱신하고 저장소에도 반영한다 — 예산 회계가
-        Agent 안에서 일어나기 때문이다. 호출부는 돌아온 뒤 ``state``를 다시
-        읽어야 한다.
+        구현은 주입받은 ``IncidentStateRepository``에서 ``incident_id``로 상태를
+        읽고, 변경을 저장소에 반영한다. 호출부는 돌아온 뒤 상태를 다시 읽는다.
 
         **동기 호출이고 수 분 걸릴 수 있다.** 같은 이벤트 루프가 Kafka를
         소비하므로 호출부가 별도 스레드로 밀어야 한다.

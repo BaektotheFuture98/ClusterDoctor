@@ -14,13 +14,13 @@ import re
 from dataclasses import replace
 from datetime import datetime
 
-from cluster_doctor.contracts.observations import (
+from cluster_doctor.domain.diagnosis.observations import (
     NodeMetricRow,
     SlowCandidate,
     TimelineRow,
     merge_node_row,
 )
-from cluster_doctor.agent.integrations.clickhouse.models import (
+from cluster_doctor.domain.diagnosis.log_entries import (
     LogEntry,
     NodeMetricEntry,
     QueryLogEntry,

@@ -2,7 +2,7 @@
 
 리팩터링으로 조립 모양이 바뀌었다. 예전에는 ``IncidentOrchestrator``가
 Supervisor와 진단 Agent를 **둘 다** 직접 들고 있었다. 지금 Runner가 아는 것은
-``IncidentAgent`` 하나이고, 진단 Agent는 그 뒤에 숨는다.
+``IncidentAnalyzer`` 하나이고, 진단 Agent는 그 뒤에 숨는다.
 
     SlowlogTriggerService
         └ IncidentRunner
@@ -17,9 +17,9 @@ Supervisor와 진단 Agent를 **둘 다** 직접 들고 있었다. 지금 Runner
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from cluster_doctor.agent.integrations.elasticsearch.ports import ClusterRepository
+from cluster_doctor.application.ports.cluster_repository import ClusterRepository
 from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
+from cluster_doctor.domain.diagnosis.log_entries import SlowlogEntry
 from cluster_doctor.bootstrap import dependencies
 from cluster_doctor.config import settings as settings_module
 from cluster_doctor.bootstrap.dependencies import (
@@ -141,10 +141,10 @@ def test_selected_provider_reaches_both_agents(monkeypatch):
             ),
             monkeypatch,
         )
-        incident_agent = service._runner._agent
+        incident_analyzer = service._runner._analyzer
 
         # 진단 Agent: provider/model/key가 부분 적용된 호출자에 묶여 있다.
-        bound = incident_agent._seams.call_llm
+        bound = incident_analyzer._seams.call_llm
         assert bound.keywords["provider"] == "nvidia_nim"
         assert bound.keywords["model"] == "google/gemma-4-31b-it"
         # 고르지 않은 provider의 키가 실려서는 안 된다. 둘 다 설정돼 있을 때
@@ -152,8 +152,8 @@ def test_selected_provider_reaches_both_agents(monkeypatch):
         assert bound.keywords["api_key"] == "nv-key"
 
         # Main DeepAgent: litellm 문자열 규약 위의 chat model.
-        assert incident_agent._model.model == "nvidia_nim/google/gemma-4-31b-it"
-        assert incident_agent._model.api_key == "nv-key"
+        assert incident_analyzer._model.model == "nvidia_nim/google/gemma-4-31b-it"
+        assert incident_analyzer._model.api_key == "nv-key"
     finally:
         _cleanup()
 
@@ -177,24 +177,24 @@ def test_build_trigger_service_wires_the_graph_and_shares_queue(monkeypatch):
 
         assert isinstance(runner, IncidentRunner)
         # Runner가 아는 것은 포트 하나뿐이다. 진단 Agent는 그 뒤에 있다.
-        assert isinstance(runner._agent, DeepAgentIncidentAdapter)
-        assert isinstance(runner._agent._seams, DiagnosisSeams)
+        assert isinstance(runner._analyzer, DeepAgentIncidentAdapter)
+        assert isinstance(runner._analyzer._seams, DiagnosisSeams)
 
         # SubAgent는 raw Elasticsearch 클라이언트가 아니라 포트를 받아야 한다.
         # 포트와 어댑터가 정의만 되어 있고 조립되지 않으면 ES 호출이 포트를
         # 우회하고 어댑터는 죽은 코드로 남는다.
-        assert isinstance(runner._agent._seams.cluster, ClusterRepository)
-        assert hasattr(runner._agent._seams.node_resolver, "resolve")
+        assert isinstance(runner._analyzer._seams.cluster, ClusterRepository)
+        assert hasattr(runner._analyzer._seams.node_resolver, "resolve")
 
         # 상태와 산출물은 포트를 거쳐 오간다. application 코드가 dict에 직접
         # 접근하면 Redis 구현으로 바꿀 수 없다.
-        assert runner._store is runner._agent._seams.store
+        assert runner._store is runner._analyzer._seams.store
         # 리포트를 쓰는 쪽도 같은 저장소를 본다. 갈라지면 앞선 리포트 요약이
         # 영영 비어 있고, 그 사실은 어디에도 드러나지 않는다.
-        assert runner._store is runner._agent._seams.report_writer._store
+        assert runner._store is runner._analyzer._seams.report_writer._store
         # State 저장소는 Runner와 Agent가 **같은 것**을 봐야 한다. Agent가
         # 예산을 차감한 State를 Runner가 다시 읽는 것이 종료 판단의 전제다.
-        assert runner._states is runner._agent._states
+        assert runner._states is runner._analyzer._states
 
         entry = SlowlogEntry(timestamp=datetime.now(timezone.utc))
         service._pending.put(entry)

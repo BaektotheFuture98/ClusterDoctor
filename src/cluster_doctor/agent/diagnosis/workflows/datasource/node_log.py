@@ -15,8 +15,8 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from cluster_doctor.contracts.evidence import EvidenceSource
-from cluster_doctor.agent.common.kst import KST
+from cluster_doctor.domain.diagnosis.evidence import EvidenceSource
+from cluster_doctor.domain.diagnosis.kst import KST
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import RawRecord
 

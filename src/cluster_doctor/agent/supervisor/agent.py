@@ -1,4 +1,4 @@
-"""Main DeepAgent를 ``IncidentAgent`` 포트 뒤에 놓는다.
+"""Main DeepAgent를 ``IncidentAnalyzer`` 포트 뒤에 놓는다.
 
 application 계층은 ``deepagents``도 ``langchain``도 모른다. 아는 것은
 "Incident 하나를 맡기면 어떻게 끝났는지 돌려준다"뿐이고, 그 경계가 이 파일이다.
@@ -16,15 +16,15 @@ import logging
 
 from langchain_core.messages import HumanMessage
 
-from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
-from cluster_doctor.storage.incident_state_store import (
+from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisResult
+from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.incident.guardrails import MAX_SUPERVISOR_CYCLES
-from cluster_doctor.incident.models import Incident, IncidentStatus
-from cluster_doctor.incident.state import IncidentState
+from cluster_doctor.domain.incident.guardrails import MAX_SUPERVISOR_CYCLES
+from cluster_doctor.domain.incident.models import Incident, IncidentStatus
+from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.agent.common.harness import restrict_harness
-from cluster_doctor.agent.common.kst import format_kst
+from cluster_doctor.domain.diagnosis.kst import format_kst
 from cluster_doctor.agent.diagnosis.agent import (
     DiagnosisSeams,
     build_diagnosis_subagent,
@@ -69,7 +69,7 @@ _KICKOFF = """Incident가 열렸다. 분석을 시작한다.
 
 
 class DeepAgentIncidentAdapter:
-    """Main DeepAgent 구현. ``IncidentAgent`` 포트를 만족한다."""
+    """Main DeepAgent 구현. ``IncidentAnalyzer`` 포트를 만족한다."""
 
     def __init__(
         self,
@@ -92,8 +92,9 @@ class DeepAgentIncidentAdapter:
         self._states = state_repository
         self._recursion_limit = recursion_limit
 
-    def run(self, incident: Incident, state: IncidentState) -> IncidentAgentResult:
+    def analyze(self, incident: Incident) -> IncidentAnalysisResult:
         """Incident 하나의 분석을 끝까지 진행한다. 예외를 올리지 않는다."""
+        state = self._states.get(incident.incident_id)
         graph = self._compile(incident, state)
 
         try:
@@ -151,7 +152,7 @@ class DeepAgentIncidentAdapter:
     # ── 결과 ─────────────────────────────────────────────────────────
     def _result_from(
         self, incident: Incident, state: IncidentState
-    ) -> IncidentAgentResult:
+    ) -> IncidentAnalysisResult:
         """끝난 뒤의 ``IncidentState``에서 결과를 읽는다.
 
         그래프의 반환값이 아니라 State를 읽는 이유: 종료를 확정하는 것은
@@ -161,7 +162,7 @@ class DeepAgentIncidentAdapter:
         current = self._states.get(incident.incident_id) or state
 
         if current.status.is_terminal():
-            return IncidentAgentResult(
+            return IncidentAnalysisResult(
                 status=current.status,
                 reason=current.closing_reason,
                 failed=current.status is IncidentStatus.FAILED,
@@ -173,7 +174,7 @@ class DeepAgentIncidentAdapter:
         _logger.warning(
             "[incident %s] Agent가 종료를 선언하지 않고 끝났다", incident.incident_id
         )
-        return IncidentAgentResult(
+        return IncidentAnalysisResult(
             status=IncidentStatus.COMPLETED,
             reason="Agent가 종료를 선언하지 않고 끝나 분석을 마감했다",
             failed=False,
@@ -181,7 +182,7 @@ class DeepAgentIncidentAdapter:
 
     def _fallback(
         self, incident: Incident, state: IncidentState, exc: Exception
-    ) -> IncidentAgentResult:
+    ) -> IncidentAnalysisResult:
         """Agent 실행이 깨졌을 때의 종료.
 
         **FAILED가 아니라 COMPLETED다.** 이미 확보한 근거와 관측값이 있으면
@@ -192,7 +193,7 @@ class DeepAgentIncidentAdapter:
         _logger.exception("[incident %s] Agent 실행 실패", incident.incident_id)
         current = self._states.get(incident.incident_id) or state
         nothing_analyzed = current.analysis_call_count == 0
-        return IncidentAgentResult(
+        return IncidentAnalysisResult(
             status=IncidentStatus.FAILED if nothing_analyzed else IncidentStatus.COMPLETED,
             reason=f"Agent 실행이 {type(exc).__name__}로 끝났다",
             failed=nothing_analyzed,

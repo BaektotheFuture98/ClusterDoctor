@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cluster_doctor.incident.guardrails import MAX_EVIDENCE_PER_SOURCE
-from cluster_doctor.contracts.evidence import EvidenceSource
+from cluster_doctor.domain.incident.guardrails import MAX_EVIDENCE_PER_SOURCE
+from cluster_doctor.domain.diagnosis.evidence import EvidenceSource
 
 
 @dataclass(frozen=True)

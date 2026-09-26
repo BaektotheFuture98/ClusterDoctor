@@ -10,8 +10,17 @@ Main Agent의 ``finalize_report`` Tool과 ``IncidentRunner``의 전달 직전 �
 
 from __future__ import annotations
 
-from cluster_doctor.contracts.report import LogAnalysisReport, VerificationStatus
-from cluster_doctor.storage.artifact_store import ArtifactStore
+from typing import Protocol
+
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
+
+
+class ReportStore(Protocol):
+    """최종 보고서 병합에 필요한 저장소의 최소 형태."""
+
+    def get_report(self, report_ref: str) -> LogAnalysisReport | None: ...
+
+    def put_report(self, incident_id: str, report: LogAnalysisReport) -> str: ...
 
 
 def merge_window_reports(reports: list[LogAnalysisReport]) -> LogAnalysisReport:
@@ -109,7 +118,7 @@ def merge_window_reports(reports: list[LogAnalysisReport]) -> LogAnalysisReport:
 def finalize_incident_report(
     incident_id: str,
     report_refs: list[str],
-    store: ArtifactStore,
+    store: ReportStore,
 ) -> str | None:
     """``report_refs``가 가리키는 구간별 보고서를 모아 최종 보고서로 저장한다.
 

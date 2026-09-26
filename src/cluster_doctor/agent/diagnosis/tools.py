@@ -10,9 +10,9 @@ import logging
 
 from langchain_core.tools import tool
 
-from cluster_doctor.contracts.report import VerificationStatus
-from cluster_doctor.contracts.time_range import TimeRange, split_span
-from cluster_doctor.agent.common.kst import parse_kst
+from cluster_doctor.domain.diagnosis.report import VerificationStatus
+from cluster_doctor.domain.diagnosis.time_range import TimeRange, split_span
+from cluster_doctor.domain.diagnosis.kst import parse_kst
 from cluster_doctor.agent.diagnosis.collector import CollectedEvidence, EvidenceCollector
 from cluster_doctor.agent.diagnosis.state import DiagnosisSeams, _Delegation
 

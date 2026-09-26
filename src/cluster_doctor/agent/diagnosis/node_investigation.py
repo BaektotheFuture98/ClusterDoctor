@@ -29,15 +29,15 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
-from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
-from cluster_doctor.agent.integrations.elasticsearch.ports import NodeResolver
-from cluster_doctor.incident.guardrails import truncate_raw
-from cluster_doctor.contracts.evidence import Evidence, ProblemNodeCandidate
+from cluster_doctor.application.ports.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.application.ports.cluster_repository import NodeResolver
+from cluster_doctor.domain.incident.guardrails import truncate_raw
+from cluster_doctor.domain.diagnosis.evidence import Evidence, ProblemNodeCandidate
 from cluster_doctor.agent.common.log_format import (
     format_evidence_line,
 )
-from cluster_doctor.agent.integrations.elasticsearch.resolved_node import ResolvedNode
-from cluster_doctor.contracts.time_range import TimeRange
+from cluster_doctor.domain.diagnosis.resolved_node import ResolvedNode
+from cluster_doctor.domain.diagnosis.time_range import TimeRange
 from cluster_doctor.agent.diagnosis.workflows.datasource import node_log
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import run_analysis
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import group_into_buckets

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from cluster_doctor.contracts.evidence import Evidence
+from cluster_doctor.domain.diagnosis.evidence import Evidence
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.nodes import (
     EvidenceIdFactory,
     RawRefFactory,

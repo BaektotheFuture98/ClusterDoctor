@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timedelta, timezone
-from cluster_doctor.contracts.time_range import (
+from cluster_doctor.domain.diagnosis.time_range import (
     MAX_TIME_RANGE_DURATION,
     InvalidTimeRangeError,
     TimeRange,

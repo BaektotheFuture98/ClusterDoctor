@@ -22,7 +22,7 @@ from collections.abc import Coroutine
 from datetime import datetime, timezone
 
 from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.incident.models import Incident, TriggerType
+from cluster_doctor.domain.incident.models import Incident, TriggerType
 from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 
 _logger = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, TypedDict
 
-from cluster_doctor.contracts.evidence import Evidence
+from cluster_doctor.domain.diagnosis.evidence import Evidence
 
 
 @dataclass(frozen=True)

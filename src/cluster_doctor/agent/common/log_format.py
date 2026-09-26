@@ -7,13 +7,13 @@
 
 from functools import singledispatch
 
-from cluster_doctor.agent.integrations.clickhouse.models import (
+from cluster_doctor.domain.diagnosis.log_entries import (
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.contracts.evidence import Evidence
+from cluster_doctor.domain.diagnosis.evidence import Evidence
 
 # 한 쿼리가 키워드 200개 넘게 싣고 오는 경우가 있다. 그대로 그리면 한 줄이
 # 2,000자를 넘고(실측 2,029자), 같은 유저가 agg와 count로 같은 목록을 두 번

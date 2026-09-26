@@ -26,8 +26,8 @@ from datetime import timedelta
 from math import ceil
 
 from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.time_range import (
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     is_covered,

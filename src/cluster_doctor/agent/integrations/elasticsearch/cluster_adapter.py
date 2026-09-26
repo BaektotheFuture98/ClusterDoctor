@@ -1,6 +1,6 @@
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.agent.integrations.elasticsearch.ports import ClusterRepository
+from cluster_doctor.application.ports.cluster_repository import ClusterRepository
 
 
 class ElasticsearchClusterAdapter(ClusterRepository):

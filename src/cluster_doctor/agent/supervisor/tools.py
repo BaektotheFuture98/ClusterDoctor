@@ -22,12 +22,12 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.storage.artifact_store import ArtifactStore
-from cluster_doctor.storage.incident_state_store import (
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.incident.report_merge import finalize_incident_report
-from cluster_doctor.incident.guardrails import (
+from cluster_doctor.domain.incident.report_merge import finalize_incident_report
+from cluster_doctor.domain.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYSIS_WINDOW_MINUTES,
     MAX_ANALYZED_MINUTES,
@@ -37,11 +37,11 @@ from cluster_doctor.incident.guardrails import (
     remaining_minutes,
     window_minutes,
 )
-from cluster_doctor.incident.window_planner import plan_new_windows
-from cluster_doctor.incident.models import IncidentStatus
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.time_range import InvalidTimeRangeError, TimeRange
-from cluster_doctor.agent.common.kst import format_kst, parse_kst
+from cluster_doctor.domain.incident.window_planner import plan_new_windows
+from cluster_doctor.domain.incident.models import IncidentStatus
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
 from cluster_doctor.agent.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,

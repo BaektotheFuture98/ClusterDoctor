@@ -10,14 +10,14 @@ from datetime import datetime
 import pytest
 
 from cluster_doctor.exceptions import IncidentNotFoundError
-from cluster_doctor.contracts.observations import (
+from cluster_doctor.domain.diagnosis.observations import (
     NodeMetricRow,
     Observations,
     TimelineRow,
 )
-from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.report import LogAnalysisReport
+from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )

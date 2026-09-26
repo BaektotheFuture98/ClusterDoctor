@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.agent.common.kst import (
+from cluster_doctor.domain.diagnosis.kst import (
     KST,
     format_kst,
     parse_kst,

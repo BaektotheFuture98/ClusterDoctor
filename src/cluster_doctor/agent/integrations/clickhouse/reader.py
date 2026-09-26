@@ -1,18 +1,18 @@
 import logging
 from datetime import datetime, timedelta
 
-from cluster_doctor.agent.integrations.clickhouse.models import (
+from cluster_doctor.domain.diagnosis.log_entries import (
     LogEntry,
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.contracts.time_range import (
+from cluster_doctor.domain.diagnosis.time_range import (
     InvalidTimeRangeError,
     TimeRange,
 )
-from cluster_doctor.agent.integrations.clickhouse.port import (
+from cluster_doctor.application.ports.log_repository import (
     DEFAULT_NODE_LOG_LIMIT,
     LogRepository,
     clamp_node_log_limit,

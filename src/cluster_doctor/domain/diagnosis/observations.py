@@ -38,7 +38,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 
-from cluster_doctor.contracts.health_point import HealthPoint
+from cluster_doctor.domain.diagnosis.health_point import HealthPoint
 
 
 @dataclass(frozen=True)
