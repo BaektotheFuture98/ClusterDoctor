@@ -7,6 +7,7 @@ from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisR
 from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
 from cluster_doctor.domain.diagnosis.observations import Observations
+from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
 from cluster_doctor.domain.incident.guardrails import CancellationToken
 from cluster_doctor.domain.incident.models import Incident, IncidentStatus, TriggerType
 from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import InMemoryArtifactStore
@@ -26,6 +27,17 @@ def command(*, settling_wait_seconds: float = 0.01) -> StartIncident:
         trigger_type=TriggerType.SLOWLOG,
     )
     return StartIncident(incident, TS, TS, settling_wait_seconds=settling_wait_seconds)
+
+
+def command_for(incident_id: str) -> StartIncident:
+    base = command()
+    return StartIncident(
+        Incident(
+            incident_id=incident_id, cluster=base.incident.cluster,
+            trigger_time=TS, kafka_receive_time=TS, trigger_type=TriggerType.SLOWLOG,
+        ),
+        TS, TS, 0,
+    )
 
 
 class RecordingAnalyzer:
@@ -222,6 +234,33 @@ async def test_verification_mismatch_marks_outcome_failed_without_rewriting_publ
 
     assert outcome.analysis_failed is True
     assert publisher.calls[0][2] is False
+
+
+async def test_concurrent_incidents_keep_state_and_evidence_isolated():
+    repository = InMemoryIncidentStateRepository()
+    store = InMemoryArtifactStore()
+
+    def record(incident):
+        store.put_evidence(
+            incident.incident_id,
+            Evidence(
+                evidence_id=f"E-{incident.incident_id}-1", event_time=TS,
+                source=EvidenceSource.SLOWLOG, message=incident.incident_id,
+            ),
+        )
+        return IncidentAnalysisResult(IncidentStatus.COMPLETED)
+
+    use_case = DiagnoseIncident(
+        incident_analyzer=RecordingAnalyzer(repository, behaviour=record),
+        state_repository=repository, artifact_store=store,
+        report_publisher=RecordingReportPublisher(),
+    )
+    left, right = await asyncio.gather(
+        use_case.handle(command_for("left")), use_case.handle(command_for("right"))
+    )
+
+    assert [item.message for item in left.diagnostics.evidence] == ["left"]
+    assert [item.message for item in right.diagnostics.evidence] == ["right"]
 
 
 async def test_정착에_전체_시간_예산을_썼으면_analyzer를_부르지_않는다():
