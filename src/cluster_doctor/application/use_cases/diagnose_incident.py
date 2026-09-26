@@ -97,40 +97,42 @@ class DiagnoseIncident:
         )
         self._states.create(state)
 
-        analysis_failed = False
-        forced: tuple[IncidentStatus, str] | None = None
-        if token.is_cancelled:
-            forced = (IncidentStatus.CANCELLED, token.reason or "취소됨")
-        elif deadline.expired:
-            analysis_failed = True
-            forced = (IncidentStatus.FAILED, self._timeout_reason())
-        else:
-            analysis_failed, forced = await self._run_analyzer(incident, deadline)
+        try:
+            analysis_failed = False
+            forced: tuple[IncidentStatus, str] | None = None
+            if token.is_cancelled:
+                forced = (IncidentStatus.CANCELLED, token.reason or "취소됨")
+            elif deadline.expired:
+                analysis_failed = True
+                forced = (IncidentStatus.FAILED, self._timeout_reason())
+            else:
+                analysis_failed, forced = await self._run_analyzer(incident, deadline)
 
-        state = self._states.get(incident.incident_id)
-        if forced is not None:
-            self._close(state, *forced)
-        elif not state.status.is_terminal():
-            self._close(state, IncidentStatus.COMPLETED, state.closing_reason)
+            state = self._states.get(incident.incident_id)
+            if forced is not None:
+                self._close(state, *forced)
+            elif not state.status.is_terminal():
+                self._close(state, IncidentStatus.COMPLETED, state.closing_reason)
 
-        gaps = tuple(state.accumulated_gaps)
-        diagnostics = await self._deliver(incident, state, analysis_failed, gaps)
-        if self._on_incident_complete is not None:
-            self._on_incident_complete(incident.incident_id)
-        return IncidentOutcome(
-            incident_id=incident.incident_id,
-            status=state.status,
-            analysis_failed=(
-                analysis_failed
-                or state.latest_analysis_status is LogAnalysisStatus.FAILED
-                or state.latest_verification_status is VerificationStatus.MISMATCH
-            ),
-            gaps=gaps,
-            report_ref=state.final_report_ref,
-            analysis_calls=state.analysis_call_count,
-            reason=state.closing_reason,
-            diagnostics=diagnostics,
-        )
+            gaps = tuple(state.accumulated_gaps)
+            diagnostics = await self._deliver(incident, state, analysis_failed, gaps)
+            return IncidentOutcome(
+                incident_id=incident.incident_id,
+                status=state.status,
+                analysis_failed=(
+                    analysis_failed
+                    or state.latest_analysis_status is LogAnalysisStatus.FAILED
+                    or state.latest_verification_status is VerificationStatus.MISMATCH
+                ),
+                gaps=gaps,
+                report_ref=state.final_report_ref,
+                analysis_calls=state.analysis_call_count,
+                reason=state.closing_reason,
+                diagnostics=diagnostics,
+            )
+        finally:
+            if self._on_incident_complete is not None:
+                self._on_incident_complete(incident.incident_id)
 
     async def _run_analyzer(
         self, incident, deadline: Deadline

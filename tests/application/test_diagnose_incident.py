@@ -2,10 +2,13 @@ import asyncio
 import threading
 from datetime import UTC, datetime
 
+import pytest
+
 from cluster_doctor.application.commands import StartIncident
 from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisResult
 from cluster_doctor.application.ports.report_publisher import ReportPublication
 from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
+from cluster_doctor.exceptions import IncidentNotFoundError
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
 from cluster_doctor.domain.diagnosis.observations import Observations
 from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
@@ -250,6 +253,33 @@ async def test_report_publisher_failure_does_not_fail_incident():
     ).handle(command())
 
     assert outcome.status is IncidentStatus.COMPLETED
+
+
+async def test_전달_준비가_실패해도_Incident_메모리를_정리한다():
+    class BrokenArtifactStore(InMemoryArtifactStore):
+        def get_observations(self, _incident_id):
+            raise RuntimeError("cannot read observations")
+
+    repository = InMemoryIncidentStateRepository()
+    store = BrokenArtifactStore()
+
+    def cleanup(incident_id):
+        repository.discard(incident_id)
+        store.discard(incident_id)
+
+    use_case = DiagnoseIncident(
+        incident_analyzer=RecordingAnalyzer(repository),
+        state_repository=repository,
+        artifact_store=store,
+        report_publisher=RecordingReportPublisher(),
+        on_incident_complete=cleanup,
+    )
+
+    with pytest.raises(RuntimeError, match="cannot read observations"):
+        await use_case.handle(command())
+
+    with pytest.raises(IncidentNotFoundError):
+        repository.get("inc-1")
 
 
 async def test_observations_and_accumulated_gaps_survive_analyzer_failure():
