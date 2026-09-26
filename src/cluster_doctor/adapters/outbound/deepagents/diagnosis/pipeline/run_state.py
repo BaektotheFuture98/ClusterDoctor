@@ -32,7 +32,7 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.observations
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_log import (
     ES_LOG_LINE_RE,
 )
-from cluster_doctor.adapters.outbound.reporting.report_text import candidate_line
+from cluster_doctor.application.candidate_formatter import candidate_line
 
 _logger = logging.getLogger(__name__)
 

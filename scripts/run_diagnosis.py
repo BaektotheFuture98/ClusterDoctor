@@ -5,17 +5,10 @@
 다른 창에서 produce_test_message로 메시지를 보내는 식이다. 이 스크립트는
 그 두 단계를 하나로 접는다.
 
-프로덕션과 같은 경로를 타는가: 탄다. 핵심은 **pending 큐에 합성 항목을
-심는 것**이다. 큐가 비어 있으면 check_new_slowlogs가 last_seen을 끝내
-채우지 못하고, 그러면 suggested_windows가 실리지 않아(tools.py의
-``if settled and first_seen and last_seen``) agent가 구간을 스스로 정하는
-다른 갈래로 빠진다. 큐를 채우면 first_seen/last_seen/zero_streak/
-suggested_windows가 전부 실제와 같이 흐른다.
-
-타지 않는 것: SlowlogTriggerService의 배치 창과 재트리거다. analyze를
-직접 부르므로 진단이 정확히 한 번 돈다. 의도한 것이다 — 재트리거가
-할당량을 예고 없이 더 태우면 측정이 흐려진다. 그 계층은 단위 테스트가
-덮는다.
+프로덕션과 같은 진단 경로를 타는가: 그렇다. Kafka 수신과 배치·정착만
+생략하고, 공개된 ``RunManualDiagnosis`` use case로 지정 시각 범위 하나를
+진단한다. 따라서 큐나 조립 객체의 내부 상태를 건드리지 않으며 진단은 정확히
+한 번 실행된다.
 
 주의: 실제 LLM·ClickHouse·Elasticsearch를 호출한다. 5분 창 실측이 입력
 513,122 토큰이므로 조용한 구간이나 짧은 구간부터 시작할 것.
@@ -48,6 +41,7 @@ from cluster_doctor.bootstrap.dependencies import (
 )
 from cluster_doctor.config.settings import get_settings
 from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
+from cluster_doctor.adapters.outbound.reporting.report_text import render_text
 
 
 # ── LLM 호출 측정 ──────────────────────────────────────────────────
@@ -244,6 +238,23 @@ def run(moments: list) -> int:
     print(f"  gaps            : {len(outcome.gaps)}건")
     for gap in outcome.gaps:
         print(f"      - {gap}")
+    diagnostics = outcome.diagnostics
+    if diagnostics.report is not None:
+        print(
+            f"  검증            : {diagnostics.report.verification_status} "
+            f"(수정 {diagnostics.report.revision_count}회)"
+        )
+        for issue in diagnostics.report.verification_issues:
+            print(f"      - {issue}")
+    print(f"  Evidence        : {len(diagnostics.evidence)}건")
+    print(f"  리포트 길이     : {len(render_text(diagnostics.rendered_report)):,}자")
+    print(
+        f"  관측값          : 타임라인 {len(diagnostics.observations.timeline)}분 / "
+        f"노드 {len(diagnostics.observations.nodes)}개 / "
+        f"마스터로그 {diagnostics.observations.master_log_total}줄 / "
+        f"상태 {len(diagnostics.observations.health)}건 / "
+        f"후보 {len(diagnostics.observations.candidates)}건"
+    )
 
     created = _snapshot_reports(report_dir) - before
     for path in sorted(created):
