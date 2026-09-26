@@ -6,10 +6,18 @@ trigger 하나가 곧 Incident 하나는 아니다. slowlog는 몰려서 오므�
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+@dataclass(frozen=True)
+class SlowlogTrigger:
+    """A framework-free slowlog arrival used by the application intake."""
+
+    timestamp: datetime
 
 
 class IncidentStatus(StrEnum):
