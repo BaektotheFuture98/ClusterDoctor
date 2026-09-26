@@ -16,20 +16,20 @@ from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.ingestion.kafka.slowlog_trigger import SlowlogTriggerService
 from cluster_doctor.config.settings import Settings, get_settings
 from cluster_doctor.ingestion.kafka.consumer import KafkaConsumerAdapter
-from cluster_doctor.agent.common.litellm_client import (
+from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import (
     require_supported_provider,
 )
-from cluster_doctor.agent.diagnosis.report_writer import (
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import (
     ReportWriter,
     build_structured_call,
 )
-from cluster_doctor.agent.diagnosis.state import (
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import (
     DiagnosisSeams,
 )
-from cluster_doctor.agent.supervisor.agent import (
-    DeepAgentIncidentAdapter,
+from cluster_doctor.adapters.outbound.deepagents.adapter import (
+    DeepAgentIncidentAnalyzer,
 )
-from cluster_doctor.agent.diagnosis.workflows.datasource.node_metric import (
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
     NodeMetricThresholds,
 )
 from cluster_doctor.agent.integrations.clickhouse.reader import (
@@ -184,7 +184,7 @@ def build_trigger_service(s: Settings | None = None) -> SlowlogTriggerService:
 
     # Main DeepAgent. 진단 SubAgent는 이 어댑터가 Incident마다 등록한다 —
     # 도구와 Guardrail이 그 Incident의 State를 쥐어야 하기 때문이다.
-    incident_analyzer = DeepAgentIncidentAdapter(
+    incident_analyzer = DeepAgentIncidentAnalyzer(
         provider=provider,
         model=s.llm_model,
         api_key=s.llm_api_key,
