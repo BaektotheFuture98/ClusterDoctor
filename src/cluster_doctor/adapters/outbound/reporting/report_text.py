@@ -18,6 +18,7 @@ from collections import Counter
 
 from cluster_doctor.domain.diagnosis.observations import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, SlowCandidate, observed_severity, TimelineRow
 from cluster_doctor.domain.diagnosis.health_point import HealthPoint
+from cluster_doctor.application.candidate_formatter import candidate_line
 
 _KST = timezone(timedelta(hours=9))
 
@@ -289,34 +290,6 @@ def health_lines(
     lines += [health_line(point) for point in points]
     return lines
 
-
-def candidate_line(candidate: SlowCandidate) -> str:
-    """느린 요청 후보 한 건을 **한 줄로**. 수치는 전부 코드가 붙인 값이다.
-
-    선정 이유와 쿼리 원문은 여기 넣지 않는다. 평문은 들여쓴 줄로, HTML은
-    하위 목록으로 그려야 해서 담는 모양이 다르다 — ``candidate_details``가
-    그 두 가지를 항목으로 돌려주고, 각 렌더러가 자기 방식으로 붙인다.
-    """
-    parts = [f"[{candidate.candidate_id}]", candidate.source, _hms(candidate.timestamp)]
-    if candidate.took:
-        parts.append(f"took={candidate.took}")
-    if candidate.run_time is not None:
-        parts.append(f"runtime={candidate.run_time}s")
-    if candidate.total_hits:
-        parts.append(f"hits={candidate.total_hits}")
-    if candidate.total_shards:
-        parts.append(f"shards={candidate.total_shards}")
-    if candidate.index_name:
-        parts.append(f"index={candidate.index_name}")
-    if candidate.node:
-        parts.append(f"node={candidate.node}")
-    if candidate.cmd:
-        parts.append(f"cmd={candidate.cmd}")
-    if candidate.company:
-        parts.append(f"company={candidate.company}")
-    if candidate.user:
-        parts.append(f"user={candidate.user}")
-    return " ".join(parts)
 
 
 def candidate_details(candidate: SlowCandidate, reason: str = "") -> list[str]:
