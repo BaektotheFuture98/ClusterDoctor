@@ -15,7 +15,7 @@ from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus
 from cluster_doctor.adapters.outbound.deepagents import adapter as agent_module
 from cluster_doctor.adapters.outbound.deepagents.adapter import (
-    DeepAgentIncidentAnalyzer,
+    _DeepAgentIncidentAnalyzer,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import DIAGNOSIS_SUBAGENT
 from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import TASK_TOOL_NAME
@@ -73,7 +73,7 @@ def build(script, *, monkeypatch, llm=None, recursion_limit=60):
 
     seams, store = build_seams(llm or ScriptedLlm(GOOD_DRAFT))
     repository = InMemoryIncidentStateRepository()
-    adapter = DeepAgentIncidentAnalyzer(
+    adapter = _DeepAgentIncidentAnalyzer(
         provider="gemini",
         model="x",
         api_key="y",
@@ -261,7 +261,7 @@ class TestRunaway:
         monkeypatch.setattr(agent_module, "build_chat_model", lambda **_kwargs: model)
         seams, _store = build_seams(ScriptedLlm(GOOD_DRAFT))
         repository = InMemoryIncidentStateRepository()
-        adapter = DeepAgentIncidentAnalyzer(
+        adapter = _DeepAgentIncidentAnalyzer(
             provider="gemini",
             model="x",
             api_key="y",

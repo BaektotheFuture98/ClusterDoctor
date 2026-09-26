@@ -18,14 +18,34 @@ BOOTSTRAP_ROOT = SOURCE_ROOT / "bootstrap"
 _AGENT_FRAMEWORKS = ("deepagents", "langchain", "langgraph", "litellm")
 
 
+def _module_name(path: Path) -> str:
+    relative = path.relative_to(SOURCE_ROOT).with_suffix("")
+    parts = ("cluster_doctor", *relative.parts)
+    return ".".join(parts[:-1] if relative.name == "__init__" else parts)
+
+
+def _resolve_from_import(path: Path, node: ast.ImportFrom) -> set[str]:
+    if node.level == 0:
+        return {node.module} if node.module else set()
+
+    package = _module_name(path)
+    if path.name != "__init__.py":
+        package = package.rpartition(".")[0]
+    package_parts = package.split(".")
+    base = package_parts[: len(package_parts) - (node.level - 1)]
+    if node.module:
+        return {".".join((*base, *node.module.split(".")))}
+    return {".".join((*base, alias.name)) for alias in node.names}
+
+
 def _imports_from(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(), filename=str(path))
     imported: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            imported.update(_resolve_from_import(path, node))
     return imported
 
 
@@ -100,16 +120,70 @@ def test_outbound_adapters_do_not_import_concrete_siblings() -> None:
     assert not violations, f"outbound adapters import concrete siblings: {violations}"
 
 
-def test_bootstrap_uses_only_the_public_deepagents_api() -> None:
-    allowed = "cluster_doctor.adapters.outbound.deepagents"
-    violations = {
-        path.relative_to(SOURCE_ROOT): sorted(
-            imported
-            for imported in _imports_from(path)
-            if imported.startswith(f"{allowed}.")
-        )
-        for path in BOOTSTRAP_ROOT.rglob("*.py")
-    }
-    violations = {path: imported for path, imported in violations.items() if imported}
+def test_bootstrap_uses_exactly_the_public_deepagents_factory_import() -> None:
+    public_module = "cluster_doctor.adapters.outbound.deepagents"
+    expected_names = {"DeepAgentsConfig", "build_deepagents_incident_analyzer"}
+    violations: dict[Path, list[str]] = {}
 
-    assert not violations, f"bootstrap imports deepagents internals: {violations}"
+    for path in BOOTSTRAP_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        invalid: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                invalid.extend(
+                    alias.name
+                    for alias in node.names
+                    if alias.name == public_module
+                    or alias.name.startswith(f"{public_module}.")
+                    or public_module.startswith(f"{alias.name}.")
+                )
+            elif isinstance(node, ast.ImportFrom):
+                imported = _resolve_from_import(path, node)
+                names = {alias.name for alias in node.names}
+                has_alias = any(alias.asname is not None for alias in node.names)
+                for module in imported:
+                    imported_names = {f"{module}.{name}" for name in names}
+                    touches_deepagents = (
+                        module == public_module
+                        or module.startswith(f"{public_module}.")
+                        or any(
+                            name == public_module
+                            or public_module.startswith(f"{name}.")
+                            for name in imported_names
+                        )
+                    )
+                    if not touches_deepagents:
+                        continue
+                    if module != public_module or names != expected_names or has_alias:
+                        invalid.append(
+                            f"from {node.module!r} import {sorted(names)!r}"
+                        )
+        if invalid:
+            violations[path.relative_to(SOURCE_ROOT)] = sorted(invalid)
+
+    assert not violations, f"bootstrap imports non-public deepagents API: {violations}"
+    tree = ast.parse(
+        (DEEPAGENTS_ROOT / "__init__.py").read_text(),
+        filename=str(DEEPAGENTS_ROOT / "__init__.py"),
+    )
+    exported = next(
+        (
+            ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            )
+        ),
+        None,
+    )
+    assert exported == ["DeepAgentsConfig", "build_deepagents_incident_analyzer"]
+
+    adapter_tree = ast.parse(
+        (DEEPAGENTS_ROOT / "adapter.py").read_text(),
+        filename=str(DEEPAGENTS_ROOT / "adapter.py"),
+    )
+    classes = {node.name for node in adapter_tree.body if isinstance(node, ast.ClassDef)}
+    assert "DeepAgentIncidentAnalyzer" not in classes
+    assert "_DeepAgentIncidentAnalyzer" in classes
