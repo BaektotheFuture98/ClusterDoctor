@@ -63,3 +63,30 @@ The legacy trigger service and incident runner remain in place for the staged
 bootstrap migration in Task 5. The new use cases are independently tested now;
 Task 5 will replace the legacy composition path with these public application
 entry points.
+
+## Review-fix addendum
+
+### RED/GREEN evidence
+
+- RED: `uv run pytest -q tests/application/test_slowlog_intake.py tests/application/test_diagnose_incident.py tests/application/test_manual_diagnosis.py`
+  produced `5 failed, 10 passed`. The failures showed the missing
+  `max_settling_wait_seconds` constructor parameter, an analyzer invocation
+  after its full budget had already been spent settling, and the old
+  single-datetime manual interface rejecting sequences.
+- GREEN: `uv run pytest -q tests/application` — `15 passed in 0.31s`.
+- Full regression: `uv run pytest -q` — `563 passed in 8.51s`.
+- Static verification: the focused `uvx ruff check` and `git diff --check`
+  commands completed successfully.
+
+### Review fixes
+
+- `SlowlogIntake` now accepts `max_settling_wait_seconds`, defaults it to
+  `MAX_TOTAL_WAIT_SECONDS`, and limits each quiet-period sleep to the remaining
+  settling budget (as well as the single-wait cap). Continuous arrivals now
+  begin diagnosis at that cap rather than holding the incident indefinitely.
+- `DiagnoseIncident` subtracts `StartIncident.settling_wait_seconds` from the
+  incident timeout before creating its deadline. An exhausted budget closes the
+  incident as failed and skips the analyzer.
+- `RunManualDiagnosis.handle` now accepts a non-empty `Sequence[datetime]`,
+  creates one manual incident for the minimum/maximum observed window, records
+  a current UTC receive time, and rejects empty input with `ValueError`.

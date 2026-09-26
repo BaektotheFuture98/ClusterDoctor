@@ -47,6 +47,32 @@ def intake_for(diagnosis: RecordingDiagnosis, *, batch: float = 0.005) -> Slowlo
     )
 
 
+async def test_계속_들어오는_slowlog도_정착_대기_상한에서_진단을_시작한다():
+    diagnosis = RecordingDiagnosis()
+    intake = SlowlogIntake(
+        diagnose_incident=diagnosis,
+        cluster="es-prod",
+        micro_batch_seconds=0,
+        quiet_period_seconds=0.005,
+        max_settling_wait_seconds=0.02,
+    )
+
+    async def keep_arriving() -> None:
+        index = 1
+        while not diagnosis.commands:
+            await intake.handle(TS + timedelta(seconds=index))
+            index += 1
+            await asyncio.sleep(0.001)
+
+    producer = asyncio.create_task(keep_arriving())
+    await intake.handle(TS)
+    await settle(intake)
+    await producer
+
+    assert len(diagnosis.commands) == 1
+    assert diagnosis.commands[0].settling_wait_seconds == 0.02
+
+
 async def test_마이크로_배치의_slowlog는_정착한_Incident_하나로_묶인다():
     diagnosis = RecordingDiagnosis()
     intake = intake_for(diagnosis)

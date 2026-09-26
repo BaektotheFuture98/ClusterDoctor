@@ -65,7 +65,11 @@ class DiagnoseIncident:
     ) -> IncidentOutcome:
         incident = command.incident
         token = cancellation or CancellationToken()
-        deadline = Deadline(self._incident_timeout_seconds)
+        remaining_seconds = max(
+            0.0,
+            self._incident_timeout_seconds - command.settling_wait_seconds,
+        )
+        deadline = Deadline(remaining_seconds)
         state = IncidentState(
             incident_id=incident.incident_id,
             pending_windows=initial_windows(
