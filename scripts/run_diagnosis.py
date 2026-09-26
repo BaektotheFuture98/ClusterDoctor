@@ -41,7 +41,6 @@ from cluster_doctor.bootstrap.dependencies import (
 )
 from cluster_doctor.config.settings import get_settings
 from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
-from cluster_doctor.adapters.outbound.reporting.report_text import render_text
 
 
 # ── LLM 호출 측정 ──────────────────────────────────────────────────
@@ -247,7 +246,7 @@ def run(moments: list) -> int:
         for issue in diagnostics.report.verification_issues:
             print(f"      - {issue}")
     print(f"  Evidence        : {len(diagnostics.evidence)}건")
-    print(f"  리포트 길이     : {len(render_text(diagnostics.rendered_report)):,}자")
+    print(f"  리포트 길이     : {diagnostics.publication.text_length:,}자")
     print(
         f"  관측값          : 타임라인 {len(diagnostics.observations.timeline)}분 / "
         f"노드 {len(diagnostics.observations.nodes)}개 / "

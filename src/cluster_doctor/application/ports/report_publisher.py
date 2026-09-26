@@ -1,6 +1,12 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from cluster_doctor.domain.diagnosis.observations import DiagnosisReport
+
+
+@dataclass(frozen=True)
+class ReportPublication:
+    text_length: int = 0
 
 
 class ReportPublisher(ABC):
@@ -11,7 +17,7 @@ class ReportPublisher(ABC):
         *,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
-    ) -> None:
+    ) -> ReportPublication:
         """리포트를 운영자에게 전달한다.
 
         ``gaps``와 ``analysis_failed``를 본문에 섞어 넘기지 않고 따로 받는

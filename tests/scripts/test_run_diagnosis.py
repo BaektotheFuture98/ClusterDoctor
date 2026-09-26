@@ -8,6 +8,7 @@ from cluster_doctor.application.use_cases.diagnose_incident import (
     IncidentDiagnostics,
     IncidentOutcome,
 )
+from cluster_doctor.application.ports.report_publisher import ReportPublication
 from cluster_doctor.domain.diagnosis.observations import Observations
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
 from cluster_doctor.domain.incident.models import IncidentStatus
@@ -38,6 +39,7 @@ def test_run_delegates_to_public_manual_use_case_and_prints_public_diagnostics(
     )
     diagnostics = IncidentDiagnostics(
         report=report, observations=Observations(), evidence=(),
+        publication=ReportPublication(text_length=321),
     )
 
     class FakeManualDiagnosis:
@@ -55,5 +57,5 @@ def test_run_delegates_to_public_manual_use_case_and_prints_public_diagnostics(
     output = capsys.readouterr().out
     assert "검증            : MISMATCH" in output
     assert "Evidence        : 0건" in output
-    assert "리포트 길이" in output
+    assert "리포트 길이     : 321자" in output
     assert "관측값" in output

@@ -35,7 +35,10 @@ from cluster_doctor.domain.diagnosis.observations import (
     Observations,
     observed_severity,
 )
-from cluster_doctor.application.ports.report_publisher import ReportPublisher
+from cluster_doctor.application.ports.report_publisher import (
+    ReportPublication,
+    ReportPublisher,
+)
 from cluster_doctor.adapters.outbound.reporting.report_text import (
     SEVERITY_PREFIX,
     candidate_details,
@@ -91,7 +94,7 @@ class HtmlFileReportPublisher(ReportPublisher):
         *,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
-    ) -> None:
+    ) -> ReportPublication:
         # 인코딩 불가 문자는 _e()가 걸러낸다. 리포트가 객체가 되면서 문자열이
         # 수십 곳에서 나오므로 진입부에서 한 번 치환하는 것으로는 부족하다.
         # 폴백 로그만 여기서 따로 치환한다 — 그쪽은 _e를 타지 않는다.
@@ -100,6 +103,7 @@ class HtmlFileReportPublisher(ReportPublisher):
         # 파일 쓰기는 짧지만 이벤트 루프에서 하지 않는다. 같은 루프가 Kafka를
         # 계속 소비하고 있고, 리포트는 수십 KB까지 자란다.
         try:
+            text_length = len(render_text(report))
             path = await asyncio.to_thread(
                 self._write, report, gaps, analysis_failed
             )
@@ -115,9 +119,10 @@ class HtmlFileReportPublisher(ReportPublisher):
             except Exception:  # noqa: BLE001
                 # 렌더링 자체가 실패한 경우다. 그때도 이 폴백이 죽으면 안 된다.
                 _logger.exception("리포트 평문 렌더링도 실패했다")
-            return
+            return ReportPublication(text_length=locals().get("text_length", 0))
 
         _logger.info("리포트 저장: %s", path)
+        return ReportPublication(text_length=text_length)
 
     def _write(
         self,
