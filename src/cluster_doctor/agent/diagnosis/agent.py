@@ -68,14 +68,14 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from pydantic import BaseModel, Field
 
-from cluster_doctor.storage.incident_state_store import IncidentStateRepository
-from cluster_doctor.incident.window_planner import plan_new_windows
-from cluster_doctor.incident.models import Incident
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.agent.contracts import LogAnalysisRequest, LogAnalysisResponse
-from cluster_doctor.contracts.report import LogAnalysisStatus, VerificationStatus
-from cluster_doctor.contracts.time_range import InvalidTimeRangeError, TimeRange
-from cluster_doctor.agent.common.kst import parse_kst
+from cluster_doctor.application.ports.incident_state_repository import IncidentStateRepository
+from cluster_doctor.domain.incident.window_planner import plan_new_windows
+from cluster_doctor.domain.incident.models import Incident
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.contracts import LogAnalysisRequest, LogAnalysisResponse
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
+from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.diagnosis.kst import parse_kst
 from cluster_doctor.agent.diagnosis.prompt_subagent import build_subagent_prompt
 from cluster_doctor.agent.diagnosis.state import DiagnosisSeams, _Delegation
 from cluster_doctor.agent.diagnosis.tools import _build_tools, _verification_of

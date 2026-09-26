@@ -9,11 +9,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from cluster_doctor.agent.integrations.clickhouse.port import (
+from cluster_doctor.application.ports.log_repository import (
     MAX_NODE_LOG_LIMIT,
 )
-from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry
-from cluster_doctor.contracts.time_range import InvalidTimeRangeError
+from cluster_doctor.domain.diagnosis.log_entries import NodeLogEntry
+from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError
 from cluster_doctor.agent.integrations.clickhouse.reader import (
     ClickHouseLogAdapter,
 )

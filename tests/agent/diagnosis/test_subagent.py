@@ -12,15 +12,15 @@ chat model만 대본으로 바꾼다. 파이프라인(수집기·triage·검증)
 받는다 — 같은 재료를 두 벌 만들면 한쪽만 고쳐지는 날이 온다.
 """
 
-from cluster_doctor.incident.models import Incident
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.report import (
+from cluster_doctor.domain.incident.models import Incident
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.report import (
     LogAnalysisStatus,
     VerificationStatus,
 )
-from cluster_doctor.contracts.time_range import TimeRange
+from cluster_doctor.domain.diagnosis.time_range import TimeRange
 from cluster_doctor.agent.common import harness as harness_module
-from cluster_doctor.agent.common.kst import format_kst
+from cluster_doctor.domain.diagnosis.kst import format_kst
 from cluster_doctor.agent.diagnosis.agent import (
     build_diagnosis_subagent,
 )

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pydantic import BaseModel, Field
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
-from cluster_doctor.contracts.evidence import Evidence
+from cluster_doctor.domain.diagnosis.evidence import Evidence
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.prompt import (
     build_map_prompt,
     build_reduce_prompt,

@@ -9,10 +9,10 @@ from cluster_doctor.agent.integrations.clickhouse.reader import (
     ClickHouseLogAdapter,
     _split_by_minute,
 )
-from cluster_doctor.agent.integrations.clickhouse.models import QueryLogEntry
-from cluster_doctor.agent.integrations.clickhouse.models import SlowlogEntry
-from cluster_doctor.agent.integrations.clickhouse.models import NodeMetricEntry
-from cluster_doctor.contracts.time_range import TimeRange
+from cluster_doctor.domain.diagnosis.log_entries import QueryLogEntry
+from cluster_doctor.domain.diagnosis.log_entries import SlowlogEntry
+from cluster_doctor.domain.diagnosis.log_entries import NodeMetricEntry
+from cluster_doctor.domain.diagnosis.time_range import TimeRange
 
 # ``TimeRange``는 naive datetime을 거부한다. 구간이 만들어진 자리에서 거절되지
 # 않으면 한참 뒤의 차집합 산수에서 터지기 때문이다. 이 파일의 시각도 전부

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from cluster_doctor.contracts.time_range import (
+from cluster_doctor.domain.diagnosis.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     is_covered,
@@ -10,7 +10,7 @@ from cluster_doctor.contracts.time_range import (
     split_span,
     subtract_spans,
 )
-from cluster_doctor.agent.common.kst import KST
+from cluster_doctor.domain.diagnosis.kst import KST
 
 
 def at(hour: int, minute: int) -> datetime:

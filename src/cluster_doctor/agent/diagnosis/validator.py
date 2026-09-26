@@ -16,8 +16,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.contracts.report import LogAnalysisReport
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 
 _logger = logging.getLogger(__name__)
 

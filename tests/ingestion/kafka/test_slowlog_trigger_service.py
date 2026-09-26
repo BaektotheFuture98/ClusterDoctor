@@ -20,7 +20,7 @@ from cluster_doctor.ingestion.kafka.slowlog_trigger import (
     _MAX_CONSECUTIVE_RETRIGGERS,
     SlowlogTriggerService,
 )
-from cluster_doctor.incident.models import IncidentStatus, TriggerType
+from cluster_doctor.domain.incident.models import IncidentStatus, TriggerType
 from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 
 TS = datetime(2026, 8, 28, 10, 20, tzinfo=timezone.utc)

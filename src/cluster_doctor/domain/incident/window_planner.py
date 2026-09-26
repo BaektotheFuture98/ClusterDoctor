@@ -14,8 +14,8 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.time_range import (
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.time_range import (
     TimeRange,
     merge_spans,
     split_span,

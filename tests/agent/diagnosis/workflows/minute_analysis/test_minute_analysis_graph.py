@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 from cluster_doctor.exceptions import LlmApiError
-from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
+from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import run_analysis
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.nodes import (
     MapOutput,

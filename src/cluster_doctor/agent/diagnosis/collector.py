@@ -20,27 +20,27 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from cluster_doctor.storage.artifact_store import ArtifactStore
-from cluster_doctor.agent.integrations.elasticsearch.ports import (
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.application.ports.cluster_repository import (
     ClusterRepository,
     NodeResolver,
 )
-from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
-from cluster_doctor.incident.guardrails import (
+from cluster_doctor.application.ports.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.domain.incident.guardrails import (
     MAX_EVIDENCE_TOTAL,
     clamp_evidence,
     truncate_raw,
 )
-from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.agent.integrations.clickhouse.models import (
+from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
+from cluster_doctor.domain.diagnosis.log_entries import (
     LogEntry,
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.contracts.time_range import TimeRange, split_by_minute
-from cluster_doctor.agent.common.kst import KST
+from cluster_doctor.domain.diagnosis.time_range import TimeRange, split_by_minute
+from cluster_doctor.domain.diagnosis.kst import KST
 from cluster_doctor.agent.diagnosis import node_investigation
 from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,

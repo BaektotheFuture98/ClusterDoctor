@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from cluster_doctor.agent.integrations.clickhouse.models import (
+from cluster_doctor.domain.diagnosis.log_entries import (
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,

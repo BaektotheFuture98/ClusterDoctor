@@ -14,12 +14,12 @@ from __future__ import annotations
 import logging
 import threading
 
-from cluster_doctor.contracts.observations import (
+from cluster_doctor.domain.diagnosis.observations import (
     Observations,
     merge_observations,
 )
-from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.contracts.report import LogAnalysisReport
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 
 _logger = logging.getLogger(__name__)
 

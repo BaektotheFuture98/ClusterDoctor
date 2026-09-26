@@ -7,8 +7,8 @@ Evidence와 다르다 — Evidence는 모델이 골라낸 줄이고, 여기 모�
 
 from datetime import datetime, timedelta
 
-from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry, SlowlogEntry
-from cluster_doctor.agent.common.kst import KST
+from cluster_doctor.domain.diagnosis.log_entries import NodeLogEntry, SlowlogEntry
+from cluster_doctor.domain.diagnosis.kst import KST
 from cluster_doctor.agent.diagnosis.run_state import (
     AnalysisRunState,
 )

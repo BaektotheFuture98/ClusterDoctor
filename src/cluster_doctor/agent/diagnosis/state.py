@@ -11,17 +11,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from cluster_doctor.storage.artifact_store import ArtifactStore
-from cluster_doctor.agent.integrations.elasticsearch.ports import (
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.application.ports.cluster_repository import (
     ClusterRepository,
     NodeResolver,
 )
-from cluster_doctor.agent.integrations.ssh.port import NodeLogFetcher
-from cluster_doctor.agent.integrations.clickhouse.models import LogEntry, NodeLogEntry
-from cluster_doctor.contracts.evidence import Evidence
-from cluster_doctor.contracts.time_range import TimeRange
-from cluster_doctor.contracts.report import LogAnalysisReport
-from cluster_doctor.agent.contracts import LogAnalysisRequest
+from cluster_doctor.application.ports.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.domain.diagnosis.log_entries import LogEntry, NodeLogEntry
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.time_range import TimeRange
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
+from cluster_doctor.domain.diagnosis.contracts import LogAnalysisRequest
 from cluster_doctor.agent.diagnosis.collector import CollectedEvidence
 from cluster_doctor.agent.diagnosis.report_writer import ReportWriter
 from cluster_doctor.agent.diagnosis.run_state import AnalysisRunState

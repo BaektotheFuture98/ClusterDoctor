@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cluster_doctor.contracts.report import LogAnalysisStatus, VerificationStatus
-from cluster_doctor.contracts.time_range import TimeRange
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
+from cluster_doctor.domain.diagnosis.time_range import TimeRange
 
 
 class LogAnalysisRequest(BaseModel):

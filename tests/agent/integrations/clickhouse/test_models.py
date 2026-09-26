@@ -15,7 +15,7 @@ from decimal import Decimal
 
 import pytest
 
-from cluster_doctor.agent.integrations.clickhouse.models import (
+from cluster_doctor.domain.diagnosis.log_entries import (
     LogEntry,
     NodeMetricEntry,
     QueryLogEntry,

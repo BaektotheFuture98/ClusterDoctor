@@ -10,8 +10,8 @@ ES는 그 사건들을 INFO로 남긴다.
 
 from __future__ import annotations
 
-from cluster_doctor.contracts.evidence import EvidenceSource
-from cluster_doctor.agent.integrations.clickhouse.models import NodeLogEntry
+from cluster_doctor.domain.diagnosis.evidence import EvidenceSource
+from cluster_doctor.domain.diagnosis.log_entries import NodeLogEntry
 from cluster_doctor.agent.common.log_format import format_log_line
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import RawRecord

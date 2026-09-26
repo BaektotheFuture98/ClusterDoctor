@@ -8,14 +8,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from cluster_doctor.contracts.observations import SuspectPick
-from cluster_doctor.contracts.report import (
+from cluster_doctor.domain.diagnosis.observations import SuspectPick
+from cluster_doctor.domain.diagnosis.report import (
     LogAnalysisReport,
     RootCause,
     TimelineEvent,
     VerificationStatus,
 )
-from cluster_doctor.incident.report_merge import (
+from cluster_doctor.domain.incident.report_merge import (
     finalize_incident_report,
     merge_window_reports,
 )

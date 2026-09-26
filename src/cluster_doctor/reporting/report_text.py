@@ -16,8 +16,8 @@ from datetime import datetime, timedelta, timezone
 import re
 from collections import Counter
 
-from cluster_doctor.contracts.observations import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, SlowCandidate, observed_severity, TimelineRow
-from cluster_doctor.contracts.health_point import HealthPoint
+from cluster_doctor.domain.diagnosis.observations import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, SlowCandidate, observed_severity, TimelineRow
+from cluster_doctor.domain.diagnosis.health_point import HealthPoint
 
 _KST = timezone(timedelta(hours=9))
 

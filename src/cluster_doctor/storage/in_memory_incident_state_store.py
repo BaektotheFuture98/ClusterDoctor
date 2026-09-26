@@ -18,7 +18,7 @@ import logging
 import threading
 
 from cluster_doctor.exceptions import IncidentNotFoundError
-from cluster_doctor.incident.state import IncidentState
+from cluster_doctor.domain.incident.state import IncidentState
 
 _logger = logging.getLogger(__name__)
 

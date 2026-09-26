@@ -1,4 +1,4 @@
-"""``IncidentAgent`` 포트 뒤의 Main DeepAgent 어댑터.
+"""``IncidentAnalyzer`` 포트 뒤의 Main DeepAgent 어댑터.
 
 여기서 묻는 것은 두 가지다.
 
@@ -10,9 +10,9 @@
 chat model만 대본이다. 그래프도 미들웨어도 진단 파이프라인도 전부 진짜다.
 """
 
-from cluster_doctor.incident.models import Incident, IncidentStatus
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.report import LogAnalysisStatus
+from cluster_doctor.domain.incident.models import Incident, IncidentStatus
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus
 from cluster_doctor.agent.supervisor import agent as agent_module
 from cluster_doctor.agent.supervisor.agent import (
     DeepAgentIncidentAdapter,
@@ -87,7 +87,7 @@ def build(script, *, monkeypatch, llm=None, recursion_limit=60):
 def run(adapter, repository, incident_id: str = "inc-1"):
     state = IncidentState(incident_id=incident_id)
     repository.create(state)
-    return adapter.run(incident(incident_id), state), state
+    return adapter.analyze(incident(incident_id)), state
 
 
 class TestEndToEndDelegation:

@@ -4,7 +4,7 @@
         ↓
     초기 pending_windows
         ↓
-    IncidentAgent.run ──> Main DeepAgent가 분석을 진행한다
+    IncidentAnalyzer.analyze ──> Main DeepAgent가 분석을 진행한다
         ↓                  (구간 선택·위임·종료 판단이 그 안에 있다)
     종료 상태 확정
         ↓
@@ -31,23 +31,23 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from cluster_doctor.storage.artifact_store import ArtifactStore
-from cluster_doctor.agent.incident_agent_port import IncidentAgent
-from cluster_doctor.storage.incident_state_store import IncidentStateRepository
-from cluster_doctor.reporting.notifier import Notifier
-from cluster_doctor.incident.guardrails import (
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.application.ports.incident_analyzer import IncidentAnalyzer
+from cluster_doctor.application.ports.incident_state_repository import IncidentStateRepository
+from cluster_doctor.application.ports.report_publisher import Notifier
+from cluster_doctor.domain.incident.guardrails import (
     INCIDENT_TIMEOUT_SECONDS,
     CancellationToken,
     Deadline,
     clamp_wait,
 )
-from cluster_doctor.incident.inflow import InflowTracker
+from cluster_doctor.domain.incident.inflow import InflowTracker
 from cluster_doctor.reporting.report_assembler import to_diagnosis_report
-from cluster_doctor.incident.report_merge import finalize_incident_report
-from cluster_doctor.incident.window_planner import initial_windows
-from cluster_doctor.incident.models import Incident, IncidentStatus
-from cluster_doctor.incident.state import IncidentState
-from cluster_doctor.contracts.report import LogAnalysisStatus, VerificationStatus
+from cluster_doctor.domain.incident.report_merge import finalize_incident_report
+from cluster_doctor.domain.incident.window_planner import initial_windows
+from cluster_doctor.domain.incident.models import Incident, IncidentStatus
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
 
 _logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class IncidentRunner:
     def __init__(
         self,
         *,
-        incident_agent: IncidentAgent,
+        incident_analyzer: IncidentAnalyzer,
         state_repository: IncidentStateRepository,
         artifact_store: ArtifactStore,
         notifier: Notifier,
@@ -87,7 +87,7 @@ class IncidentRunner:
         incident_timeout_seconds: float = INCIDENT_TIMEOUT_SECONDS,
         wait_step_seconds: float = _WAIT_STEP_SECONDS,
     ) -> None:
-        self._agent = incident_agent
+        self._analyzer = incident_analyzer
         self._states = state_repository
         self._store = artifact_store
         self._notifier = notifier
@@ -123,7 +123,7 @@ class IncidentRunner:
             forced = (IncidentStatus.FAILED, self._timeout_reason())
             analysis_failed = True
         else:
-            analysis_failed, forced = await self._run_agent(incident, state, deadline)
+            analysis_failed, forced = await self._run_analyzer(incident, deadline)
 
         # Agent가 상태를 제자리에서 갱신하고 저장소에도 반영한다. 예산 회계가
         # 그쪽에서 일어나므로 종료 판단 전에 다시 읽는다.
@@ -164,9 +164,9 @@ class IncidentRunner:
         )
         return outcome
 
-    # ── Agent 실행 ───────────────────────────────────────────────────
-    async def _run_agent(
-        self, incident: Incident, state: IncidentState, deadline: Deadline
+    # ── Analyzer 실행 ─────────────────────────────────────────────────
+    async def _run_analyzer(
+        self, incident: Incident, deadline: Deadline
     ) -> tuple[bool, tuple[IncidentStatus, str] | None]:
         """Main DeepAgent에게 분석을 맡긴다.
 
@@ -184,7 +184,7 @@ class IncidentRunner:
         """
         try:
             result = await asyncio.wait_for(
-                asyncio.to_thread(self._agent.run, incident, state),
+                asyncio.to_thread(self._analyzer.analyze, incident),
                 timeout=deadline.remaining,
             )
         except asyncio.TimeoutError:
@@ -199,7 +199,7 @@ class IncidentRunner:
             _logger.exception("[incident %s] Agent 실행이 예외로 끝났다", incident.incident_id)
             return True, (IncidentStatus.FAILED, "분석 Agent 실행이 예외로 끝났다")
 
-        current = self._states.get(incident.incident_id) or state
+        current = self._states.get(incident.incident_id)
         if not current.status.is_terminal():
             self._close(current, result.status, result.reason)
         if result.gaps:

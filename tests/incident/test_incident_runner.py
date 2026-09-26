@@ -14,13 +14,13 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
-from cluster_doctor.incident.guardrails import CancellationToken
+from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisResult
+from cluster_doctor.domain.incident.guardrails import CancellationToken
 from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.contracts.observations import Observations, TimelineRow
-from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident.models import Incident, IncidentStatus
-from cluster_doctor.contracts.report import (
+from cluster_doctor.domain.diagnosis.observations import Observations, TimelineRow
+from cluster_doctor.domain.diagnosis.evidence import Evidence, EvidenceSource
+from cluster_doctor.domain.incident.models import Incident, IncidentStatus
+from cluster_doctor.domain.diagnosis.report import (
     LogAnalysisReport,
     LogAnalysisStatus,
     VerificationStatus,
@@ -45,8 +45,8 @@ def incident(incident_id: str = "inc-1") -> Incident:
     )
 
 
-class FakeIncidentAgent:
-    """``IncidentAgent`` 포트를 만족하는 가짜.
+class FakeIncidentAnalyzer:
+    """``IncidentAnalyzer`` 포트를 만족하는 가짜.
 
     실제 구현과 같은 계약을 지킨다 — ``state``를 제자리에서 갱신하고 저장소에도
     반영한다. 그 계약이 깨지면 Runner가 종료 뒤에 State를 다시 읽는 이유가
@@ -56,7 +56,7 @@ class FakeIncidentAgent:
     def __init__(self, repository, *, behaviour=None, result=None) -> None:
         self._repository = repository
         self._behaviour = behaviour
-        self._result = result or IncidentAgentResult(status=IncidentStatus.COMPLETED)
+        self._result = result or IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
         self.calls: list[tuple[Incident, object]] = []
         self.seen_pending: list[list] = []
         # 호출 시점의 스냅샷. ``state``는 살아 있는 객체라 나중에 읽으면
@@ -64,7 +64,8 @@ class FakeIncidentAgent:
         # 물을 수 없다.
         self.seen_at_entry: list[dict] = []
 
-    def run(self, incident, state):
+    def analyze(self, incident):
+        state = self._repository.get(incident.incident_id)
         self.calls.append((incident, state))
         self.seen_pending.append(list(state.pending_windows))
         self.seen_at_entry.append(
@@ -105,9 +106,9 @@ def build(
     store = store or InMemoryArtifactStore()
     notifier = notifier or RecordingNotifier()
     repository = InMemoryIncidentStateRepository()
-    agent = agent or FakeIncidentAgent(repository, behaviour=behaviour, result=result)
+    agent = agent or FakeIncidentAnalyzer(repository, behaviour=behaviour, result=result)
     runner = IncidentRunner(
-        incident_agent=agent,
+        incident_analyzer=agent,
         state_repository=repository,
         artifact_store=store,
         notifier=notifier,
@@ -164,7 +165,7 @@ class TestLifecycle:
         """
 
         def no_close(_incident, _state, _repository):
-            return IncidentAgentResult(status=IncidentStatus.ANALYZING)
+            return IncidentAnalysisResult(status=IncidentStatus.ANALYZING)
 
         runner, *_ = build(behaviour=no_close)
 
@@ -177,7 +178,7 @@ class TestLifecycle:
             state.status = IncidentStatus.FAILED
             state.closing_reason = "근거를 하나도 얻지 못했다"
             repository.save(state)
-            return IncidentAgentResult(
+            return IncidentAnalysisResult(
                 status=IncidentStatus.FAILED, reason=state.closing_reason, failed=True
             )
 
@@ -210,7 +211,7 @@ class TestLifecycle:
             state.analyzed_minutes += 10
             state.record_analyzed(span(14, 0, 14, 10))
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, agent, *_ = build(behaviour=burn_budget)
 
@@ -236,7 +237,7 @@ class TestWallClock:
 
         def hang(_incident, _state, _repository):
             release.wait(5)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, _agent, _store, notifier, _repository = build(
             behaviour=hang, incident_timeout_seconds=0.05
@@ -265,7 +266,7 @@ class TestWallClock:
     async def test_Agent_실행_중에도_이벤트_루프가_돌아간다(self):
         """요구사항 11번.
 
-        ``IncidentAgent.run``은 동기이고 LLM 왕복이 수 분 걸린다. 같은 루프가
+        ``IncidentAnalyzer.analyze``은 동기이고 LLM 왕복이 수 분 걸린다. 같은 루프가
         Kafka를 소비하므로 여기서 막으면 그동안 도착한 slowlog가 쌓이기만
         한다 — ``asyncio.to_thread``로 밀어내는 이유다.
 
@@ -279,7 +280,7 @@ class TestWallClock:
         def block(_incident, _state, _repository):
             started.set()
             release.wait(5)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         async def tick():
             nonlocal ticks
@@ -328,7 +329,7 @@ class TestDelivery:
             state.status = IncidentStatus.FAILED
             state.closing_reason = "조회가 전부 실패했다"
             repository.save(state)
-            return IncidentAgentResult(
+            return IncidentAnalysisResult(
                 status=IncidentStatus.FAILED,
                 reason=state.closing_reason,
                 failed=True,
@@ -352,7 +353,7 @@ class TestDelivery:
             state.status = IncidentStatus.FAILED
             state.closing_reason = "예산을 다 쓴 채 근거가 없었다"
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.FAILED, failed=True)
+            return IncidentAnalysisResult(status=IncidentStatus.FAILED, failed=True)
 
         runner, _agent, _store, notifier, _repository = build(behaviour=fail)
 
@@ -372,7 +373,7 @@ class TestDelivery:
         def accumulate(_incident, state, repository):
             state.accumulated_gaps.extend(["노드 로그 접속 실패", "마스터 로그 누락"])
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, _agent, _store, notifier, _repository = build(behaviour=accumulate)
 
@@ -396,7 +397,7 @@ class TestDelivery:
             # 흉내낸다 — report_refs만 쌓이고 final_report_ref는 비어 있다.
             state.report_refs.append(ref)
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, _agent, _store, notifier, repository = build(
             behaviour=leave_unfinalized, store=store
@@ -437,7 +438,7 @@ class TestVerification:
             state.latest_analysis_status = LogAnalysisStatus.VALIDATION_FAILED
             state.latest_verification_status = VerificationStatus.MISMATCH
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, _agent, _store, notifier, _repository = build(behaviour=mismatch)
 
@@ -463,7 +464,7 @@ class TestVerification:
         def attach(_incident, state, repository):
             state.final_report_ref = ref
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, _agent, _store, notifier, _repository = build(
             behaviour=attach, store=store
@@ -523,7 +524,7 @@ async def test_Agent가_기록한_분석_구간이_State에_남는다(window):
         state.record_analyzed(window)
         evidence_id = "E-1"
         repository.save(state)
-        return IncidentAgentResult(status=IncidentStatus.COMPLETED, reason=evidence_id)
+        return IncidentAnalysisResult(status=IncidentStatus.COMPLETED, reason=evidence_id)
 
     runner, _agent, _store, _notifier, repository = build(behaviour=analyze)
 
@@ -555,11 +556,11 @@ class TestConcurrentIncidents:
             state.analysis_call_count += 1
             state.evidence_refs.append(ref)
             repo.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
-        agent = FakeIncidentAgent(repository, behaviour=analyze)
+        agent = FakeIncidentAnalyzer(repository, behaviour=analyze)
         runner = IncidentRunner(
-            incident_agent=agent,
+            incident_analyzer=agent,
             state_repository=repository,
             artifact_store=store,
             notifier=RecordingNotifier(),
@@ -647,11 +648,11 @@ class TestForcedTerminationWins:
 
         def hang(_incident, _state, _repo):
             release.wait(5)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
-        agent = FakeIncidentAgent(repository, behaviour=hang)
+        agent = FakeIncidentAnalyzer(repository, behaviour=hang)
         runner = IncidentRunner(
-            incident_agent=agent,
+            incident_analyzer=agent,
             state_repository=repository,
             artifact_store=InMemoryArtifactStore(),
             notifier=RecordingNotifier(),
@@ -684,9 +685,9 @@ class TestForcedTerminationWins:
         def explode(_incident, _state, _repo):
             raise RuntimeError("deepagents 내부에서 터졌다")
 
-        agent = FakeIncidentAgent(repository, behaviour=explode)
+        agent = FakeIncidentAnalyzer(repository, behaviour=explode)
         runner = IncidentRunner(
-            incident_agent=agent,
+            incident_analyzer=agent,
             state_repository=repository,
             artifact_store=InMemoryArtifactStore(),
             notifier=RecordingNotifier(),
@@ -706,9 +707,9 @@ class TestForcedTerminationWins:
         repository = RacingStateRepository()
         token = CancellationToken()
         token.cancel("운영자 중단")
-        agent = FakeIncidentAgent(repository)
+        agent = FakeIncidentAnalyzer(repository)
         runner = IncidentRunner(
-            incident_agent=agent,
+            incident_analyzer=agent,
             state_repository=repository,
             artifact_store=InMemoryArtifactStore(),
             notifier=RecordingNotifier(),
@@ -738,7 +739,7 @@ class TestFailedDelegationsBlockRetrigger:
             state.closing_reason = "다 봤다"
             repository.save(state)
             # Agent 자신은 실패를 보고하지 않는다 — 모델이 완료로 닫았기 때문이다.
-            return IncidentAgentResult(
+            return IncidentAnalysisResult(
                 status=IncidentStatus.COMPLETED, reason="다 봤다", failed=False
             )
 
@@ -756,7 +757,7 @@ class TestFailedDelegationsBlockRetrigger:
         def ok_analysis(_incident, state, repository):
             state.latest_analysis_status = LogAnalysisStatus.COMPLETED
             repository.save(state)
-            return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+            return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
         runner, *_ = build(behaviour=ok_analysis)
 

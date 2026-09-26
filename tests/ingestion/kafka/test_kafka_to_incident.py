@@ -5,7 +5,7 @@
 사이에 pending 큐가 공유되어 있어야 한 건이라도 분석된다. 조립이 어긋나면
 어느 단위 테스트도 깨지지 않은 채 운영에서 아무것도 분석되지 않는다.
 
-여기서 가짜는 ``IncidentAgent`` 하나다. 그 아래(모델·ClickHouse·ES·SSH)는
+여기서 가짜는 ``IncidentAnalyzer`` 하나다. 그 아래(모델·ClickHouse·ES·SSH)는
 이 사슬의 관심사가 아니다.
 """
 
@@ -13,13 +13,13 @@ import asyncio
 import queue as stdlib_queue
 from datetime import datetime, timezone
 
-from cluster_doctor.agent.incident_agent_port import IncidentAgentResult
+from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisResult
 from cluster_doctor.incident.runner import IncidentRunner
 from cluster_doctor.ingestion.kafka.slowlog_trigger import (
     SlowlogTriggerService,
 )
-from cluster_doctor.incident.models import IncidentStatus, TriggerType
-from cluster_doctor.contracts.report import LogAnalysisStatus
+from cluster_doctor.domain.incident.models import IncidentStatus, TriggerType
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus
 from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 from cluster_doctor.storage.in_memory_artifact_store import (
     InMemoryArtifactStore,
@@ -31,7 +31,7 @@ from cluster_doctor.storage.in_memory_incident_state_store import (
 TS = datetime(2026, 9, 18, 14, 3, tzinfo=timezone.utc)
 
 
-class RecordingAgent:
+class RecordingAnalyzer:
     def __init__(self, repository, *, behaviour=None, pending=None) -> None:
         self._repository = repository
         self._behaviour = behaviour
@@ -41,7 +41,8 @@ class RecordingAgent:
         self.incidents: list = []
         self.drained: list[int] = []
 
-    def run(self, incident, state):
+    def analyze(self, incident):
+        state = self._repository.get(incident.incident_id)
         self.incidents.append(incident)
         # 유입 정착이 큐를 비운 뒤에 불려야 한다. 남아 있으면 사고가 진행
         # 중인 구간의 절반만 보게 된다.
@@ -49,7 +50,7 @@ class RecordingAgent:
         if self._behaviour is not None:
             self._behaviour(len(self.incidents), state, self.pending)
         self._repository.save(state)
-        return IncidentAgentResult(status=IncidentStatus.COMPLETED)
+        return IncidentAnalysisResult(status=IncidentStatus.COMPLETED)
 
 
 class SilentNotifier:
@@ -72,10 +73,10 @@ def build(behaviour=None):
                 return items
 
     repository = InMemoryIncidentStateRepository()
-    agent = RecordingAgent(repository, behaviour=behaviour, pending=pending)
+    agent = RecordingAnalyzer(repository, behaviour=behaviour, pending=pending)
     notifier = SilentNotifier()
     runner = IncidentRunner(
-        incident_agent=agent,
+        incident_analyzer=agent,
         state_repository=repository,
         artifact_store=InMemoryArtifactStore(),
         notifier=notifier,

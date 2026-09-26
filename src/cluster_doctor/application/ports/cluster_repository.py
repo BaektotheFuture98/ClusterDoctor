@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Protocol, runtime_checkable
 
-from cluster_doctor.agent.integrations.elasticsearch.resolved_node import ResolvedNode
+from cluster_doctor.domain.diagnosis.resolved_node import ResolvedNode
 
 
 class ClusterRepository(ABC):
