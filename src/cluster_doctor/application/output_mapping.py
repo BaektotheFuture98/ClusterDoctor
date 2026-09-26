@@ -1,12 +1,13 @@
-"""``LogAnalysisReport``를 운영자가 보는 리포트 타입으로 옮긴다.
+"""Application output mapping from ``LogAnalysisReport`` to ``DiagnosisReport``.
 
 표현 계층(HTML 렌더러, report_text)은 ``DiagnosisReport``를 읽는다. 그쪽을
 새 타입에 맞춰 다시 쓰지 않는 이유는 그 코드가 잘 돌고 있고, 바꿔야 할 이유가
 "모양이 달라서"뿐이기 때문이다. 대신 경계에 매핑 함수 하나를 둔다 — 이 저장소가
 pydantic 스키마와 도메인 dataclass 사이에 ``to_domain``을 둔 것과 같은 자리다.
 
-application 계층에 있는 이유: 들어오는 것도 나가는 것도 전부 도메인 타입이라
-인프라 의존이 하나도 없고, 이것을 부르는 것은 Incident Lifecycle이다.
+This is an application output mapping, not presentation infrastructure: it
+joins the final report with stored evidence before the reporting adapter renders
+the resulting domain object.
 
 **근거 참조를 사람이 읽을 인용으로 바꾸는 것이 이 함수의 일이다.** 리포트에
 ``E-abc-3``이라고 적히면 운영자는 그것이 무엇인지 알 수 없다. 참조를 실제 근거

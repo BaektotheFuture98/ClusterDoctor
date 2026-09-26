@@ -10,25 +10,14 @@ Main Agent의 ``finalize_report`` Tool과 ``IncidentRunner``의 전달 직전 �
 
 from __future__ import annotations
 
-from typing import Protocol
-
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
-
-
-class ReportStore(Protocol):
-    """최종 보고서 병합에 필요한 저장소의 최소 형태."""
-
-    def get_report(self, report_ref: str) -> LogAnalysisReport | None: ...
-
-    def put_report(self, incident_id: str, report: LogAnalysisReport) -> str: ...
 
 
 def merge_window_reports(reports: list[LogAnalysisReport]) -> LogAnalysisReport:
     """구간별 보고서를 시간순으로 병합해 하나의 ``LogAnalysisReport``로.
 
-    비어 있으면 ``ValueError`` — 호출자(``finalize_incident_report``)가 빈
-    목록일 때 아예 부르지 않는 것이 정상 경로이므로, 여기 들어오는 빈 목록은
-    호출자의 버그다.
+    비어 있으면 ``ValueError`` — application service가 빈 목록일 때 아예 부르지
+    않는 것이 정상 경로이므로, 여기 들어오는 빈 목록은 호출자의 버그다.
     """
     if not reports:
         raise ValueError("병합할 보고서가 없다")
@@ -113,26 +102,3 @@ def merge_window_reports(reports: list[LogAnalysisReport]) -> LogAnalysisReport:
         verification_issues=verification_issues,
         revision_count=sum(report.revision_count for report in ordered),
     )
-
-
-def finalize_incident_report(
-    incident_id: str,
-    report_refs: list[str],
-    store: ReportStore,
-) -> str | None:
-    """``report_refs``가 가리키는 구간별 보고서를 모아 최종 보고서로 저장한다.
-
-    구간별 보고서가 하나도 없으면(``report_refs``가 비었거나 전부 저장소에서
-    찾지 못하면) ``None``. 없는 참조를 조용히 건너뛰는 이유는
-    ``ArtifactStore.get_evidence``와 같다 — 존재하지 않는 참조는 검증이 잡을
-    일이지 이 함수가 죽을 일이 아니다.
-    """
-    reports = [
-        report
-        for ref in report_refs
-        if (report := store.get_report(ref)) is not None
-    ]
-    if not reports:
-        return None
-    merged = merge_window_reports(reports)
-    return store.put_report(incident_id, merged)

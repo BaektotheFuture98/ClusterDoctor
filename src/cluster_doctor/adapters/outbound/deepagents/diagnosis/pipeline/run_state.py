@@ -32,7 +32,6 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.observations
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_log import (
     ES_LOG_LINE_RE,
 )
-from cluster_doctor.application.candidate_formatter import candidate_line
 
 _logger = logging.getLogger(__name__)
 
@@ -48,6 +47,34 @@ MASTER_LOG_REPORT_MAX = 120
 # 마스터 로그 정렬의 기준점. SSH 폴백으로 온 줄은 timestamp를 뽑을 수 없어
 # None인데, None과 datetime을 직접 비교하면 TypeError가 난다.
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _candidate_prompt_line(candidate: SlowCandidate) -> str:
+    """Project a candidate into the compact representation shown to the model."""
+    parts = [
+        f"[{candidate.candidate_id}]",
+        candidate.source,
+        candidate.timestamp.astimezone(KST).strftime("%H:%M:%S"),
+    ]
+    if candidate.took:
+        parts.append(f"took={candidate.took}")
+    if candidate.run_time is not None:
+        parts.append(f"runtime={candidate.run_time}s")
+    if candidate.total_hits:
+        parts.append(f"hits={candidate.total_hits}")
+    if candidate.total_shards:
+        parts.append(f"shards={candidate.total_shards}")
+    if candidate.index_name:
+        parts.append(f"index={candidate.index_name}")
+    if candidate.node:
+        parts.append(f"node={candidate.node}")
+    if candidate.cmd:
+        parts.append(f"cmd={candidate.cmd}")
+    if candidate.company:
+        parts.append(f"company={candidate.company}")
+    if candidate.user:
+        parts.append(f"user={candidate.user}")
+    return " ".join(parts)
 
 
 class AnalysisRunState:
@@ -260,7 +287,7 @@ class AnalysisRunState:
             self.candidates.values(),
             key=lambda c: (len(c.candidate_id), c.candidate_id),
         )
-        lines = "\n".join(candidate_line(item) for item in ordered)
+        lines = "\n".join(_candidate_prompt_line(item) for item in ordered)
         return (
             "느린 요청 후보 (코드가 골랐다 — id와 수치를 그대로 쓴다. "
             "문제로 보이는 것이 있으면 suspect_picks에 **id와 이유만** 쓴다):\n"

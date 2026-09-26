@@ -13,13 +13,24 @@ Incident 예산을 쓰는 길이 열린다. 조립 비용은 LLM 왕복 수십 �
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage
 
-from cluster_doctor.application.ports.incident_analyzer import IncidentAnalysisResult
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.application.ports.cluster_repository import (
+    ClusterRepository,
+    NodeResolver,
+)
+from cluster_doctor.application.ports.incident_analyzer import (
+    IncidentAnalysisResult,
+    IncidentAnalyzer,
+)
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
+from cluster_doctor.application.ports.log_repository import LogRepository
+from cluster_doctor.application.ports.node_log_fetcher import NodeLogFetcher
 from cluster_doctor.domain.incident.guardrails import MAX_SUPERVISOR_CYCLES
 from cluster_doctor.domain.incident.models import Incident, IncidentStatus
 from cluster_doctor.domain.incident.state import IncidentState
@@ -31,6 +42,16 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.subagent import (
 )
 from cluster_doctor.adapters.outbound.deepagents.runtime.chat_model import (
     build_chat_model,
+)
+from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import (
+    require_supported_provider,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
+    NodeMetricThresholds,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import (
+    ReportWriter,
+    build_structured_call,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.guardrail_middleware import (
     DelegationGuardrailMiddleware,
@@ -66,6 +87,55 @@ _KICKOFF = """Incident가 열렸다. 분석을 시작한다.
 
 먼저 list_candidate_windows로 아직 보지 않은 구간과 남은 예산을 확인한 뒤
 판단한다."""
+
+
+@dataclass(frozen=True)
+class DeepAgentsConfig:
+    """Configuration owned by the composite DeepAgents outbound adapter."""
+
+    provider: str
+    model: str
+    api_key: str
+    heap_warn_percent: int
+    queue_warn: int
+
+
+def build_deepagents_incident_analyzer(
+    *,
+    config: DeepAgentsConfig,
+    state_repository: IncidentStateRepository,
+    artifact_store: ArtifactStore,
+    log_repository: LogRepository,
+    cluster_repository: ClusterRepository,
+    node_resolver: NodeResolver,
+    node_log_fetcher: NodeLogFetcher,
+) -> IncidentAnalyzer:
+    """Assemble the complete DeepAgents engine behind the incident-analyzer port."""
+    provider = require_supported_provider(config.provider)
+    call_llm = build_structured_call(
+        provider=provider, model=config.model, api_key=config.api_key
+    )
+    seams = DiagnosisSeams(
+        store=artifact_store,
+        fetch_logs=log_repository.fetch_logs,
+        fetch_node_logs=log_repository.fetch_node_logs,
+        cluster=cluster_repository,
+        node_resolver=node_resolver,
+        node_log_fetcher=node_log_fetcher,
+        call_llm=call_llm,
+        report_writer=ReportWriter(store=artifact_store, call_llm=call_llm),
+        metric_thresholds=NodeMetricThresholds(
+            heap_warn_percent=config.heap_warn_percent,
+            queue_warn=config.queue_warn,
+        ),
+    )
+    return DeepAgentIncidentAnalyzer(
+        provider=provider,
+        model=config.model,
+        api_key=config.api_key,
+        seams=seams,
+        state_repository=state_repository,
+    )
 
 
 class DeepAgentIncidentAnalyzer:

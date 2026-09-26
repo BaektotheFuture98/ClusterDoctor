@@ -24,10 +24,10 @@ from cluster_doctor.domain.incident.guardrails import (
     Deadline,
 )
 from cluster_doctor.domain.incident.models import IncidentStatus
-from cluster_doctor.domain.incident.report_merge import finalize_incident_report
+from cluster_doctor.application.report_finalization import finalize_incident_report
 from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.incident.window_planner import initial_windows
-from cluster_doctor.application.report_assembler import to_diagnosis_report
+from cluster_doctor.application.output_mapping import to_diagnosis_report
 from cluster_doctor.domain.diagnosis.evidence import Evidence
 from cluster_doctor.domain.diagnosis.observations import DiagnosisReport, Observations
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport

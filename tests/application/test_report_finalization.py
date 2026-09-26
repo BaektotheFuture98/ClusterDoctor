@@ -1,7 +1,8 @@
 """구간별 보고서를 Incident 전체의 최종 보고서로 합치는 규칙을 검증한다.
 
 ``merge_window_reports``는 시간순 인터리빙·중복 제거 규칙이 요점이고,
-``finalize_incident_report``는 저장소 조회 실패를 조용히 흡수하는 것이 요점이다.
+``finalize_incident_report`` application service는 저장소 조회 실패를 조용히
+흡수하는 것이 요점이다.
 """
 
 from datetime import datetime, timezone
@@ -15,10 +16,8 @@ from cluster_doctor.domain.diagnosis.report import (
     TimelineEvent,
     VerificationStatus,
 )
-from cluster_doctor.domain.incident.report_merge import (
-    finalize_incident_report,
-    merge_window_reports,
-)
+from cluster_doctor.application.report_finalization import finalize_incident_report
+from cluster_doctor.domain.incident.report_merge import merge_window_reports
 from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import InMemoryArtifactStore
 
 
