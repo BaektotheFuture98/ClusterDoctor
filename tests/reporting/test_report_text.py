@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 from cluster_doctor.domain.diagnosis.observations import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, TimelineRow
 from cluster_doctor.domain.diagnosis.health_point import HealthPoint
-from cluster_doctor.reporting.report_text import (
+from cluster_doctor.adapters.outbound.reporting.report_text import (
     health_lines,
     master_log_lines,
     node_lines,
@@ -245,7 +245,7 @@ def test_관측값이_전혀_없어도_렌더링이_터지지_않는다():
 def test_코드_판정임을_줄에_밝힌다():
     # 모델의 severity와 나란히 놓이면 운영자가 둘을 같은 것으로 읽는다.
     from cluster_doctor.domain.diagnosis.observations import MasterEvent
-    from cluster_doctor.reporting.report_text import severity_line
+    from cluster_doctor.adapters.outbound.reporting.report_text import severity_line
 
     obs = Observations(
         master_events=(MasterEvent(timestamp=None, level="ERROR", line="x", rendered="x"),)
@@ -259,7 +259,7 @@ def test_코드_판정임을_줄에_밝힌다():
 
 def test_판정_근거를_반드시_붙인다():
     from cluster_doctor.domain.diagnosis.observations import MasterEvent
-    from cluster_doctor.reporting.report_text import severity_line
+    from cluster_doctor.adapters.outbound.reporting.report_text import severity_line
 
     obs = Observations(
         master_events=(MasterEvent(timestamp=None, level="WARN", line="x", rendered="x"),)
@@ -270,13 +270,13 @@ def test_판정_근거를_반드시_붙인다():
 
 def test_신호가_없으면_없다고_말한다():
     # 빈 줄로 두면 "측정하지 않았다"와 "이상이 없다"가 구별되지 않는다.
-    from cluster_doctor.reporting.report_text import severity_line
+    from cluster_doctor.adapters.outbound.reporting.report_text import severity_line
 
     assert "없음" in severity_line(Observations())
 
 
 def test_개요에_심각도_줄이_들어간다():
-    from cluster_doctor.reporting.report_text import (
+    from cluster_doctor.adapters.outbound.reporting.report_text import (
         SEVERITY_PREFIX,
         overview_lines,
     )

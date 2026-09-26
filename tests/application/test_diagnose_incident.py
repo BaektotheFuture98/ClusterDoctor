@@ -7,8 +7,8 @@ from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncid
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 from cluster_doctor.domain.incident.guardrails import CancellationToken
 from cluster_doctor.domain.incident.models import Incident, IncidentStatus, TriggerType
-from cluster_doctor.storage.in_memory_artifact_store import InMemoryArtifactStore
-from cluster_doctor.storage.in_memory_incident_state_store import (
+from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import InMemoryArtifactStore
+from cluster_doctor.adapters.outbound.persistence.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 
@@ -41,11 +41,11 @@ class RecordingAnalyzer:
         return IncidentAnalysisResult(IncidentStatus.COMPLETED)
 
 
-class RecordingNotifier:
+class RecordingReportPublisher:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    async def notify(self, report, *, gaps=(), analysis_failed=False) -> None:
+    async def publish(self, report, *, gaps=(), analysis_failed=False) -> None:
         self.calls.append((report, gaps, analysis_failed))
 
 
@@ -54,7 +54,7 @@ def diagnosis_for(analyzer, repository, notifier, **kwargs) -> DiagnoseIncident:
         incident_analyzer=analyzer,
         state_repository=repository,
         artifact_store=InMemoryArtifactStore(),
-        notifier=notifier,
+        report_publisher=notifier,
         **kwargs,
     )
 
@@ -62,7 +62,7 @@ def diagnosis_for(analyzer, repository, notifier, **kwargs) -> DiagnoseIncident:
 async def test_정착된_명령으로_상태를_만들고_analyzer는_id로_상태를_읽는다():
     repository = InMemoryIncidentStateRepository()
     analyzer = RecordingAnalyzer(repository)
-    notifier = RecordingNotifier()
+    notifier = RecordingReportPublisher()
 
     outcome = await diagnosis_for(analyzer, repository, notifier).handle(command())
 
@@ -78,7 +78,7 @@ async def test_analyzer_예외도_FAILED로_닫고_최종_리포트를_전달한
     def explode(_incident):
         raise RuntimeError("agent exploded")
 
-    notifier = RecordingNotifier()
+    notifier = RecordingReportPublisher()
     outcome = await diagnosis_for(
         RecordingAnalyzer(repository, behaviour=explode), repository, notifier
     ).handle(command())
@@ -109,12 +109,12 @@ async def test_미확정_분석_리포트는_전달_전에_최종_리포트로_�
         repository.save(state)
         return IncidentAnalysisResult(IncidentStatus.COMPLETED)
 
-    notifier = RecordingNotifier()
+    notifier = RecordingReportPublisher()
     outcome = await DiagnoseIncident(
         incident_analyzer=RecordingAnalyzer(repository, behaviour=leave_window_report),
         state_repository=repository,
         artifact_store=store,
-        notifier=notifier,
+        report_publisher=notifier,
     ).handle(command())
 
     assert outcome.report_ref is not None
@@ -130,7 +130,7 @@ async def test_시간초과는_마지막_저장상태를_FAILED로_강제_종료
         release.wait(1)
         return IncidentAnalysisResult(IncidentStatus.COMPLETED)
 
-    notifier = RecordingNotifier()
+    notifier = RecordingReportPublisher()
     try:
         outcome = await diagnosis_for(
             RecordingAnalyzer(repository, behaviour=hang),
@@ -150,7 +150,7 @@ async def test_시간초과는_마지막_저장상태를_FAILED로_강제_종료
 async def test_정착에_전체_시간_예산을_썼으면_analyzer를_부르지_않는다():
     repository = InMemoryIncidentStateRepository()
     analyzer = RecordingAnalyzer(repository)
-    notifier = RecordingNotifier()
+    notifier = RecordingReportPublisher()
 
     outcome = await diagnosis_for(
         analyzer,
@@ -168,7 +168,7 @@ async def test_정착에_전체_시간_예산을_썼으면_analyzer를_부르지
 async def test_취소는_analyzer를_부르지_않고_CANCELLED로_닫고_전달한다():
     repository = InMemoryIncidentStateRepository()
     analyzer = RecordingAnalyzer(repository)
-    notifier = RecordingNotifier()
+    notifier = RecordingReportPublisher()
     token = CancellationToken()
     token.cancel("운영자 중단")
 

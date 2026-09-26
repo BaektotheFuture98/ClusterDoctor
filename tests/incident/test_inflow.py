@@ -11,14 +11,14 @@ from cluster_doctor.domain.incident.inflow import (
     InflowTracker,
     base_time,
 )
-from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
+from cluster_doctor.domain.incident.models import SlowlogTrigger
 from tests.contracts.test_time_range_spans import KST
 
 TRIGGER = datetime(2026, 9, 17, 3, 0, tzinfo=KST)
 
 
-def entry(at: datetime) -> SlowlogTriggerEvent:
-    return SlowlogTriggerEvent(timestamp=at)
+def entry(at: datetime) -> SlowlogTrigger:
+    return SlowlogTrigger(timestamp=at)
 
 
 class TestBaseTime:

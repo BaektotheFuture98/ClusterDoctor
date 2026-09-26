@@ -1,6 +1,6 @@
 """Kafka consumer 어댑터.
 
-Kafka 메시지를 SlowlogTriggerEvent로 변환해 SlowlogTriggerService에 전달한다.
+Kafka 메시지를 SlowlogTrigger로 변환해 SlowlogIntake에 전달한다.
 메시지 파싱에 실패해도 consumer를 죽이지 않고 경고만 남긴다.
 """
 
@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 
 from aiokafka import AIOKafkaConsumer
 
-from cluster_doctor.ingestion.kafka.slowlog_trigger import SlowlogTriggerService
-from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
+from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
+from cluster_doctor.domain.incident.models import SlowlogTrigger
 
 _logger = logging.getLogger(__name__)
 
@@ -19,12 +19,12 @@ _logger = logging.getLogger(__name__)
 class KafkaConsumerAdapter:
     def __init__(
         self,
-        service: SlowlogTriggerService,
+        intake: SlowlogIntake,
         bootstrap_servers: str,
         topic: str,
         group_id: str,
     ) -> None:
-        self._service = service
+        self._intake = intake
         self._consumer = AIOKafkaConsumer(
             topic,
             bootstrap_servers=bootstrap_servers,
@@ -60,15 +60,15 @@ class KafkaConsumerAdapter:
                         msg.offset,
                         exc,
                     )
-                    log_entry = SlowlogTriggerEvent(timestamp=datetime.now(timezone.utc))
+                    log_entry = SlowlogTrigger(timestamp=datetime.now(timezone.utc))
 
-                await self._service.on_slowlog(log_entry)
+                await self._intake.handle(log_entry)
         finally:
             await self._consumer.stop()
             _logger.info("Kafka consumer stopped")
 
 
-def _parse_message(data: dict) -> SlowlogTriggerEvent:
+def _parse_message(data: dict) -> SlowlogTrigger:
     """Kafka 메시지에서 발생 시각만 뽑는다.
 
     이 항목은 트리거 큐에 들어가 "언제 얼마나 들어왔나"를 세는 데만 쓰인다
@@ -98,4 +98,4 @@ def _parse_message(data: dict) -> SlowlogTriggerEvent:
         # 쪽이 아니라 명시적인 쪽을 고른다.
         timestamp = timestamp.replace(tzinfo=timezone.utc)
 
-    return SlowlogTriggerEvent(timestamp=timestamp)
+    return SlowlogTrigger(timestamp=timestamp)

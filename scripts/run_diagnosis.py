@@ -42,19 +42,12 @@ from _timeargs import KST
 # import 시점에 configure_logging()이 돌아 stderr와 logs/app.log에 로그가 붙는다.
 import cluster_doctor.main  # noqa: F401
 
-from cluster_doctor.ingestion.kafka.event import SlowlogTriggerEvent
 from cluster_doctor.bootstrap.dependencies import (
-    build_trigger_service,
+    build_manual_diagnosis,
     close_clickhouse_client,
 )
 from cluster_doctor.config.settings import get_settings
-from cluster_doctor.reporting.report_text import render_text
-
-# 기준 시각 판정을 다시 구현하지 않는다. 실제 동작과 어긋날 수 있고,
-# 어긋난 안내는 없느니만 못하다.
-from cluster_doctor.domain.incident.inflow import base_time
-from cluster_doctor.reporting.report_assembler import to_diagnosis_report
-from cluster_doctor.domain.incident.models import Incident, TriggerType
+from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
 
 
 # ── LLM 호출 측정 ──────────────────────────────────────────────────
@@ -231,41 +224,17 @@ def run(moments: list) -> int:
     report_dir = Path(settings.report_dir)
     before = _snapshot_reports(report_dir)
 
-    # build_trigger_service가 큐·Agent·notifier를 한곳에서 조립한다.
-    # 여기서 다시 조립하지 않고 그 결과를 빌려 쓴다 — 조립을 복제하면
-    # dependencies.py가 바뀔 때 이 스크립트만 조용히 낡는다.
-    service = build_trigger_service(settings)
-    orchestrator = service._orchestrator
-    for moment in moments:
-        service._pending.put(SlowlogTriggerEvent(timestamp=moment))
-
-    log_time = min(moments)
-    receive_time = datetime.now(timezone.utc)
-    incident = Incident(
-        incident_id=f"manual-{int(time.time())}",
-        cluster=settings.cluster_name,
-        trigger_time=log_time,
-        kafka_receive_time=receive_time,
-        trigger_type=TriggerType.MANUAL,
-    )
+    manual_diagnosis: RunManualDiagnosis = build_manual_diagnosis(settings)
 
     started = time.monotonic()
     try:
-        # orchestrator가 리포트 전달까지 맡는다. 여기서 따로 notify하지 않는다 —
-        # 두 번 부르면 리포트 파일이 두 개 생긴다.
-        outcome = asyncio.run(orchestrator.run(incident))
+        outcome = asyncio.run(manual_diagnosis.handle(moments))
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"\n[실패] 진단이 예외로 끝났다 ({elapsed:.1f}초): {type(exc).__name__}: {exc}")
         _print_measurements()
         return 1
     elapsed = time.monotonic() - started
-
-    store = orchestrator._store
-    observations = store.get_observations(incident.incident_id)
-    report = store.get_report(outcome.report_ref) if outcome.report_ref else None
-    evidence = store.list_evidence(incident.incident_id)
-    rendered = to_diagnosis_report(report, observations, evidence)
 
     print("\n-- 결과 ----------------------------------------------------")
     print(f"  소요 시간       : {elapsed:.1f}초")
@@ -275,19 +244,6 @@ def run(moments: list) -> int:
     print(f"  gaps            : {len(outcome.gaps)}건")
     for gap in outcome.gaps:
         print(f"      - {gap}")
-    if report is not None:
-        print(f"  검증            : {report.verification_status} (수정 {report.revision_count}회)")
-        for issue in report.verification_issues:
-            print(f"      - {issue}")
-    print(f"  Evidence        : {len(evidence)}건")
-    print(f"  리포트 길이     : {len(render_text(rendered)):,}자")
-    print(
-        f"  관측값          : 타임라인 {len(observations.timeline)}분 / "
-        f"노드 {len(observations.nodes)}개 / "
-        f"마스터로그 {observations.master_log_total}줄 / "
-        f"상태 {len(observations.health)}건 / "
-        f"후보 {len(observations.candidates)}건"
-    )
 
     created = _snapshot_reports(report_dir) - before
     for path in sorted(created):
@@ -321,19 +277,11 @@ def main() -> int:
 
     moments = _timeargs.resolve(args)
 
-    print("  실행 방식 : Kafka 없이 Incident 직접 실행 (pending 큐에 합성 항목 주입)")
+    print("  실행 방식 : Kafka 없이 RunManualDiagnosis 직접 실행")
     _timeargs.describe_moments(moments)
 
-    log_time = min(moments)
-    receive_time = datetime.now(timezone.utc)
-    base, basis = base_time(log_time, receive_time)
-    print(f"\n  기준 시각 판정    : {basis}")
-    print(f"  first_seen 초기값 : {base.astimezone(KST):%Y-%m-%d %H:%M:%S} KST")
-    print(
-        "  큐 주입 후 갱신될 값 : first_seen="
-        f"{min(moments).astimezone(KST):%Y-%m-%d %H:%M:%S}, "
-        f"last_seen={max(moments).astimezone(KST):%Y-%m-%d %H:%M:%S} KST"
-    )
+    print(f"\n  분석 범위         : {min(moments).astimezone(KST):%Y-%m-%d %H:%M:%S} ~ "
+          f"{max(moments).astimezone(KST):%Y-%m-%d %H:%M:%S} KST")
 
     if args.dry_run:
         print("\n(dry-run: 실행하지 않았다)")

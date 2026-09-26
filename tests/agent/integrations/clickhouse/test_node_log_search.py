@@ -14,7 +14,7 @@ from cluster_doctor.application.ports.log_repository import (
 )
 from cluster_doctor.domain.diagnosis.log_entries import NodeLogEntry
 from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError
-from cluster_doctor.agent.integrations.clickhouse.reader import (
+from cluster_doctor.adapters.outbound.clickhouse.reader import (
     ClickHouseLogAdapter,
 )
 

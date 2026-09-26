@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from cluster_doctor.agent.integrations.clickhouse.reader import (
+from cluster_doctor.adapters.outbound.clickhouse.reader import (
     _MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     ClickHouseLogAdapter,
     _split_by_minute,

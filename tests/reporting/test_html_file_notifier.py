@@ -1,4 +1,4 @@
-"""HtmlFileNotifier 검증.
+"""HtmlFileReportPublisher 검증.
 
 리포트는 LLM이 쓴 평문이고 그 안에 외부 사용자의 검색어와 ES 쿼리 원문이
 그대로 인용된다. 그래서 이 어댑터에서 가장 중요한 성질은 두 가지다 —
@@ -15,8 +15,8 @@ from cluster_doctor.domain.diagnosis.observations import (
     Observations,
     TimelineRow,
 )
-from cluster_doctor.reporting.html_file_notifier import (
-    HtmlFileNotifier,
+from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
+    HtmlFileReportPublisher,
     _unique_path,
     render_report,
 )
@@ -58,9 +58,9 @@ _REPORT = """1. 인시던트 개요
 
 class TestFileOutput:
     async def test_지정_디렉터리에_파일을_만든다(self, tmp_path: Path):
-        notifier = HtmlFileNotifier(output_dir=tmp_path / "reports")
+        notifier = HtmlFileReportPublisher(output_dir=tmp_path / "reports")
 
-        await notifier.notify(_plain(_REPORT))
+        await notifier.publish(_plain(_REPORT))
 
         files = list((tmp_path / "reports").glob("report-*.html"))
         assert len(files) == 1
@@ -70,7 +70,7 @@ class TestFileOutput:
         target = tmp_path / "a" / "b" / "reports"
         assert not target.exists()
 
-        await HtmlFileNotifier(output_dir=target).notify(_plain(_REPORT))
+        await HtmlFileReportPublisher(output_dir=target).publish(_plain(_REPORT))
 
         assert target.is_dir()
 
@@ -86,10 +86,10 @@ class TestFileOutput:
         assert second.name == "report-20260910-020556-2.html"
 
     async def test_두_건을_보내면_둘_다_남는다(self, tmp_path: Path):
-        notifier = HtmlFileNotifier(output_dir=tmp_path)
+        notifier = HtmlFileReportPublisher(output_dir=tmp_path)
 
-        await notifier.notify(_plain("1. 첫 번째\n• 내용"))
-        await notifier.notify(_plain("1. 두 번째\n• 내용"))
+        await notifier.publish(_plain("1. 첫 번째\n• 내용"))
+        await notifier.publish(_plain("1. 두 번째\n• 내용"))
 
         bodies = [
             p.read_text(encoding="utf-8") for p in tmp_path.glob("report-*.html")
@@ -100,7 +100,7 @@ class TestFileOutput:
 
     async def test_파일명에_콜론을_쓰지_않는다(self, tmp_path: Path):
         """Windows에서 쓸 수 없는 문자다. 저장 자체가 실패한다."""
-        await HtmlFileNotifier(output_dir=tmp_path).notify(_plain(_REPORT))
+        await HtmlFileReportPublisher(output_dir=tmp_path).publish(_plain(_REPORT))
 
         assert ":" not in next(tmp_path.glob("report-*.html")).name
 
@@ -114,7 +114,7 @@ class TestFileOutput:
         blocked.write_text("여기 파일이 있어서 디렉터리를 만들 수 없다", encoding="utf-8")
 
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=blocked).notify(_plain(_REPORT))
+            await HtmlFileReportPublisher(output_dir=blocked).publish(_plain(_REPORT))
 
         assert "리포트 HTML 저장 실패" in caplog.text
         # 전문이 로그에 남아야 한다 — 이것이 유일한 사본이다.
@@ -122,7 +122,7 @@ class TestFileOutput:
 
     async def test_성공하면_저장_경로를_로그로_남긴다(self, tmp_path: Path, caplog):
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=tmp_path).notify(_plain(_REPORT))
+            await HtmlFileReportPublisher(output_dir=tmp_path).publish(_plain(_REPORT))
 
         assert "리포트 저장" in caplog.text
 
@@ -368,7 +368,7 @@ class TestFailureGuarantee:
         report = "1. 개요\n• 문제 노드: \ud800 포화"
 
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=tmp_path).notify(_plain(report))
+            await HtmlFileReportPublisher(output_dir=tmp_path).publish(_plain(report))
 
         files = list(tmp_path.glob("report-*.html"))
         assert len(files) == 1
@@ -390,7 +390,7 @@ class TestFailureGuarantee:
         blocked.write_text("여기 파일이 있어 디렉터리를 만들 수 없다", encoding="utf-8")
 
         with caplog.at_level(logging.INFO):
-            await HtmlFileNotifier(output_dir=blocked).notify(_plain(_REPORT))
+            await HtmlFileReportPublisher(output_dir=blocked).publish(_plain(_REPORT))
 
         assert "리포트 HTML 저장 실패" in caplog.text
         assert "es-data-02" in caplog.text
@@ -440,7 +440,7 @@ class TestGapAndFailureBanners:
         assert 'class="banner' not in render_report(_plain(_REPORT), _AT)
 
     async def test_notify가_두_값을_리포트까지_전달한다(self, tmp_path):
-        await HtmlFileNotifier(output_dir=tmp_path).notify(
+        await HtmlFileReportPublisher(output_dir=tmp_path).publish(
             _plain(_REPORT),
             gaps=("es-data-02 노드 로그 SSH 수집 실패",),
             analysis_failed=True,

@@ -12,7 +12,7 @@ from cluster_doctor.application.ports.node_log_fetcher import (
     DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )
-from cluster_doctor.agent.integrations.ssh.fetcher import (
+from cluster_doctor.adapters.outbound.ssh.fetcher import (
     SshNodeLogFetcher,
 )
 
@@ -81,5 +81,5 @@ def test_포트가_아닌_구현은_주입되지_않는다():
     """
     from cluster_doctor.bootstrap import dependencies
 
-    source = inspect.getsource(dependencies.build_trigger_service)
+    source = inspect.getsource(dependencies._build_diagnose_incident)
     assert "SshNodeLogFetcher(" in source

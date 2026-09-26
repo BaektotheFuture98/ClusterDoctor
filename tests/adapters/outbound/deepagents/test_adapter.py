@@ -19,7 +19,7 @@ from cluster_doctor.adapters.outbound.deepagents.adapter import (
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import DIAGNOSIS_SUBAGENT
 from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import TASK_TOOL_NAME
-from cluster_doctor.storage.in_memory_incident_state_store import (
+from cluster_doctor.adapters.outbound.persistence.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
 

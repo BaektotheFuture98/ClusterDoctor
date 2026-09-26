@@ -14,12 +14,10 @@ Supervisor와 진단 Agent를 **둘 다** 직접 들고 있었다. 지금 Runner
 하게 되고 그 상태는 어디에도 드러나지 않는다.
 """
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from cluster_doctor.application.ports.cluster_repository import ClusterRepository
-from cluster_doctor.incident.runner import IncidentRunner
-from cluster_doctor.domain.diagnosis.log_entries import SlowlogEntry
+from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
 from cluster_doctor.bootstrap import dependencies
 from cluster_doctor.config import settings as settings_module
 from cluster_doctor.bootstrap.dependencies import (
@@ -110,7 +108,7 @@ def _build(settings, monkeypatch):
     dependencies._get_node_resolver.cache_clear()
     dependencies._get_state_repository.cache_clear()
     dependencies._get_artifact_store.cache_clear()
-    return dependencies.build_trigger_service(settings)
+    return dependencies.build_slowlog_intake(settings)
 
 
 def _cleanup():
@@ -141,7 +139,7 @@ def test_selected_provider_reaches_both_agents(monkeypatch):
             ),
             monkeypatch,
         )
-        incident_analyzer = service._runner._analyzer
+        incident_analyzer = service._diagnose._analyzer
 
         # 진단 Agent: provider/model/key가 부분 적용된 호출자에 묶여 있다.
         bound = incident_analyzer._seams.call_llm
@@ -158,7 +156,7 @@ def test_selected_provider_reaches_both_agents(monkeypatch):
         _cleanup()
 
 
-def test_build_trigger_service_wires_the_graph_and_shares_queue(monkeypatch):
+def test_build_slowlog_intake_wires_the_graph_and_preserves_backpressure(monkeypatch):
     """조립 사슬과 pending 큐 공유를 함께 검증한다.
 
     ``Settings``는 ``build_trigger_service``에 명시적으로 넘긴다. 인자를 비우면
@@ -172,36 +170,32 @@ def test_build_trigger_service_wires_the_graph_and_shares_queue(monkeypatch):
     유입 정착을 판정하는 유일한 입구다.
     """
     try:
-        service = _build(_settings(micro_batch_seconds=2.5), monkeypatch)
-        runner = service._runner
+        intake = _build(_settings(micro_batch_seconds=2.5), monkeypatch)
 
-        assert isinstance(runner, IncidentRunner)
+        assert isinstance(intake, SlowlogIntake)
         # Runner가 아는 것은 포트 하나뿐이다. 진단 Agent는 그 뒤에 있다.
-        assert isinstance(runner._analyzer, DeepAgentIncidentAnalyzer)
-        assert isinstance(runner._analyzer._seams, DiagnosisSeams)
+        assert isinstance(intake._diagnose._analyzer, DeepAgentIncidentAnalyzer)
+        assert isinstance(intake._diagnose._analyzer._seams, DiagnosisSeams)
 
         # SubAgent는 raw Elasticsearch 클라이언트가 아니라 포트를 받아야 한다.
         # 포트와 어댑터가 정의만 되어 있고 조립되지 않으면 ES 호출이 포트를
         # 우회하고 어댑터는 죽은 코드로 남는다.
-        assert isinstance(runner._analyzer._seams.cluster, ClusterRepository)
-        assert hasattr(runner._analyzer._seams.node_resolver, "resolve")
+        assert isinstance(intake._diagnose._analyzer._seams.cluster, ClusterRepository)
+        assert hasattr(intake._diagnose._analyzer._seams.node_resolver, "resolve")
 
         # 상태와 산출물은 포트를 거쳐 오간다. application 코드가 dict에 직접
         # 접근하면 Redis 구현으로 바꿀 수 없다.
-        assert runner._store is runner._analyzer._seams.store
+        assert intake._diagnose._store is intake._diagnose._analyzer._seams.store
         # 리포트를 쓰는 쪽도 같은 저장소를 본다. 갈라지면 앞선 리포트 요약이
         # 영영 비어 있고, 그 사실은 어디에도 드러나지 않는다.
-        assert runner._store is runner._analyzer._seams.report_writer._store
+        assert intake._diagnose._store is intake._diagnose._analyzer._seams.report_writer._store
         # State 저장소는 Runner와 Agent가 **같은 것**을 봐야 한다. Agent가
         # 예산을 차감한 State를 Runner가 다시 읽는 것이 종료 판단의 전제다.
-        assert runner._states is runner._analyzer._states
-
-        entry = SlowlogEntry(timestamp=datetime.now(timezone.utc))
-        service._pending.put(entry)
-        assert runner._drain_pending() == [entry]
+        assert intake._diagnose._states is intake._diagnose._analyzer._states
+        assert intake._pending.maxsize == 10_000
 
         # MICRO_BATCH_SECONDS를 승격한 목적 자체가 "문서화된 설정값이 실제로는
         # 무시된다"는 사고를 막는 것이었다.
-        assert service._micro_batch_seconds == 2.5
+        assert intake._micro_batch_seconds == 2.5
     finally:
         _cleanup()

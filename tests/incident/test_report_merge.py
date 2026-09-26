@@ -19,7 +19,7 @@ from cluster_doctor.domain.incident.report_merge import (
     finalize_incident_report,
     merge_window_reports,
 )
-from cluster_doctor.storage.in_memory_artifact_store import InMemoryArtifactStore
+from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import InMemoryArtifactStore
 
 
 def _dt(hour: int, minute: int = 0) -> datetime:
