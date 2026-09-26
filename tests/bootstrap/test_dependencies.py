@@ -27,7 +27,7 @@ from cluster_doctor.bootstrap.dependencies import (
     close_clickhouse_client,
 )
 from cluster_doctor.config.settings import Settings
-from cluster_doctor.agent.diagnosis.subagent import (
+from cluster_doctor.agent.diagnosis.state import (
     DiagnosisSeams,
 )
 from cluster_doctor.agent.supervisor.agent import (

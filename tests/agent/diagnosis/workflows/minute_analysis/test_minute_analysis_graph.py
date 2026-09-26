@@ -1,4 +1,4 @@
-"""Hierarchical Map-Reduce Log Triage.
+"""Hierarchical Map-Reduce Minute Analysis.
 
 요구사항 6이 여기 있다 — 이 그래프는 Raw Log가 아니라 Evidence를 돌려준다.
 
@@ -11,16 +11,19 @@ from datetime import datetime
 
 from cluster_doctor.exceptions import LlmApiError
 from cluster_doctor.contracts.evidence import Evidence, EvidenceSource
-from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import run_triage
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.graph import run_analysis
 from cluster_doctor.agent.diagnosis.workflows.minute_analysis.nodes import (
     MapOutput,
     ReduceOutput,
 )
-from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import TriageSpec
-from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import RawRecord
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.spec import AnalysisSpec
+from cluster_doctor.agent.diagnosis.workflows.minute_analysis.state import (
+    RawRecord,
+    group_into_buckets,
+)
 from tests.contracts.test_time_range_spans import KST
 
-SPEC = TriageSpec(
+SPEC = AnalysisSpec(
     source=EvidenceSource.SLOWLOG,
     label="테스트 소스",
     what_matters="오래 걸린 것",
@@ -88,9 +91,9 @@ class ScriptedLlm:
 
 
 def run(spec, items, llm, **kwargs):
-    return run_triage(
+    return run_analysis(
         spec,
-        items,
+        group_into_buckets(items),
         llm,
         new_evidence_id=kwargs.get("new_evidence_id", _counter()),
         put_raw=kwargs.get("put_raw", lambda text: f"R:{text[:8]}"),
