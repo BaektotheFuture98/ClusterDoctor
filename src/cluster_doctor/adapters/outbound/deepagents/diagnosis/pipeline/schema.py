@@ -23,7 +23,10 @@ import logging
 
 from pydantic import BaseModel, Field, field_validator
 
-from cluster_doctor.domain.diagnosis.observations import SuspectPick as DomainSuspectPick
+from cluster_doctor.domain.diagnosis.diagnosis_report import (
+    SuspectPick as DomainSuspectPick,
+)
+from cluster_doctor.domain.diagnosis.kst import parse_kst
 from cluster_doctor.domain.diagnosis.report import (
     LogAnalysisReport,
     ReportFinding,
@@ -32,7 +35,6 @@ from cluster_doctor.domain.diagnosis.report import (
     VerificationStatus,
 )
 from cluster_doctor.domain.diagnosis.time_range import TimeRange, split_span
-from cluster_doctor.domain.diagnosis.kst import parse_kst
 
 _logger = logging.getLogger(__name__)
 
@@ -40,7 +42,12 @@ _SEVERITIES = ("Critical", "Warning", "Info")
 _CONFIDENCES = ("High", "Medium", "Low")
 
 
-class TimelineEntry(BaseModel):
+class DraftTimelineEntry(BaseModel):
+    """모델 응답의 타임라인 초안 한 항목.
+
+    문자열 시각과 근거 id를 코드가 TimelineEvent로 변환해 검증한다.
+    """
+
     at: str = Field(default="", description="ISO 8601 시각. 근거의 시각을 그대로 쓴다.")
     description: str = Field(default="", description="그 시각에 무엇이 일어났는가. 한 문장.")
     evidence_refs: list[str] = Field(
@@ -48,7 +55,12 @@ class TimelineEntry(BaseModel):
     )
 
 
-class Finding(BaseModel):
+class DraftFinding(BaseModel):
+    """모델이 반환하는 문제 주장 초안.
+
+    코드가 ReportFinding으로 변환하며, 전달용 Finding은 이후 출력 매핑에서 만든다.
+    """
+
     severity: str = Field(default="", description="Critical / Warning / Info 중 하나.")
     title: str = Field(default="", description="무엇이 문제인가. 한 문장.")
     detail: str = Field(default="", description="관찰된 사실만. 원인 추정은 root_causes에 쓴다.")
@@ -72,7 +84,12 @@ class Finding(BaseModel):
         return ""
 
 
-class CauseEntry(BaseModel):
+class DraftCause(BaseModel):
+    """모델이 제시한 원인 후보와 지지·반증 근거 id의 초안.
+
+    코드가 RootCause로 변환한 뒤 실제 근거와의 일관성을 검사한다.
+    """
+
     statement: str = Field(default="", description="가장 유력한 원인 하나. 한두 문장.")
     confidence: str = Field(default="", description="High / Medium / Low.")
     supporting_evidence_refs: list[str] = Field(
@@ -89,7 +106,7 @@ class CauseEntry(BaseModel):
         return text if text in _CONFIDENCES else ""
 
 
-class SuspectPick(BaseModel):
+class DraftSuspectPick(BaseModel):
     """코드가 제시한 후보 중 모델이 고른 것.
 
     쿼리 원문도, took도, 노드명도 여기 없다. 그 값들은 코드가 ``candidate_id``로
@@ -105,22 +122,30 @@ class SuspectPick(BaseModel):
         return str(value or "").strip()
 
 
-class WindowSuggestion(BaseModel):
+class DraftWindowSuggestion(BaseModel):
+    """모델이 추가 분석을 제안하는 문자열 시각 쌍.
+
+    코드가 유효한 TimeRange로 변환하고 Supervisor가 범위와 예산을 승인한다.
+    """
+
     start_iso: str = ""
     end_iso: str = ""
 
 
 class DraftReport(BaseModel):
-    """한 analysis window에 대한 모델의 판단 전부."""
+    """모델의 구조화 응답을 받는 구간 보고서 초안 스키마.
+
+    LogAnalysisReport로 변환·검증하기 전 값이며 운영자용 DiagnosisReport가 아니다.
+    """
 
     summary: str = Field(default="", description="이 구간에서 관찰된 것의 요약. 한 문단.")
-    timeline: list[TimelineEntry] = Field(
+    timeline: list[DraftTimelineEntry] = Field(
         default=[], description="사고 전개를 시간순으로. 근거가 있는 시각만."
     )
-    findings: list[Finding] = Field(
+    findings: list[DraftFinding] = Field(
         default=[], description="근거를 댈 수 있는 문제만. 이상이 없으면 빈 배열."
     )
-    root_causes: list[CauseEntry] = Field(
+    root_causes: list[DraftCause] = Field(
         default=[],
         description=(
             "원인 후보. 근거가 부족하면 confidence를 Low로 두거나 비운다. "
@@ -133,7 +158,7 @@ class DraftReport(BaseModel):
     recommendations: list[str] = Field(
         default=[], description="운영자가 취할 수 있는 조치. 근거 없는 일반론은 쓰지 않는다."
     )
-    suspect_picks: list[SuspectPick] = Field(
+    suspect_picks: list[DraftSuspectPick] = Field(
         default=[],
         description=(
             "느린 요청 후보 목록에서 문제로 보이는 것. id와 이유만 쓴다. "
@@ -147,7 +172,7 @@ class DraftReport(BaseModel):
             "구간 안에서 더 조사하면 되는 것은 여기 해당하지 않는다."
         ),
     )
-    suggested_windows: list[WindowSuggestion] = Field(
+    suggested_windows: list[DraftWindowSuggestion] = Field(
         default=[], description="needs_more_context가 true일 때 필요한 시간 범위."
     )
 
@@ -205,7 +230,7 @@ class DraftReport(BaseModel):
         )
 
     @staticmethod
-    def _timeline_event(entry: TimelineEntry) -> TimelineEvent | None:
+    def _timeline_event(entry: DraftTimelineEntry) -> TimelineEvent | None:
         """시각을 못 읽은 줄은 버린다.
 
         이것만은 버린다 — 시각 없는 타임라인 항목은 타임라인이 아니고, 임의의

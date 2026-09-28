@@ -30,15 +30,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from cluster_doctor.domain.diagnosis.observations import (
-    DiagnosisReport,
-    Observations,
-    observed_severity,
-)
-from cluster_doctor.application.ports.report_publisher import (
-    ReportPublication,
-    ReportPublisher,
-)
 from cluster_doctor.adapters.outbound.reporting.report_text import (
     SEVERITY_PREFIX,
     candidate_details,
@@ -47,9 +38,20 @@ from cluster_doctor.adapters.outbound.reporting.report_text import (
     master_log_lines,
     node_lines,
     overview_lines,
+    projected_timeline,
     render_text,
     scrub,
     timeline_line,
+)
+from cluster_doctor.application.ports.report_publisher import (
+    ReportPublication,
+    ReportPublisher,
+)
+from cluster_doctor.domain.diagnosis.incident_timeline import TimelineCard, TimelineItem
+from cluster_doctor.domain.diagnosis.diagnosis_report import DiagnosisReport
+from cluster_doctor.domain.diagnosis.observations import (
+    Observations,
+    observed_severity,
 )
 
 _logger = logging.getLogger(__name__)
@@ -116,7 +118,7 @@ class HtmlFileReportPublisher(ReportPublisher):
             _logger.error("리포트 HTML 저장 실패(%s) — 전문을 로그로 남긴다", exc)
             try:
                 _logger.info("\n%s", scrub(render_text(report)))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # 렌더링 자체가 실패한 경우다. 그때도 이 폴백이 죽으면 안 된다.
                 _logger.exception("리포트 평문 렌더링도 실패했다")
             return ReportPublication(text_length=locals().get("text_length", 0))
@@ -326,12 +328,83 @@ def _render_items(items: list[dict]) -> str:
             bullets.append(item)
             continue
         flush()
+        if item["kind"] == "timeline":
+            out.append(_render_timeline(item["cards"], item["rows"]))
+            continue
         if item["kind"] == "raw":
             out.append(f'<pre class="raw">{_e(item["text"])}</pre>')
         else:
             out.append(f"<p>{_e(item['text'])}</p>")
     flush()
     return "\n".join(out)
+
+
+def _timeline_span(card: TimelineCard) -> str:
+    start = card.start.astimezone(_KST).strftime("%H:%M")
+    end = card.end.astimezone(_KST).strftime("%H:%M")
+    return start if start == end else f"{start}–{end}"
+
+
+def _timeline_group(label: str, items: tuple[TimelineItem, ...]) -> str:
+    if not items:
+        return ""
+    rows = []
+    for item in items:
+        refs = ""
+        if item.evidence_refs:
+            refs = (
+                '<span class="timeline-refs">근거 '
+                f"{_e(', '.join(item.evidence_refs))}</span>"
+            )
+        rows.append(f"<li><span>{_e(item.text)}</span>{refs}</li>")
+    return f"<dt>{_e(label)}</dt><dd><ul>{''.join(rows)}</ul></dd>"
+
+
+def _render_timeline(cards: tuple[TimelineCard, ...], rows: tuple) -> str:
+    """통합 카드를 세로 시간축으로 그린다. 들어오는 문자열은 모두 ``_e``를 탄다."""
+    articles: list[str] = []
+    for card in cards:
+        level = card.severity.lower()
+        groups = "".join(
+            (
+                _timeline_group("영향", card.impacts),
+                _timeline_group("원인 신호", card.causes),
+                _timeline_group("검증된 모델 해석", card.interpretations),
+            )
+        )
+        raw = "\n".join(timeline_line(row) for row in card.raw_rows)
+        observations = ""
+        if raw and card.severity == "Info":
+            observations = (
+                '<details class="timeline-observations">'
+                "<summary>해당 구간 분 단위 관측값</summary>"
+                f'<pre class="raw">{_e(raw)}</pre></details>'
+            )
+        elif raw:
+            observations = (
+                '<div class="timeline-observations timeline-observations-open">'
+                '<p class="timeline-observations-label">분 단위 관측값</p>'
+                f'<pre class="raw">{_e(raw)}</pre></div>'
+            )
+        articles.append(
+            f'<article class="timeline-card timeline-card-{level}">'
+            '<div class="timeline-card-head">'
+            f'<time>{_e(_timeline_span(card))}</time>'
+            f'<span class="sev sev-{level}">{_e(card.severity)}</span>'
+            "</div>"
+            f"<h3>{_e(card.representative_event)}</h3>"
+            f"<dl>{groups}</dl>{observations}</article>"
+        )
+
+    raw_all = "\n".join(timeline_line(row) for row in rows)
+    raw_details = ""
+    if raw_all:
+        raw_details = (
+            '<details class="timeline-raw">'
+            "<summary>전체 분 단위 관측값</summary>"
+            f'<pre class="raw">{_e(raw_all)}</pre></details>'
+        )
+    return f'<div class="incident-timeline">{"".join(articles)}</div>{raw_details}'
 
 
 def _overview_block(obs: Observations) -> list[dict]:
@@ -395,11 +468,20 @@ def _sections_from_report(report: DiagnosisReport) -> list[_Section]:
     지시는 어길 수 있지만 구조는 어길 수 없다.
     """
     obs = report.observations
+    timeline_cards = projected_timeline(report)
     blocks: list[tuple[str, list[dict]]] = [
         ("인시던트 개요", _overview_block(obs)),
         (
-            "분 단위 타임라인 (관측값)",
-            _raw_block([timeline_line(row) for row in obs.timeline]),
+            "영향·원인 통합 인시던트 타임라인",
+            [
+                {
+                    "kind": "timeline",
+                    "cards": timeline_cards,
+                    "rows": obs.timeline,
+                }
+            ]
+            if obs.timeline or timeline_cards
+            else [],
         ),
         (
             "클러스터 상태 이력 (관측값)",
@@ -647,6 +729,40 @@ flex:0 0 auto;position:relative;top:-1px}
 .sev-critical{color:var(--crit);background:var(--crit-soft);border-color:var(--crit)}
 .sev-warning{color:var(--warn);background:var(--warn-soft);border-color:var(--warn)}
 .sev-info{color:var(--ink-2);background:var(--surface-2);border-color:var(--line-strong)}
+.incident-timeline{position:relative;display:grid;gap:16px;padding-left:28px}
+.incident-timeline::before{content:"";position:absolute;left:8px;top:8px;bottom:8px;
+width:2px;background:var(--line-strong)}
+.timeline-card{position:relative;background:var(--surface);border:1px solid var(--line);
+border-left:3px solid var(--line-strong);border-radius:6px;padding:15px 17px 16px;
+break-inside:avoid;page-break-inside:avoid}
+.timeline-card::before{content:"";position:absolute;left:-26px;top:21px;width:10px;
+height:10px;border-radius:50%;background:var(--surface);border:3px solid var(--line-strong)}
+.timeline-card-critical{border-left-color:var(--crit)}
+.timeline-card-critical::before{border-color:var(--crit)}
+.timeline-card-warning{border-left-color:var(--warn)}
+.timeline-card-warning::before{border-color:var(--warn)}
+.timeline-card-head{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.timeline-card-head time{font-family:var(--mono);font-size:13px;font-weight:600;
+font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.timeline-card h3{margin:0 0 13px;font-size:16px;line-height:1.45;letter-spacing:-.01em}
+.timeline-card dl{margin:0;display:grid;grid-template-columns:minmax(92px,auto) 1fr;
+gap:9px 15px}
+.timeline-card dt{font-size:12px;font-weight:700;color:var(--ink-2);white-space:nowrap}
+.timeline-card dd{margin:0;min-width:0}
+.timeline-card dd ul{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.timeline-card dd li{display:flex;flex-wrap:wrap;gap:5px 8px;font-size:14px}
+.timeline-card dd li::before{content:"";width:4px;height:4px;margin-top:.75em;
+border-radius:50%;background:var(--line-strong);flex:0 0 auto}
+.timeline-card dd li>span:first-of-type{flex:1 1 34ch;min-width:0}
+.timeline-refs{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.timeline-observations,.timeline-raw{margin-top:14px;padding-top:11px;
+border-top:1px solid var(--line)}
+.timeline-observations summary,.timeline-raw summary{cursor:pointer;color:var(--ink-2);
+font-family:var(--mono);font-size:11.5px}
+.timeline-observations pre.raw,.timeline-raw pre.raw{margin-top:10px;margin-bottom:0}
+.timeline-observations-label{margin:0 0 7px;color:var(--ink-2);font-size:11.5px;
+font-family:var(--mono)}
+.timeline-raw{margin-left:28px}
 pre.raw{margin:0 0 12px;padding:12px 14px;background:var(--surface-2);
 border:1px solid var(--line);border-radius:4px;font-family:var(--mono);
 font-size:12.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:break-word;
@@ -659,8 +775,14 @@ details.source pre{margin-top:14px;padding:16px;background:var(--surface-2);
 border:1px solid var(--line);border-radius:4px;font-family:var(--mono);
 font-size:12.5px;line-height:1.65;white-space:pre-wrap;overflow-wrap:break-word}
 a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:640px){
+.incident-timeline{padding-left:20px}.incident-timeline::before{left:5px}
+.timeline-card{padding:13px 14px}.timeline-card::before{left:-21px}
+.timeline-card dl{grid-template-columns:1fr;gap:4px}.timeline-card dd{margin-bottom:8px}
+.timeline-raw{margin-left:20px}}
 @media print{body{background:#fff}.toc{break-inside:avoid}
-section{break-inside:avoid}details.source{display:none}}
+section{break-inside:auto}.timeline-card{break-inside:avoid;page-break-inside:avoid}
+details.source{display:none}}
 """
 
 _DOCUMENT = """<!doctype html>

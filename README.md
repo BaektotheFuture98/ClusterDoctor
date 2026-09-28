@@ -184,6 +184,52 @@ Kafka consumer는 block하며 log는 stderr와 `logs/app.log`, report는 `REPORT
 uv run python scripts/produce_test_message.py --at "2026-09-16T04:22:00" --count 3
 ```
 
+### Docker Compose 통합 실행
+
+실제 Gemini 또는 NVIDIA NIM API를 호출하는 로컬 통합 실행이다. Kafka trigger 수신,
+ClickHouse 조회, Elasticsearch cluster health 조회, LLM 분석, HTML 보고서 생성을 한 번에
+확인한다. Docker에서는 Kafka·ClickHouse·Elasticsearch만 실행하고, ClusterDoctor는
+로컬 가상환경에서 실행한다. `.env`에 LLM API key와 아래 연결 설정을 넣는다.
+
+```dotenv
+CLICKHOUSE_URL=jdbc:clickhouse://localhost:8123/packetbeat?compress=0
+CLICKHOUSE_USER=clusterdoctor
+CLICKHOUSE_PASSWORD=clusterdoctor
+ES_HOST=localhost
+ES_PORT=9200
+ES_USER=
+ES_PASSWORD=
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092
+KAFKA_TOPIC=slowlog
+KAFKA_GROUP_ID=clusterdoctor
+```
+
+```bash
+docker compose up -d
+.venv/bin/python -m cluster_doctor.main
+```
+
+`Kafka consumer started`가 보이면 다른 터미널에서 trigger를 보낸다. consumer의 `auto_offset_reset=latest` 때문에 consumer 기동 전에 보낸
+메시지는 읽지 않는다.
+
+```bash
+.venv/bin/python scripts/produce_test_message.py --at "2026-01-15T10:00:00+09:00"
+```
+
+고정된 fixture 시각은 오래된 이벤트로 처리되어 분석 구간에서 제외될 수 있다.
+근거 수집까지 검증하려면 ClickHouse 데이터와 이벤트 시각을 최근의 동일한 구간으로 맞춘다.
+
+초기 정착 대기와 실제 LLM 호출이 끝난 뒤 `reports/`에 HTML 파일이 생긴다.
+
+```bash
+ls reports/report-*.html
+docker compose down
+```
+
+ClickHouse fixture는 `docker/clickhouse/init.sql`이 빈 Compose 볼륨을 처음 만들 때만
+적재한다. fixture를 처음 상태로 다시 만들려면 `docker compose down -v`로 볼륨을 지운 뒤
+다시 기동한다.
+
 Kafka와 settling을 건너뛰고 같은 `DiagnoseIncident` path를 특정 시각에 실행하려면
 `run_diagnosis.py`를 쓴다. 아래 첫 명령은 **preflight only**이며 moment와 range만 계산하고
 `RunManualDiagnosis`를 호출하지 않는다. 두 번째 명령이 실제 ClickHouse, Elasticsearch, SSH,
@@ -196,6 +242,56 @@ uv run python scripts/run_diagnosis.py --at "2026-09-16T04:22:00" --span 6m --dr
 # actual direct diagnosis: invokes RunManualDiagnosis
 uv run python scripts/run_diagnosis.py --at "2026-09-16T04:22:00" --span 6m
 ```
+
+## 코드 workflow
+
+아래는 Kafka 이벤트 하나가 HTML 보고서 하나가 되기까지의 실제 호출 경로다.
+`main.py`는 조립만 하고, 각 단계의 규칙은 application/domain에, 외부 시스템 접근은
+adapter에 둔다.
+
+```mermaid
+flowchart TD
+    A[main.py] --> B[build_slowlog_intake<br/>build_kafka_consumer]
+    B --> C[KafkaConsumerAdapter.run]
+    C --> D[Kafka message JSON 파싱<br/>SlowlogTrigger]
+    D --> E[SlowlogIntake.handle]
+    E --> F[micro-batch 대기<br/>유입 정착 settle]
+    F --> G[Incident 생성<br/>StartIncident]
+    G --> H[DiagnoseIncident.handle]
+    H --> I[IncidentState 생성<br/>초기 분석 구간 생성]
+    I --> J[DeepAgentsIncidentAnalyzer.analyze]
+    J --> K[Main Agent / Supervisor]
+    K --> L[분석 구간 승인·Diagnosis SubAgent 위임]
+    L --> M[EvidenceCollector]
+    M --> N[ClickHouse<br/>slowlog·query log·node metric·master log]
+    M --> O[Elasticsearch<br/>cluster health·node 정보]
+    M --> P[SSH node log<br/>문제 노드가 있을 때만]
+    M --> Q[분 단위 로그 선별<br/>LLM은 레코드 ID만 선택]
+    Q --> R[원인 분석·리포트 작성]
+    R --> S[근거 ID·시각·인과 검증]
+    S --> T[구간 리포트 병합]
+    T --> U[HtmlFileReportPublisher]
+    U --> V[reports/report-*.html]
+    V --> W[메모리 state·artifact 정리]
+```
+
+### 단계별 코드 위치
+
+| 단계 | 책임 | 시작 코드 |
+|---|---|---|
+| 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
+| 의존성 조립 | use case와 ClickHouse·ES·SSH·LLM·report adapter 연결 | `src/cluster_doctor/bootstrap/dependencies.py` |
+| Kafka 수신 | JSON에서 event time을 읽어 `SlowlogTrigger`로 변환 | `src/cluster_doctor/adapters/inbound/kafka/consumer.py` |
+| Incident 묶기 | micro-batch, quiet period, 재트리거 제한 | `src/cluster_doctor/application/use_cases/slowlog_intake.py` |
+| 진단 lifecycle | 상태 생성, timeout, 결과 전달, 정리 | `src/cluster_doctor/application/use_cases/diagnose_incident.py` |
+| Main Agent | 분석 범위 선택, SubAgent 위임, 종료 | `src/cluster_doctor/adapters/outbound/deepagents/adapter.py` |
+| 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/collector.py` |
+| 리포트 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/validator.py` |
+| HTML 저장 | 최종 리포트를 `reports/`에 기록 | `src/cluster_doctor/adapters/outbound/reporting/html_file_notifier.py` |
+
+Kafka를 거치지 않는 수동 실행은 `scripts/run_diagnosis.py`에서
+`RunManualDiagnosis`를 호출한다. 이 경로는 Kafka 수신·micro-batch·정착만 생략하고,
+그 뒤의 `DiagnoseIncident`와 Agent workflow는 같은 구현을 사용한다.
 
 ## 데이터 소스와 metric 해석
 

@@ -11,13 +11,25 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 import re
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 
-from cluster_doctor.domain.diagnosis.observations import DiagnosisReport, MasterEvent, NodeMetricRow, Observations, SlowCandidate, observed_severity, TimelineRow
 from cluster_doctor.domain.diagnosis.health_point import HealthPoint
+from cluster_doctor.domain.diagnosis.incident_timeline import (
+    TimelineCard,
+    TimelineItem,
+    project_timeline,
+)
+from cluster_doctor.domain.diagnosis.diagnosis_report import DiagnosisReport
+from cluster_doctor.domain.diagnosis.observations import (
+    MasterEvent,
+    NodeMetricRow,
+    Observations,
+    SlowCandidate,
+    TimelineRow,
+    observed_severity,
+)
 
 _KST = timezone(timedelta(hours=9))
 
@@ -96,6 +108,52 @@ def timeline_line(row: TimelineRow) -> str:
     if row.failed:
         line += "  [분석 실패]"
     return line
+
+
+def projected_timeline(report: DiagnosisReport) -> tuple[TimelineCard, ...]:
+    """두 표현 어댑터가 공유하는 카드 투영 진입점."""
+    return project_timeline(
+        report.observations,
+        report.evidence,
+        report.timeline_annotations,
+        verification_status=report.verification_status,
+    )
+
+
+def _card_span(card: TimelineCard) -> str:
+    start = _hm(card.start)
+    end = _hm(card.end)
+    return start if start == end else f"{start}–{end}"
+
+
+def _card_item_line(item: TimelineItem) -> str:
+    refs = f" (근거: {', '.join(item.evidence_refs)})" if item.evidence_refs else ""
+    return f"    - {item.text}{refs}"
+
+
+def timeline_card_lines(report: DiagnosisReport) -> list[str]:
+    """통합 카드와 전체 원시 분 관측을 평문 한 블록으로 그린다."""
+    cards = projected_timeline(report)
+    lines: list[str] = []
+    for card in cards:
+        lines.append(
+            f"[{_card_span(card)}] {card.severity} — {card.representative_event}"
+        )
+        for label, items in (
+            ("영향", card.impacts),
+            ("원인 신호", card.causes),
+            ("검증된 모델 해석", card.interpretations),
+        ):
+            if not items:
+                continue
+            lines.append(f"  {label}")
+            lines.extend(_card_item_line(item) for item in items)
+        lines.append("")
+
+    raw = [timeline_line(row) for row in report.observations.timeline]
+    if raw:
+        lines.extend(["전체 분 단위 관측값", *[f"  {line}" for line in raw]])
+    return lines
 
 
 def node_line(row: NodeMetricRow) -> str:
@@ -422,7 +480,7 @@ def render_text(report: DiagnosisReport) -> str:
         out.extend([f"{numbered[0]}. {title}", _SEPARATOR, *lines, ""])
 
     add("인시던트 개요", overview_lines(obs))
-    add("분 단위 타임라인 (관측값)", [timeline_line(row) for row in obs.timeline])
+    add("영향·원인 통합 인시던트 타임라인", timeline_card_lines(report))
     add("클러스터 상태 이력 (관측값)", health_lines(obs.health, obs.requested))
     add("노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
     add(

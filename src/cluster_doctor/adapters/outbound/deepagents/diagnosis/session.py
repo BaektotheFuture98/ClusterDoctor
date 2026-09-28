@@ -21,7 +21,9 @@ from cluster_doctor.domain.diagnosis.log_entries import LogEntry, NodeLogEntry
 from cluster_doctor.domain.diagnosis.evidence import Evidence
 from cluster_doctor.domain.diagnosis.time_range import TimeRange
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
-from cluster_doctor.domain.diagnosis.contracts import LogAnalysisRequest
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.contracts import (
+    LogAnalysisRequest,
+)
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.collector import CollectedEvidence
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import ReportWriter
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.run_state import AnalysisRunState

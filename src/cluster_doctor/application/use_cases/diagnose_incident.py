@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from cluster_doctor.application.commands import StartIncident
+from cluster_doctor.application.output_mapping import to_diagnosis_report
 from cluster_doctor.application.ports.artifact_store import ArtifactStore
 from cluster_doctor.application.ports.incident_analyzer import IncidentAnalyzer
 from cluster_doctor.application.ports.incident_state_repository import (
@@ -17,26 +18,33 @@ from cluster_doctor.application.ports.report_publisher import (
     ReportPublication,
     ReportPublisher,
 )
-from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
+from cluster_doctor.application.report_finalization import finalize_incident_report
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.observations import Observations
+from cluster_doctor.domain.diagnosis.report import (
+    LogAnalysisReport,
+    LogAnalysisStatus,
+    VerificationStatus,
+)
 from cluster_doctor.domain.incident.guardrails import (
     INCIDENT_TIMEOUT_SECONDS,
     CancellationToken,
     Deadline,
 )
 from cluster_doctor.domain.incident.models import IncidentStatus
-from cluster_doctor.application.report_finalization import finalize_incident_report
 from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.incident.window_planner import initial_windows
-from cluster_doctor.application.output_mapping import to_diagnosis_report
-from cluster_doctor.domain.diagnosis.evidence import Evidence
-from cluster_doctor.domain.diagnosis.observations import DiagnosisReport, Observations
-from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 
 _logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class IncidentOutcome:
+    """진단 생명주기가 호출자에게 돌려주는 종료 상태와 산출물 정보.
+
+    보고서 본문 대신 상태·누락·참조를 요약하고 diagnostics로 조회 상세를 제공한다.
+    """
+
     incident_id: str
     status: IncidentStatus
     analysis_failed: bool = False
@@ -44,7 +52,7 @@ class IncidentOutcome:
     report_ref: str | None = None
     analysis_calls: int = 0
     reason: str = ""
-    diagnostics: "IncidentDiagnostics" = field(default_factory=lambda: IncidentDiagnostics())
+    diagnostics: IncidentDiagnostics = field(default_factory=lambda: IncidentDiagnostics())
 
 
 @dataclass(frozen=True)
@@ -137,13 +145,24 @@ class DiagnoseIncident:
     async def _run_analyzer(
         self, incident, deadline: Deadline
     ) -> tuple[bool, tuple[IncidentStatus, str] | None]:
+        analyzer_task = asyncio.create_task(
+            asyncio.to_thread(self._analyzer.analyze, incident)
+        )
         try:
             result = await asyncio.wait_for(
-                asyncio.to_thread(self._analyzer.analyze, incident),
+                asyncio.shield(analyzer_task),
                 timeout=deadline.remaining,
             )
         except TimeoutError:
             _logger.warning("[incident %s] execution timed out", incident.incident_id)
+            # A running thread cannot be cancelled. Keep its worker occupied until
+            # it finishes so client cleanup and analyzer concurrency remain safe.
+            try:
+                await asyncio.shield(analyzer_task)
+            except Exception:
+                _logger.exception(
+                    "[incident %s] analyzer raised after timeout", incident.incident_id
+                )
             return True, (IncidentStatus.FAILED, self._timeout_reason())
         except Exception:
             _logger.exception("[incident %s] analyzer raised", incident.incident_id)

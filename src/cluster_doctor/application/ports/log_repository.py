@@ -23,6 +23,11 @@ def clamp_node_log_limit(limit: int) -> int:
 
 
 class LogRepository(ABC):
+    """진단에 필요한 로그와 메트릭을 조회하는 외부 저장소 포트.
+
+    어댑터가 소스 데이터를 LogEntry 계열로 돌려주며 근거 선별은 호출자가 맡는다.
+    """
+
     @abstractmethod
     def fetch_logs(self, time_range: TimeRange) -> list[LogEntry]:
         """분 단위 분석에 쓰는 세 소스(slowlog·쿼리 로그·노드 메트릭)를 한 리스트로."""

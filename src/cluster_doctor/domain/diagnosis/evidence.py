@@ -35,7 +35,10 @@ class EvidenceSource(StrEnum):
 
 
 class Evidence(BaseModel):
-    """어느 datasource에서 왔든 같은 모양이 되는 근거 한 건."""
+    """소스별 원자료에서 선별해 Incident 식별자를 부여한 근거 한 건.
+
+    조회 계약 LogEntry, 실행 내 번호를 쓰는 RawRecord와 달리 보고서가 참조한다.
+    """
 
     model_config = ConfigDict(frozen=True)
 

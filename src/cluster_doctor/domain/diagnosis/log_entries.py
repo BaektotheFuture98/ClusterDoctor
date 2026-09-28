@@ -20,7 +20,10 @@ from typing import ClassVar
 
 @dataclass(frozen=True)
 class LogEntry:
-    """세 소스가 공유하는 계약."""
+    """저장소가 돌려주는 소스별 조회 결과의 공통 계약.
+
+    아직 선별 전이며, 파이프라인이 RawRecord와 보고서 근거 Evidence로 변환한다.
+    """
 
     timestamp: datetime
 

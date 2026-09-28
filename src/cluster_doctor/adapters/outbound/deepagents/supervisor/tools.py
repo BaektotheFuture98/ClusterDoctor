@@ -16,37 +16,41 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from langchain.tools import BaseTool, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.application.ports.artifact_store import ArtifactStore
-from cluster_doctor.application.ports.incident_state_repository import (
-    IncidentStateRepository,
-)
-from cluster_doctor.application.report_finalization import finalize_incident_report
-from cluster_doctor.domain.incident.guardrails import (
-    MAX_ANALYSIS_CALLS,
-    MAX_ANALYSIS_WINDOW_MINUTES,
-    MAX_ANALYZED_MINUTES,
-    MAX_REJECTED_DECISIONS,
-    admit_window,
-    check_analysis_budget,
-    remaining_minutes,
-    window_minutes,
-)
-from cluster_doctor.domain.incident.window_planner import plan_new_windows
-from cluster_doctor.domain.incident.models import IncidentStatus
-from cluster_doctor.domain.incident.state import IncidentState
-from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
-from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
     DIAGNOSIS_SUBAGENT,
 )
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.application.ports.incident_state_repository import (
+    IncidentStateRepository,
+)
+from cluster_doctor.application.report_finalization import finalize_incident_report
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
+from cluster_doctor.domain.diagnosis.report_validation import validate_report
+from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.incident.guardrails import (
+    MAX_ANALYSIS_CALLS,
+    MAX_ANALYSIS_WINDOW_MINUTES,
+    MAX_ANALYZED_MINUTES,
+    MAX_FINAL_REPORT_REVISIONS,
+    MAX_REJECTED_DECISIONS,
+    admit_window,
+    remaining_minutes,
+    window_minutes,
+)
+from cluster_doctor.domain.incident.models import IncidentStatus
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.incident.window_planner import plan_new_windows
+from cluster_doctor.exceptions import GuardrailViolation
 
 _logger = logging.getLogger(__name__)
 
@@ -77,7 +81,7 @@ _FINALIZE_DESCRIPTION = """\
 확정하고 저장한다. finish_incident를 부르기 전에, 분석한 구간이 하나라도
 있으면 반드시 먼저 부른다.
 
-새로 원인을 추론하지 않는다 — 이미 검증을 거친 구간별 보고서를 시간순으로
+새로 원인을 추론하지 않는다 — 구간별 초안 보고서를 시간순으로
 합칠 뿐이다. 구간별 보고서가 하나도 없으면(예: 근거가 없어 write_report를
 아예 부르지 못한 경우) 확정할 것이 없다는 응답을 돌려준다.
 """
@@ -181,6 +185,8 @@ def make_finalize_report_tool(
             )
 
         state.final_report_ref = ref
+        state.final_verification_status = VerificationStatus.NOT_VERIFIED
+        state.final_verification_issues = []
         repository.save(state)
         merged = store.get_report(ref)
         _logger.info(
@@ -192,10 +198,66 @@ def make_finalize_report_tool(
         )
         return (
             f"Incident 전체 최종 보고서를 확정했다 (분석 구간 {len(state.report_refs)}개를 "
-            f"종합). 이제 finish_incident로 종료해라."
+            f"종합). 이제 validate_final_report로 검증해라."
         )
 
     return finalize_report
+
+
+def make_validate_final_report_tool(
+    *,
+    state: IncidentState,
+    repository: IncidentStateRepository,
+    store: ArtifactStore,
+    reviser: Callable[[LogAnalysisReport, tuple[str, ...], list[Evidence]], LogAnalysisReport | None],
+) -> BaseTool:
+    @tool("validate_final_report", description="최종 보고서를 근거와 대조한다. revise=True면 불일치 보고서를 Incident당 최대 한 번 수정하고 재검증한다.")
+    def validate_final_report(revise: bool = False) -> str:
+        if revise and state.final_verification_status is not VerificationStatus.MISMATCH:
+            if state.final_verification_status is VerificationStatus.PASSED:
+                return "최종 보고서는 이미 PASSED다. 수정할 필요가 없다."
+            return "먼저 validate_final_report(revise=False)로 최종 보고서를 검증해라. MISMATCH일 때만 수정할 수 있다."
+        report = store.get_report(state.final_report_ref) if state.final_report_ref else None
+        if report is None:
+            state.final_verification_status = VerificationStatus.NOT_VERIFIED
+            state.final_verification_issues = ["최종 보고서가 없다. finalize_report를 먼저 호출해라."]
+            repository.save(state)
+            return state.final_verification_issues[0]
+        evidence = store.list_evidence(state.incident_id)
+        candidate_ids = {item.candidate_id for item in store.get_observations(state.incident_id).candidates}
+        result = validate_report(report, evidence, candidate_ids=candidate_ids)
+        revision_error = None
+        if revise and not result.passed and state.final_report_revision_count < MAX_FINAL_REPORT_REVISIONS:
+            state.final_report_revision_count += 1
+            state.final_verification_status = VerificationStatus.MISMATCH
+            state.final_verification_issues = list(result.issues)
+            repository.save(state)
+            try:
+                revised = reviser(report, tuple(result.issues), evidence)
+                if revised is not None:
+                    report = revised
+                    result = validate_report(report, evidence, candidate_ids=candidate_ids)
+                else:
+                    revision_error = "최종 보고서 수정에 실패했다."
+            except Exception:
+                _logger.exception("최종 보고서 수정 실패")
+                revision_error = "최종 보고서 수정 중 오류가 발생했다."
+        issues = list(result.issues)
+        if revision_error:
+            issues.append(revision_error)
+        status = VerificationStatus.MISMATCH if issues else VerificationStatus.PASSED
+        report = report.model_copy(update={
+            "verification_status": status,
+            "verification_issues": tuple(issues),
+            "revision_count": state.final_report_revision_count,
+        })
+        state.final_report_ref = store.put_report(state.incident_id, report)
+        state.final_verification_status = status
+        state.final_verification_issues = issues
+        repository.save(state)
+        return f"최종 검증: {status}. 수정 {state.final_report_revision_count}/{MAX_FINAL_REPORT_REVISIONS}. " + "; ".join(issues)
+
+    return validate_final_report
 
 
 def make_finish_incident_tool(
@@ -225,6 +287,11 @@ def make_finish_incident_tool(
                 f"{IncidentStatus.CANCELLED} 중 하나로 다시 불러라."
             )
 
+        if status is IncidentStatus.COMPLETED and (
+            not state.final_report_ref
+            or state.final_verification_status is not VerificationStatus.PASSED
+        ):
+            return "COMPLETED는 최종 보고서와 PASSED 검증이 필요하다. finalize_report → validate_final_report 후 종료하거나 FAILED/CANCELLED로 종료해라."
         state.status = status
         state.closing_reason = reason.strip()
         repository.save(state)

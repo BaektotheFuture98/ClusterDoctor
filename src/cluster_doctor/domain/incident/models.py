@@ -21,6 +21,11 @@ class SlowlogTrigger:
 
 
 class IncidentStatus(StrEnum):
+    """Incident 생명주기의 업무 상태.
+
+    구간 분석 결과와 별개이며 종료 상태는 완료·실패·취소 세 가지다.
+    """
+
     OPEN = "OPEN"
     ANALYZING = "ANALYZING"
     COMPLETED = "COMPLETED"
@@ -36,6 +41,11 @@ class IncidentStatus(StrEnum):
 
 
 class TriggerType(StrEnum):
+    """Incident를 시작한 유입의 종류.
+
+    slowlog 자동 유입과 수동 요청의 시작 맥락을 구별한다.
+    """
+
     SLOWLOG = "SLOWLOG"
     MANUAL = "MANUAL"
 

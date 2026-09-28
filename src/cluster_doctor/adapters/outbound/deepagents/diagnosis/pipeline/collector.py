@@ -82,6 +82,11 @@ def _shift_ids(records: list, start: int) -> list:
 
 @dataclass
 class CollectedEvidence:
+    """한 구간의 수집 실행이 반환하는 근거 묶음과 조사 진행 정보.
+
+    단일 Evidence와 달리 마스터 근거·조사 노드·실패한 분을 함께 전달한다.
+    """
+
     evidence: list[Evidence] = field(default_factory=list)
     master_evidence: list[Evidence] = field(default_factory=list)
     investigated_nodes: list[str] = field(default_factory=list)

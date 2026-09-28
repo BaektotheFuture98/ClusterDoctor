@@ -10,17 +10,22 @@ import logging
 
 from langchain_core.tools import tool
 
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.collector import (
+    CollectedEvidence,
+    EvidenceCollector,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import (
+    DiagnosisSeams,
+    _DiagnosisSession,
+)
+from cluster_doctor.domain.diagnosis.kst import parse_kst
 from cluster_doctor.domain.diagnosis.report import VerificationStatus
 from cluster_doctor.domain.diagnosis.time_range import TimeRange, split_span
-from cluster_doctor.domain.diagnosis.kst import parse_kst
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.collector import CollectedEvidence, EvidenceCollector
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import DiagnosisSeams, _DiagnosisSession
 
 _logger = logging.getLogger(__name__)
 
-# ``write_report``가 실제로 돌 수 있는 횟수. 리포트 **안쪽**의 수정 횟수는
-# ``MAX_REPORT_REVISIONS``가 쥐고 있고 여기서 다시 정의하지 않는다. 이 상한은
-# 성격이 다르다 — 모델이 초안이 마음에 들지 않는다고 처음부터 다시 쓰는 것을
+# ``write_report``가 실제로 돌 수 있는 횟수. 모델이 초안이 마음에 들지
+# 않는다고 처음부터 다시 쓰는 것을
 # 막는다. 한 번은 다시 쓸 수 있게 둔 이유는 근거를 보고 물음을 고쳐 잡는 것이
 # 실제로 더 나은 리포트를 내기 때문이다.
 _MAX_REPORT_ATTEMPTS = 2
@@ -63,10 +68,10 @@ def _build_tools(seams: DiagnosisSeams, delegation: _DiagnosisSession) -> list:
             delegation.collected = collector.collect(
                 delegation.window, delegation.run_state
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # 수집기는 소스별 실패를 스스로 삼키므로 여기까지 오는 것은 조립
             # 자체가 틀어진 경우다. 그래도 루프를 죽이지 않는다.
-            _logger.exception("[diagnosis] 근거 수집이 실패했다: %s", exc)
+            _logger.exception("[diagnosis] 근거 수집이 실패했다")
             delegation.run_state.mark_gap(f"근거 수집이 실패했다: {exc}")
             delegation.collected = CollectedEvidence()
 
@@ -75,11 +80,9 @@ def _build_tools(seams: DiagnosisSeams, delegation: _DiagnosisSession) -> list:
 
     @tool
     def write_report(focus: str) -> dict:
-        """모은 근거로 원인을 분석하고 리포트를 쓰고 검증한다.
+        """모은 근거로 원인을 분석하고 미검증 리포트를 저장한다.
 
-        초안 작성 → 일관성 검증 → (지적이 있으면) 정해진 횟수 안에서 수정까지
-        한 번에 돈다. 검증 규칙과 수정 횟수 상한은 이 도구 안에 있고 바꿀 수
-        없다 — 모델이 자기 리포트를 채점하면 거의 통과하기 때문이다.
+        검증과 수정 결정은 상위 흐름의 책임이다.
 
         ``focus``는 "이 근거로 무엇을 묻고 싶은가"다. 비워도 되지만, 구체적일
         수록 원인 분석이 좁게 들어간다.
@@ -96,7 +99,7 @@ def _build_tools(seams: DiagnosisSeams, delegation: _DiagnosisSession) -> list:
             return {
                 "error": (
                     "근거가 하나도 없어 리포트를 쓰지 않는다. 근거 없이 쓰는 원인은 "
-                    "검증에서 어차피 걸린다. report_insufficient로 올려라."
+                    "report_insufficient로 부족한 근거를 올려라."
                 ),
             }
         if delegation.report_attempts >= _MAX_REPORT_ATTEMPTS:
@@ -124,12 +127,9 @@ def _build_tools(seams: DiagnosisSeams, delegation: _DiagnosisSession) -> list:
                 window=delegation.window,
                 evidence_refs=tuple(item.evidence_id for item in delegation.evidence),
             )
-            report = seams.report_writer.verify_and_revise(
-                report, delegation.evidence, delegation.run_state.candidate_ids()
-            )
             report_ref = seams.store.put_report(request.incident_id, report)
-        except Exception as exc:  # noqa: BLE001
-            _logger.exception("[diagnosis] 리포트 작성이 실패했다: %s", exc)
+        except Exception as exc:
+            _logger.exception("[diagnosis] 리포트 작성이 실패했다")
             delegation.run_state.mark_gap(f"리포트 작성이 실패했다: {exc}")
             return {"error": f"리포트 작성이 실패했다: {exc}"}
 
@@ -147,8 +147,7 @@ def _build_tools(seams: DiagnosisSeams, delegation: _DiagnosisSession) -> list:
         payload = {
             "report_ref": report_ref,
             "verification_status": str(report.verification_status),
-            "verification_issue_count": len(report.verification_issues),
-            "revision_count": report.revision_count,
+            "note": "초안이 저장되었다. 검증과 수정은 상위 흐름에서 수행한다.",
             "finding_count": len(report.findings),
             "root_cause_count": len(report.root_causes),
             "unresolved_question_count": len(report.unresolved_questions),
@@ -235,7 +234,7 @@ def _parse_windows(raw: list[str]) -> tuple[list[TimeRange], list[str]]:
             if not pieces:
                 raise ValueError("시작이 끝보다 뒤이거나 같다")
             accepted.extend(pieces)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             rejected.append(f"{item!r}: {exc}")
     return accepted, rejected
 

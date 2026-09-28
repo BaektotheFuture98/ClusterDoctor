@@ -1,12 +1,11 @@
-"""근거를 놓고 원인을 묻고, 쓴 리포트를 검증하고, 지적을 받아 고친다.
+"""근거로 초안을 작성하고, 호출자가 전달한 지적으로 한 번 수정한다.
 
 수집(``collector.py``)과 리포트 작성이 갈라져 있는 이유는 Diagnosis SubAgent가
 모델에게 그 둘을 **따로** 고르게 하기 때문이다. 한 덩어리로 묶여 있으면
 "근거는 이미 모았으니 리포트만 다시 쓴다"가 표현되지 않고, 다시 쓸 때마다
 데이터소스 조회 비용이 함께 든다.
 
-검증과 수정은 여기 안에 있고 모델이 건드리지 못한다. 모델이 자기 출력을
-채점하면 거의 통과하기 때문이다.
+검증과 수정 횟수 결정은 호출자의 책임이다.
 """
 
 from __future__ import annotations
@@ -16,14 +15,9 @@ from collections.abc import Callable
 from datetime import timedelta
 from functools import partial
 
-from cluster_doctor.exceptions import LlmApiError, LlmResponseError
-from cluster_doctor.application.ports.artifact_store import ArtifactStore
-from cluster_doctor.domain.incident.guardrails import MAX_REPORT_REVISIONS
-from cluster_doctor.domain.diagnosis.evidence import Evidence
-from cluster_doctor.domain.diagnosis.contracts import LogAnalysisRequest
-from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
-from cluster_doctor.domain.diagnosis.time_range import TimeRange
-from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import complete
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.contracts import (
+    LogAnalysisRequest,
+)
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.prompts import (
     build_analysis_prompt,
     build_revision_prompt,
@@ -35,9 +29,12 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.schema impor
     DraftReport,
     parse_draft,
 )
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.validator import (
-    validate_report,
-)
+from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import complete
+from cluster_doctor.application.ports.artifact_store import ArtifactStore
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
+from cluster_doctor.domain.diagnosis.time_range import TimeRange
+from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 
 _logger = logging.getLogger(__name__)
 
@@ -45,18 +42,16 @@ _ANALYSIS_MAX_TOKENS = 8192
 
 
 class ReportWriter:
-    """초안 → 검증 → 수정. 리포트 하나가 만들어지는 전 구간."""
+    """구조화된 초안 작성과 단일 수정 호출."""
 
     def __init__(
         self,
         *,
         store: ArtifactStore,
         call_llm: Callable[..., str],
-        max_revisions: int = MAX_REPORT_REVISIONS,
     ) -> None:
         self._store = store
         self._call_llm = call_llm
-        self._max_revisions = max_revisions
 
     # ── Cross-source Analysis ────────────────────────────────────────
     def draft_report(
@@ -117,67 +112,7 @@ class ReportWriter:
             + (f" 미해결: {questions}" if questions else "")
         )
 
-    # ── 검증과 수정 ──────────────────────────────────────────────────
-    def verify_and_revise(
-        self,
-        report: LogAnalysisReport,
-        evidence: list[Evidence],
-        candidate_ids: set[str],
-    ) -> LogAnalysisReport:
-        """불일치가 없을 때까지, **허용된 횟수 안에서만** 고친다.
-
-        횟수 상한이 반드시 필요하다. 모델이 같은 지적을 이해하지 못하면 검증과
-        수정이 서로를 부르며 끝나지 않고, 그 루프는 429가 날 때까지 돈다.
-        상한에 닿으면 남은 불일치를 리포트에 **기록한 채** 내보낸다 — 지적을
-        지우면 운영자가 검증을 통과한 리포트로 읽는다.
-        """
-        revisions = 0
-        while True:
-            result = validate_report(report, evidence, candidate_ids=candidate_ids)
-            if result.passed:
-                return report.model_copy(
-                    update={
-                        "verification_status": VerificationStatus.PASSED,
-                        "verification_issues": (),
-                        "revision_count": revisions,
-                    }
-                )
-
-            if revisions >= self._max_revisions:
-                _logger.warning(
-                    "[subagent] revision 상한 %d회 도달 — 불일치 %d건을 남긴 채 종료",
-                    self._max_revisions,
-                    len(result.issues),
-                )
-                return report.model_copy(
-                    update={
-                        "verification_status": VerificationStatus.MISMATCH,
-                        "verification_issues": tuple(result.issues),
-                        "revision_count": revisions,
-                    }
-                )
-
-            revisions += 1
-            _logger.info(
-                "[subagent] 불일치 %d건 — revision %d/%d",
-                len(result.issues),
-                revisions,
-                self._max_revisions,
-            )
-            revised = self._revise(report, tuple(result.issues), evidence)
-            if revised is None:
-                # 수정 호출 자체가 실패했다. 더 시도하지 않는다 — 같은 실패가
-                # 반복될 뿐이고, 원래 리포트는 그대로 유효하다.
-                return report.model_copy(
-                    update={
-                        "verification_status": VerificationStatus.MISMATCH,
-                        "verification_issues": tuple(result.issues),
-                        "revision_count": revisions - 1,
-                    }
-                )
-            report = revised
-
-    def _revise(
+    def revise_report(
         self,
         report: LogAnalysisReport,
         issues: tuple[str, ...],
@@ -193,11 +128,16 @@ class ReportWriter:
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[subagent] revision 호출 실패: %s", exc)
             return None
+        from cluster_doctor.domain.diagnosis.time_range import split_span
+
         return parse_draft(text).to_domain(
             incident_id=report.incident_id,
-            window=TimeRange(start=report.analyzed_from, end=report.analyzed_to),
+            window=split_span(report.analyzed_from, report.analyzed_to)[0],
             evidence_refs=report.evidence_refs,
-        )
+        ).model_copy(update={
+            "analyzed_from": report.analyzed_from,
+            "analyzed_to": report.analyzed_to,
+        })
 
     # ── 응답 조립 ────────────────────────────────────────────────────
     @staticmethod

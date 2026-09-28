@@ -27,6 +27,11 @@ class InvalidTimeRangeError(ValueError):
 
 @dataclass(frozen=True)
 class TimeRange:
+    """시간대가 있는 시작·종료 시각으로 표현하는 최대 10분 분석 구간.
+
+    조회와 구간 계획이 공유하며, 생성 시 순서와 분석 비용 상한을 검증한다.
+    """
+
     start: datetime
     end: datetime
 
