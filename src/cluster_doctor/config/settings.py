@@ -9,6 +9,11 @@ _SUPPORTED_LLM_PROVIDERS: tuple[str, ...] = get_args(LlmProvider)
 
 
 class Settings(BaseSettings):
+    """환경 변수와 .env에서 읽는 프로세스 기동 설정.
+
+    조립 코드가 어댑터별 설정으로 나누며, 도메인 상태나 분석 결과는 담지 않는다.
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

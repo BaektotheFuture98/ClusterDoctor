@@ -3,8 +3,8 @@ import logging
 import os
 
 from cluster_doctor.bootstrap.dependencies import (
-    build_slowlog_intake,
     build_kafka_consumer,
+    build_slowlog_intake,
     close_clickhouse_client,
 )
 from cluster_doctor.config.settings import get_settings
@@ -45,7 +45,10 @@ async def main() -> None:
     try:
         await consumer.run()
     finally:
-        close_clickhouse_client()
+        try:
+            await intake.close()
+        finally:
+            close_clickhouse_client()
 
 
 if __name__ == "__main__":

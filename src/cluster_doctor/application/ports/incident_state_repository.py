@@ -17,6 +17,11 @@ from cluster_doctor.domain.incident.state import IncidentState
 
 @runtime_checkable
 class IncidentStateRepository(Protocol):
+    """Incident 업무 상태의 생성·조회·갱신·정리를 담당하는 포트.
+
+    애플리케이션과 분석기는 저장 매체를 모르고 같은 진행 상태를 공유한다.
+    """
+
     def create(self, state: IncidentState) -> None:
         """새 Incident의 상태를 만든다. 이미 있으면 예외를 올린다.
 

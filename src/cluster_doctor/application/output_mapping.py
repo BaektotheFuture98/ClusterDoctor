@@ -16,13 +16,14 @@ the resulting domain object.
 
 from __future__ import annotations
 
-from cluster_doctor.domain.diagnosis.observations import (
+from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.diagnosis_report import (
     DiagnosisReport,
     Finding,
     Narrative,
-    Observations,
+    TimelineAnnotation,
 )
-from cluster_doctor.domain.diagnosis.evidence import Evidence
+from cluster_doctor.domain.diagnosis.observations import Observations
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 
 
@@ -38,11 +39,21 @@ def to_diagnosis_report(
     못해도 그 시각에 무슨 일이 있었는지는 남아야 한다.
     """
     if report is None:
-        return DiagnosisReport(observations=observations)
+        return DiagnosisReport(observations=observations, evidence=tuple(evidence))
 
     cite = {item.evidence_id: item for item in evidence}
     return DiagnosisReport(
         observations=observations,
+        evidence=tuple(evidence),
+        timeline_annotations=tuple(
+            TimelineAnnotation(
+                at=event.at,
+                description=event.description,
+                evidence_refs=event.evidence_refs,
+            )
+            for event in report.timeline
+        ),
+        verification_status=report.verification_status.value,
         narrative=Narrative(
             headline=report.summary,
             context=tuple(

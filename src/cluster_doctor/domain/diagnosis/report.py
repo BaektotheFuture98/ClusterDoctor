@@ -15,7 +15,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cluster_doctor.domain.diagnosis.observations import SuspectPick
+from cluster_doctor.domain.diagnosis.diagnosis_report import SuspectPick
 
 
 class LogAnalysisStatus(StrEnum):
@@ -25,6 +25,7 @@ class LogAnalysisStatus(StrEnum):
     # 현재 요청 범위 밖의 시간이 필요하다. Scope 확장은 Supervisor가 승인한다.
     NEED_MORE_CONTEXT = "NEED_MORE_CONTEXT"
     # 허용된 revision을 다 쓰고도 Evidence와 Report가 맞지 않았다.
+    # 과거 저장 데이터 호환용. 새 진단 실행은 이 상태를 만들지 않는다.
     VALIDATION_FAILED = "VALIDATION_FAILED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
@@ -41,7 +42,10 @@ class VerificationStatus(StrEnum):
 
 
 class TimelineEvent(BaseModel):
-    """사고 전개의 한 칸."""
+    """구조화 보고서의 시각별 주장과 그 근거 참조.
+
+    코드가 센 관측 타임라인과 달리 모델의 설명이며 일관성 검증 대상이다.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -51,7 +55,10 @@ class TimelineEvent(BaseModel):
 
 
 class ReportFinding(BaseModel):
-    """모델이 지목한 문제 하나."""
+    """구조화 보고서에 보관되는 문제와 근거 참조.
+
+    DraftFinding을 코드가 변환한 값이며 전달용 Narrative의 Finding과 구별된다.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -78,7 +85,10 @@ class RootCause(BaseModel):
 
 
 class LogAnalysisReport(BaseModel):
-    """한 analysis window의 결과 전부."""
+    """구간 분석 또는 여러 구간 병합 결과를 보관하는 구조화 보고서.
+
+    DraftReport에서 변환되어 근거 일관성 검증을 받으며, DiagnosisReport의 입력이다.
+    """
 
     model_config = ConfigDict(frozen=True)
 

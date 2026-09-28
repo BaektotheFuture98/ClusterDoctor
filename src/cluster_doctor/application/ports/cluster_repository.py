@@ -29,6 +29,11 @@ class ClusterRepository(ABC):
 
 @runtime_checkable
 class NodeResolver(Protocol):
+    """근거에서 찾은 노드 식별자를 접속 가능한 주소로 해석하는 포트.
+
+    추가 노드 조사에서 쓰며, 찾지 못한 노드와 접속 실패를 구분한다.
+    """
+
     def resolve(self, node_id: str) -> ResolvedNode | None:
         """노드를 찾지 못하면 ``None``.
 

@@ -17,13 +17,16 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from cluster_doctor.domain.incident.models import IncidentStatus
 from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
 from cluster_doctor.domain.diagnosis.time_range import TimeRange, is_covered
+from cluster_doctor.domain.incident.models import IncidentStatus
 
 
 class IncidentState(BaseModel):
-    """Supervisor가 다음 행동을 정할 때 읽는 전부."""
+    """Incident 전체의 진행, 예산, 분석 구간과 산출물 참조를 보관한다.
+
+    시작 맥락인 Incident와 달리 실행 중 갱신되며, Agent 대화 상태와도 별개다.
+    """
 
     incident_id: str
 
@@ -46,6 +49,9 @@ class IncidentState(BaseModel):
     # Main Agent가 finalize_report를 부를 때만 채워지고, 부르지 않고 끝나면
     # IncidentRunner._deliver가 report_refs를 모아 안전망으로 채운다.
     final_report_ref: str | None = None
+    final_verification_status: VerificationStatus = VerificationStatus.NOT_VERIFIED
+    final_verification_issues: list[str] = Field(default_factory=list)
+    final_report_revision_count: int = 0
     latest_analysis_status: LogAnalysisStatus | None = None
     latest_verification_status: VerificationStatus | None = None
     latest_analysis_summary: str = ""

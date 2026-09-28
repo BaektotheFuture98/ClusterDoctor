@@ -29,10 +29,18 @@ from langchain.agents.middleware import AgentMiddleware, ToolCallRequest, hook_c
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from cluster_doctor.exceptions import GuardrailViolation
+from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
+    ADMITTED_GOAL,
+    ADMITTED_WINDOW,
+    DIAGNOSIS_SUBAGENT,
+)
+from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import TASK_TOOL_NAME
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
+from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
+from cluster_doctor.domain.diagnosis.report import VerificationStatus
+from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
 from cluster_doctor.domain.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_REJECTED_DECISIONS,
@@ -42,14 +50,7 @@ from cluster_doctor.domain.incident.guardrails import (
 )
 from cluster_doctor.domain.incident.models import IncidentStatus
 from cluster_doctor.domain.incident.state import IncidentState
-from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
-from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
-from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
-    ADMITTED_GOAL,
-    ADMITTED_WINDOW,
-    DIAGNOSIS_SUBAGENT,
-)
-from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import TASK_TOOL_NAME
+from cluster_doctor.exceptions import GuardrailViolation
 
 _logger = logging.getLogger(__name__)
 
@@ -103,9 +104,12 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
                 "[guardrail] 연속 거절 %d회 — Incident를 닫는다",
                 current.rejected_decision_count,
             )
-            # 실패가 아니라 완료다. 거절은 분석이 깨진 것이 아니라 요청이
-            # 제약에 걸린 것이고, 그때까지의 분석은 그대로 쓸 수 있다.
-            current.status = IncidentStatus.COMPLETED
+            # 런타임 종료도 Main의 최종 검증을 통과해야 완료로 기록한다.
+            current.status = (
+                IncidentStatus.COMPLETED
+                if current.final_verification_status is VerificationStatus.PASSED
+                else IncidentStatus.FAILED
+            )
             current.closing_reason = (
                 f"Supervisor의 요청이 연속으로 런타임 제약에 걸려 종료했다 "
                 f"({current.rejected_decision_count}회)"

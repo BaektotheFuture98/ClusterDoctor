@@ -17,6 +17,44 @@ from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage
 
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
+    NodeMetricThresholds,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import (
+    ReportWriter,
+    build_structured_call,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.subagent import (
+    DiagnosisSeams,
+    build_diagnosis_subagent,
+)
+from cluster_doctor.adapters.outbound.deepagents.runtime.chat_model import (
+    build_chat_model,
+)
+from cluster_doctor.adapters.outbound.deepagents.runtime.harness import restrict_harness
+from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import (
+    require_supported_provider,
+)
+from cluster_doctor.adapters.outbound.deepagents.supervisor.graph import (
+    build_main_agent,
+)
+from cluster_doctor.adapters.outbound.deepagents.supervisor.guardrail_middleware import (
+    DelegationGuardrailMiddleware,
+)
+from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
+    ADMITTED_GOAL,
+    ADMITTED_WINDOW,
+    CLUSTER,
+    INCIDENT_ID,
+    LAST_RESPONSE,
+)
+from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import (
+    make_finalize_report_tool,
+    make_finish_incident_tool,
+    make_list_candidate_windows_tool,
+    make_propose_analysis_tool,
+    make_validate_final_report_tool,
+)
 from cluster_doctor.application.ports.artifact_store import ArtifactStore
 from cluster_doctor.application.ports.cluster_repository import (
     ClusterRepository,
@@ -31,47 +69,10 @@ from cluster_doctor.application.ports.incident_state_repository import (
 )
 from cluster_doctor.application.ports.log_repository import LogRepository
 from cluster_doctor.application.ports.node_log_fetcher import NodeLogFetcher
+from cluster_doctor.domain.diagnosis.kst import format_kst
 from cluster_doctor.domain.incident.guardrails import MAX_SUPERVISOR_CYCLES
 from cluster_doctor.domain.incident.models import Incident, IncidentStatus
 from cluster_doctor.domain.incident.state import IncidentState
-from cluster_doctor.adapters.outbound.deepagents.runtime.harness import restrict_harness
-from cluster_doctor.domain.diagnosis.kst import format_kst
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.subagent import (
-    DiagnosisSeams,
-    build_diagnosis_subagent,
-)
-from cluster_doctor.adapters.outbound.deepagents.runtime.chat_model import (
-    build_chat_model,
-)
-from cluster_doctor.adapters.outbound.deepagents.runtime.litellm_client import (
-    require_supported_provider,
-)
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
-    NodeMetricThresholds,
-)
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import (
-    ReportWriter,
-    build_structured_call,
-)
-from cluster_doctor.adapters.outbound.deepagents.supervisor.guardrail_middleware import (
-    DelegationGuardrailMiddleware,
-)
-from cluster_doctor.adapters.outbound.deepagents.supervisor.graph import (
-    build_main_agent,
-)
-from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
-    ADMITTED_GOAL,
-    ADMITTED_WINDOW,
-    CLUSTER,
-    INCIDENT_ID,
-    LAST_RESPONSE,
-)
-from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import (
-    make_finalize_report_tool,
-    make_finish_incident_tool,
-    make_list_candidate_windows_tool,
-    make_propose_analysis_tool,
-)
 
 _logger = logging.getLogger(__name__)
 
@@ -201,6 +202,10 @@ class _DeepAgentIncidentAnalyzer:
                 state=state, repository=self._states, store=self._seams.store
             ),
             make_finish_incident_tool(state=state, repository=self._states),
+            make_validate_final_report_tool(
+                state=state, repository=self._states, store=self._seams.store,
+                reviser=self._seams.report_writer.revise_report,
+            ),
         ]
         middleware = [
             DelegationGuardrailMiddleware(state=state, repository=self._states)
@@ -231,6 +236,15 @@ class _DeepAgentIncidentAnalyzer:
         """
         current = self._states.get(incident.incident_id) or state
 
+        if current.status is IncidentStatus.COMPLETED and (
+            not current.final_report_ref
+            or current.final_verification_status != "PASSED"
+        ):
+            return IncidentAnalysisResult(
+                status=IncidentStatus.FAILED,
+                reason="최종 보고서 검증 없이 완료 상태가 기록됐다",
+                failed=True,
+            )
         if current.status.is_terminal():
             return IncidentAnalysisResult(
                 status=current.status,
@@ -238,33 +252,23 @@ class _DeepAgentIncidentAnalyzer:
                 failed=current.status is IncidentStatus.FAILED,
             )
 
-        # 모델이 finish_incident를 부르지 않고 멈췄다. 분석은 돌았을 수 있으므로
-        # 실패로 보지 않는다 — 리포트에 붉은 배너를 다는 것은 분석이 깨졌을
-        # 때이고, 종료 선언을 빠뜨린 것은 그것과 다르다.
+        # 검증과 명시적인 종료 없이 정상 완료를 추정하지 않는다.
         _logger.warning(
             "[incident %s] Agent가 종료를 선언하지 않고 끝났다", incident.incident_id
         )
         return IncidentAnalysisResult(
-            status=IncidentStatus.COMPLETED,
+            status=IncidentStatus.FAILED,
             reason="Agent가 종료를 선언하지 않고 끝나 분석을 마감했다",
-            failed=False,
+            failed=True,
         )
 
     def _fallback(
         self, incident: Incident, state: IncidentState, exc: Exception
     ) -> IncidentAnalysisResult:
-        """Agent 실행이 깨졌을 때의 종료.
-
-        **FAILED가 아니라 COMPLETED다.** 이미 확보한 근거와 관측값이 있으면
-        리포트는 나가야 하고, 모델 쪽 사고를 분석 실패로 기록하면 재트리거가
-        막힌다. 실제로 분석이 하나도 돌지 않았다면 그때는 실패로 본다 —
-        그 구분이 ``analysis_call_count``다.
-        """
+        """Agent 실행 오류는 확보한 보고서 유무와 무관하게 실패다."""
         _logger.exception("[incident %s] Agent 실행 실패", incident.incident_id)
-        current = self._states.get(incident.incident_id) or state
-        nothing_analyzed = current.analysis_call_count == 0
         return IncidentAnalysisResult(
-            status=IncidentStatus.FAILED if nothing_analyzed else IncidentStatus.COMPLETED,
+            status=IncidentStatus.FAILED,
             reason=f"Agent 실행이 {type(exc).__name__}로 끝났다",
-            failed=nothing_analyzed,
+            failed=True,
         )

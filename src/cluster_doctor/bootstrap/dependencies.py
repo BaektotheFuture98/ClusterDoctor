@@ -11,18 +11,13 @@ from urllib.parse import urlparse
 import clickhouse_connect
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.config.settings import Settings, get_settings
 from cluster_doctor.adapters.inbound.kafka.consumer import KafkaConsumerAdapter
-from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
-from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
-from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
-from cluster_doctor.application.ports.slowlog_handler import SlowlogHandler
+from cluster_doctor.adapters.outbound.clickhouse.reader import (
+    ClickHouseLogAdapter,
+)
 from cluster_doctor.adapters.outbound.deepagents import (
     DeepAgentsConfig,
     build_deepagents_incident_analyzer,
-)
-from cluster_doctor.adapters.outbound.clickhouse.reader import (
-    ClickHouseLogAdapter,
 )
 from cluster_doctor.adapters.outbound.elasticsearch.cluster_adapter import (
     ElasticsearchClusterAdapter,
@@ -30,16 +25,21 @@ from cluster_doctor.adapters.outbound.elasticsearch.cluster_adapter import (
 from cluster_doctor.adapters.outbound.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
-from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
-    HtmlFileReportPublisher,
-)
-from cluster_doctor.adapters.outbound.ssh.fetcher import SshNodeLogFetcher
 from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import (
     InMemoryArtifactStore,
 )
 from cluster_doctor.adapters.outbound.persistence.in_memory_incident_state_store import (
     InMemoryIncidentStateRepository,
 )
+from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
+    HtmlFileReportPublisher,
+)
+from cluster_doctor.adapters.outbound.ssh.fetcher import SshNodeLogFetcher
+from cluster_doctor.application.ports.slowlog_handler import SlowlogHandler
+from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
+from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
+from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
+from cluster_doctor.config.settings import Settings, get_settings
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
@@ -163,6 +163,8 @@ def build_slowlog_intake(s: Settings | None = None) -> SlowlogIntake:
         cluster=s.cluster_name,
         micro_batch_seconds=s.micro_batch_seconds,
         max_pending=10_000,
+        max_incidents=100,
+        worker_count=1,
     )
 
 def build_manual_diagnosis(s: Settings | None = None) -> RunManualDiagnosis:

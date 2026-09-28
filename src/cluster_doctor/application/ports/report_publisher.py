@@ -1,15 +1,25 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from cluster_doctor.domain.diagnosis.observations import DiagnosisReport
+from cluster_doctor.domain.diagnosis.diagnosis_report import DiagnosisReport
 
 
 @dataclass(frozen=True)
 class ReportPublication:
+    """보고서 전달 구현이 반환하는 게시 결과 메타데이터.
+
+    전달할 내용인 DiagnosisReport와 달리 현재는 생성된 텍스트 길이만 담는다.
+    """
+
     text_length: int = 0
 
 
 class ReportPublisher(ABC):
+    """운영자용 DiagnosisReport를 실제 전달 매체로 게시하는 포트.
+
+    애플리케이션은 매체 구현 대신 게시 결과와 분석 누락 여부를 주고받는다.
+    """
+
     @abstractmethod
     async def publish(
         self,

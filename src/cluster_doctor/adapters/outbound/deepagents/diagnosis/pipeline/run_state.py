@@ -78,7 +78,10 @@ def _candidate_prompt_line(candidate: SlowCandidate) -> str:
 
 
 class AnalysisRunState:
-    """window 하나의 관측값과 빠진 근거."""
+    """한 구간에서 코드가 누적한 관측값과 수집 누락을 보관한다.
+
+    분별 그래프 AnalysisState나 Supervisor의 IncidentAgentState와 수명이 다르다.
+    """
 
     def __init__(self, window: TimeRange, time_basis: str = "") -> None:
         self.window = window

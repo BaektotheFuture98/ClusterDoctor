@@ -22,6 +22,11 @@ from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
 
 @runtime_checkable
 class ArtifactStore(Protocol):
+    """Incident의 원문·근거·보고서·관측값을 참조로 보관하는 포트.
+
+    분석과 최종 전달이 실체를 공유하고 Agent 상태에는 참조만 남기게 한다.
+    """
+
     def put_raw(self, incident_id: str, text: str) -> str:
         """원문 한 덩어리를 넣고 참조를 돌려준다.
 

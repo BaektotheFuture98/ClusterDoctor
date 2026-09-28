@@ -9,7 +9,7 @@ DeepAgent다. 모델이 자기 루프를 도는 것이 원래 설계와 어긋�
     [DeepAgent 루프]  collect_evidence → write_report → report_insufficient
         │                    │               │
         │                    │               └─ 확장 요청만. 범위는 못 넓힌다.
-        │                    └─ 기존 draft → validate → revise 경로 그대로
+        │                    └─ 초안 작성 → 미검증 리포트 저장
         └─ 기존 EvidenceCollector 한 번 그대로
         ↓
     [결정적 후처리]  LogAnalysisResponse 조립 → IncidentState 갱신 → handback
@@ -20,7 +20,6 @@ DeepAgent다. 모델이 자기 루프를 도는 것이 원래 설계와 어긋�
 * ``workflows/minute_analysis/``의 분 단위 map→reduce — 루프 자체를 노출하면
   모델이 분을 건너뛸 수 있다. 어느 줄이 의미 있는지는 이미 그 안에서 모델이
   고르고 있고, 그것이 모델이 손댈 마지막 지점이다.
-* ``validator.py``의 여덟 규칙 — 모델이 자기 출력을 채점하면 거의 통과한다.
 * ``node_metric.py``의 임계값, 클러스터 상태 근거 구성.
 * ``node_investigation``의 조건 — "마스터 로그가 노드를 지목했을 때만 SSH"는
   코드 규칙으로 남는다. 모델의 선택이 되면 비싼 원격 접속이 근거 없이 돈다.
@@ -56,30 +55,33 @@ import logging
 from typing import Any
 
 from deepagents import CompiledSubAgent, create_deep_agent
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
+from pydantic import BaseModel, Field
 
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.contracts import (
+    LogAnalysisRequest,
+    LogAnalysisResponse,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.graph import _drive
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.prompt_subagent import (
+    build_subagent_prompt,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import (
+    DiagnosisSeams,
+    _DiagnosisSession,
+)
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.tools import (
+    _build_tools,
+    _verification_of,
+)
 from cluster_doctor.adapters.outbound.deepagents.runtime.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
     RefuseDelegationMiddleware,
     restrict_harness,
 )
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage
-from langchain_core.runnables import RunnableLambda
-from pydantic import BaseModel, Field
-
-from cluster_doctor.application.ports.incident_state_repository import IncidentStateRepository
-from cluster_doctor.domain.incident.window_planner import plan_new_windows
-from cluster_doctor.domain.incident.models import Incident
-from cluster_doctor.domain.incident.state import IncidentState
-from cluster_doctor.domain.diagnosis.contracts import LogAnalysisRequest, LogAnalysisResponse
-from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
-from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
-from cluster_doctor.domain.diagnosis.kst import parse_kst
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.prompt_subagent import build_subagent_prompt
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.session import DiagnosisSeams, _DiagnosisSession
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.tools import _build_tools, _verification_of
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.graph import _drive
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
@@ -89,11 +91,20 @@ from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     LAST_RESPONSE,
     IncidentAgentState,
 )
+from cluster_doctor.application.ports.incident_state_repository import (
+    IncidentStateRepository,
+)
+from cluster_doctor.domain.diagnosis.kst import parse_kst
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus
+from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.incident.models import Incident
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.domain.incident.window_planner import plan_new_windows
 
 _logger = logging.getLogger(__name__)
 
 _SUBAGENT_DESCRIPTION = (
-    "승인된 analysis window 하나를 조사해 근거 수집·원인 분석·리포트·검증까지 "
+    "승인된 analysis window 하나를 조사해 근거 수집·원인 분석·미검증 리포트 작성까지 "
     "끝내고 구조화된 결과를 돌려준다. 구간은 propose_analysis가 승인받아 state에 "
     "써 둔 값을 쓰므로 description에 시각을 적어도 무시된다. description에는 "
     "'왜 이 구간을 보는가'만 적는다."
@@ -112,7 +123,7 @@ class _WindowRef(BaseModel):
     end: str
 
     @classmethod
-    def of(cls, window: TimeRange) -> "_WindowRef":
+    def of(cls, window: TimeRange) -> _WindowRef:
         return cls(start=window.start.isoformat(), end=window.end.isoformat())
 
 
@@ -262,7 +273,7 @@ def _assemble_response(
         seams.store.merge_observations(
             request.incident_id, run_state.to_observations()
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _logger.warning("[diagnosis] 관측값 병합이 실패했다: %s", exc)
 
     status = _final_status(delegation)
@@ -317,16 +328,13 @@ def _apply_response(
 def _final_status(delegation: _DiagnosisSession) -> LogAnalysisStatus:
     """어떤 상태로 끝났는가.
 
-    우선순위가 있다. 분석이 성립하지 않은 것이 가장 무겁고, 그다음이 리포트를
-    믿을 수 없는 것이며, 범위 확장 요청은 그 뒤다 — 셋이 함께 일어날 수 있고,
-    Main Agent에게는 가장 무거운 것을 먼저 알려야 한다.
+    수집 실패, 범위 확장 요청, 리포트 존재 여부로 결정한다.
+    리포트 검증 결과는 상위 흐름에서 별도로 결정한다.
     """
     if not delegation.collected_once:
         return LogAnalysisStatus.FAILED
     if delegation.run_state.degraded and not delegation.evidence:
         return LogAnalysisStatus.FAILED
-    if _verification_of(delegation) is VerificationStatus.MISMATCH:
-        return LogAnalysisStatus.VALIDATION_FAILED
     if delegation.suggested:
         return LogAnalysisStatus.NEED_MORE_CONTEXT
     if delegation.report is None:

@@ -25,13 +25,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 from math import ceil
 
-from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.diagnosis.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     is_covered,
 )
+from cluster_doctor.domain.incident.state import IncidentState
+from cluster_doctor.exceptions import GuardrailViolation
 
 _logger = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ MAX_REJECTED_DECISIONS = 3
 # 기록만 하고 고치지 않는다는 뜻이고, 2를 넘기면 같은 지적을 되풀이하며
 # 호출만 태우는 것을 실패 모드로 본다.
 MAX_REPORT_REVISIONS = 1
+MAX_FINAL_REPORT_REVISIONS = 1
 
 # 유입이 멎기를 기다리는 예산. 기다리는 동안 분석은 시작조차 되지 않고 큐만
 # 쌓이므로, 1회를 짧게 끊어 매 사이클 유입을 다시 본다.

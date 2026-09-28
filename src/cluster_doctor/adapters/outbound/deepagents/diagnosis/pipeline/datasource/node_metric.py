@@ -83,6 +83,7 @@ def to_evidence(
                 entry.jvm_heap_used_percent,
                 "Warning",
                 f"{entry.node_name} jvm_heap={entry.jvm_heap_used_percent}% "
+                f"(기준 {thresholds.heap_warn_percent}%) "
                 f"cpu={entry.os_cpu_percent}% mem={entry.os_mem_used_percent}%",
             )
         if max(entry.search_queue, entry.write_queue) >= thresholds.queue_warn:
@@ -92,7 +93,7 @@ def to_evidence(
                 max(entry.search_queue, entry.write_queue),
                 "Warning",
                 f"{entry.node_name} search_queue={entry.search_queue} "
-                f"write_queue={entry.write_queue} "
+                f"write_queue={entry.write_queue} (기준 {thresholds.queue_warn}) "
                 f"search_active={entry.search_active}",
             )
 

@@ -10,7 +10,10 @@ from cluster_doctor.domain.incident.models import Incident
 
 @dataclass(frozen=True)
 class StartIncident:
-    """A settled incident ready for diagnosis."""
+    """정착된 유입을 Incident 진단으로 넘기는 애플리케이션 명령.
+
+    구간별 위임인 LogAnalysisRequest와 달리 Incident 전체의 시작을 요청한다.
+    """
 
     incident: Incident
     observed_start: datetime

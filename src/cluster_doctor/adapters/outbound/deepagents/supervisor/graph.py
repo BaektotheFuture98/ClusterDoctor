@@ -17,17 +17,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from deepagents import CompiledSubAgent, create_deep_agent
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 
 from cluster_doctor.adapters.outbound.deepagents.runtime.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
     restrict_harness,
 )
-from langchain.agents.middleware import AgentMiddleware
-from langchain_core.language_models import BaseChatModel
-from langchain_core.runnables import Runnable
-from langchain_core.tools import BaseTool
-
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     DIAGNOSIS_SUBAGENT,
     IncidentAgentState,
@@ -45,8 +44,8 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
 뿐이다. 어느 시간대를 볼 것인가, 더 볼 것인가, 여기서 끝낼 것인가.
 
 로그의 해석, DataSource별 선별, Cross-source 분석, Root Cause 판단, 리포트
-작성과 검증은 전부 diagnosis SubAgent의 일이다. SubAgent가 검증까지 마친
-리포트를 네가 원문 로그 수준에서 다시 따지지 않는다.
+초안 작성은 diagnosis SubAgent의 일이다. 최종 보고서의 검증과 한 번의 수정은
+validate_final_report 도구로 수행한다.
 </role>
 
 
@@ -93,10 +92,15 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
 
    지금까지 분석한 모든 구간의 보고서를 Incident 전체의 최종 보고서 하나로
    확정하고 저장한다. **분석한 구간이 하나라도 있으면 finish_incident보다
-   먼저 부른다.** 새로 원인을 추론하지 않는다 — 검증을 마친 구간별 보고서를
+   먼저 부른다.** 새로 원인을 추론하지 않는다 — 구간별 초안 보고서를
    합칠 뿐이다.
 
-4. finish_incident(outcome, reason)
+4. validate_final_report(revise=False)
+
+   최종 보고서를 전체 근거와 대조한다. MISMATCH면 revise=True로 한 번만
+   수정할 수 있다. 수정 후에도 MISMATCH면 FAILED로 종료한다.
+
+5. finish_incident(outcome, reason)
 
    Incident를 닫는다. outcome은 COMPLETED / FAILED / CANCELLED 중 하나다.
    reason은 운영자가 읽을 한 문장이다.
@@ -143,13 +147,8 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
    - status
      COMPLETED          이 구간은 끝났다.
      NEED_MORE_CONTEXT  구간 밖을 봐야 한다. suggested_windows를 보라.
-     VALIDATION_FAILED  리포트가 근거와 어긋났다. **COMPLETED로 닫지 마라** —
-                        닫아도 런타임이 실패로 기록하고, 그러면 운영자는
-                        이유가 적히지 않은 붉은 배너를 받는다. 남은 예산이
-                        있으면 다른 구간으로 보강하고, 없으면 reason에
-                        검증 불일치를 적어라.
      FAILED             이 구간에서 쓸 만한 것을 얻지 못했다.
-   - verification_status  PASSED / MISMATCH / NOT_VERIFIED
+   - verification_status  구간별 초안은 NOT_VERIFIED다.
    - evidence_ref_count   0이면 그 구간에는 근거가 없었다는 뜻이다.
    - report_ref           없으면 이번 위임은 리포트를 남기지 못했다.
 
@@ -157,7 +156,7 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
    실제로 공백을 메우는지, 지금 Incident와 관련 있는지 먼저 따진다.
 
 8. 확정: 더 볼 것이 없으면 finish_incident 전에 finalize_report를 먼저 불러
-   구간별 보고서를 하나로 합쳐 저장한다.
+   구간별 보고서를 하나로 합쳐 저장하고 validate_final_report로 검증한다.
 
 더 볼 것이 없으면 finish_incident로 닫는다.
 </cycle>
@@ -168,17 +167,17 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
 
 - 필요한 구간을 다 봤다
 - 남은 정보 공백이 없거나, 남았지만 예산으로 메울 수 없다
-- 쓸 수 있는 리포트가 있다
+- 최종 보고서가 있고 validate_final_report 결과가 PASSED다
 
 outcome=COMPLETED로 닫는다.
 
 **COMPLETED와 FAILED는 다르다.** 예산이 떨어져 더 보지 못한 것은 실패가
 아니다 — 그때까지의 분석은 성립하고 리포트는 쓸 수 있다. 실패로 닫으면
 운영자가 받는 리포트에 붉은 배너가 붙어 멀쩡한 내용을 의심하게 된다.
-남은 공백은 reason에 적고 COMPLETED로 닫아라.
+남은 공백은 reason에 적고 최종 검증이 PASSED인 경우에만 COMPLETED로 닫아라.
 
 FAILED는 분석 자체가 서지 않을 때다. 승인받은 구간이 하나도 없거나,
-SubAgent가 쓸 수 있는 결과를 하나도 내놓지 못한 경우.
+SubAgent가 쓸 수 있는 결과를 하나도 내놓지 못하거나 최종 검증이 통과하지 못한 경우.
 그때는 무엇이 없어서 판단할 수 없는지 reason에 쓴다.
 
 닫은 뒤의 최종 답변은 근거와 함께 짧게 쓴다. 내부 추론 전 과정을 늘어놓지
