@@ -18,16 +18,19 @@ ES slowlog → Filebeat → Elasticsearch data stream → Kafka source connector
 ```text
 KafkaConsumerAdapter
   → SlowlogHandler port
-  → SlowlogIntake: micro-batch, quiet-period settling, retrigger policy
+  → SlowlogIntake: micro-batch, quiet-period settling
   → StartIncident
+  → bounded Incident Queue → Diagnosis Worker (기본 1개)
   → DiagnoseIncident: state, timeout/cancellation, delivery, cleanup
   → IncidentAnalyzer port: DeepAgents composite adapter
   → application report finalization and HTML publication
 ```
 
 `SlowlogIntake`는 `MICRO_BATCH_SECONDS` 동안 도착분을 묶고, 15초 간격으로 유입을
-확인해 연속 두 번 신규 항목이 없을 때 분석을 시작한다. 한 번의 대기는 최대 60초, 누적
-대기는 최대 5분이다.
+확인해 연속 두 번 신규 항목이 없을 때 Incident를 만들어 큐에 넣는다. 한 번의 대기는 최대
+60초, 누적 대기는 최대 5분이다. 기본 큐 용량은 100개이며 단일 worker가 순서대로 진단한다.
+기존 Incident 분석 중 들어온 새 이벤트도 별도로 settling되어 다음 Incident로 큐에 들어간다.
+새 이벤트를 분석 중인 Incident에 자동 합치거나 기존 Incident를 다시 실행하지 않는다.
 
 의존성은 안쪽으로만 향한다.
 
@@ -60,10 +63,14 @@ Application port는 `SlowlogHandler`, `IncidentAnalyzer`, `IncidentStateReposito
   bootstrap은 runtime, supervisor, diagnosis, pipeline internals를 import하지 않는다.
 
 Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼저 후보 window를
-열거하고, 허용된 window를 제안한 뒤, 진단 subagent에 task로 위임하고, report를 finalize한
-후 incident를 끝낸다. 시간·분·호출 상한은 prompt가 아니라 runtime guardrail이 강제한다.
-Subagent는 window마다 evidence를 모으고 report를 작성·검증해 injected port로 중간 산출물을
-저장한다.
+열거하고, 허용된 window를 선택·승인(`propose_analysis`)한 뒤 진단 subagent에 `task`로
+위임한다. 필요하면 추가 window를 분석하고, `finalize_report` → `validate_final_report` →
+`finish_incident` 순서로 종료한다. 시간·분·호출 상한은 runtime guardrail이 강제한다.
+Subagent는 승인된 window의 evidence를 모으고 Window Report를 작성해 injected port로
+저장한다. Schema parsing 같은 기술적 검증은 각 단계에 남고, 최종 보고서의 의미적·근거 기반
+검증과 수정은 Main Agent가 담당한다. `COMPLETED` 종료에는 최종 보고서와 `PASSED` 검증이
+필요하다. 불일치 시 추가 window 분석 또는 Incident당 최대 1회 최종 보고서 수정을 시도하며,
+해소하지 못하면 이슈를 남기고 `FAILED`로 종료한다.
 
 window report 병합은 `domain.incident.report_merge.merge_window_reports`의 순수 정책이다.
 I/O는 application `finalize_incident_report` service가 맡는다. service가 `ArtifactStore`에서
@@ -91,8 +98,8 @@ evidence로 후보가 생겼을 때만 `NodeResolver`와 SSH를 통해 읽는다
 Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `DiagnosisReport`는 code가 센
 `observations`와 모델이 쓴 `narrative`를 분리한다. 숫자와 slow-query candidate 값은 code가
 정확히 아는 값이므로 모델에게 옮겨 적게 하지 않는다. Narrative의 주장에는 evidence reference가
-붙고, verification은 없는 reference, evidence 없는 주장, candidate/time/node 불일치, 순서,
-과도한 확신, 인과 역전을 검사한다.
+붙고, Main Agent의 final validation은 전체 evidence와 최종 보고서를 대조해 없는 reference,
+evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신, 인과 역전과 모순을 검사한다.
 
 모델이 빈 draft를 주거나 report 저장이 실패해도 observation은 전달한다. HTML 파일을 쓸 수
 없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 query 원문과
@@ -144,13 +151,13 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 | analysis window | 10분 | `domain/diagnosis/time_range.py` |
 | incident analysis budget | 60분, 12회 | `domain/incident/guardrails.py` |
 | supervisor cycle / rejected decision | 16회 / 3회 | `domain/incident/guardrails.py` |
-| report revision | 1회 | `domain/incident/guardrails.py` |
+| final report revision | Incident당 최대 1회 | `domain/incident/guardrails.py` |
 | settling wait | 60초 each, 300초 total | `domain/incident/guardrails.py` |
 | incident timeout | 30분 | `domain/incident/guardrails.py` |
 | evidence | source당 25, 전체 80 | `domain/incident/guardrails.py` |
 | raw prompt text | 60,000자 | `domain/incident/guardrails.py` |
 | node investigation | 2 nodes | `adapters/outbound/deepagents/diagnosis/pipeline/node_investigation.py` |
-| consecutive retrigger | 3회 | `application/use_cases/slowlog_intake.py` |
+| Incident Queue / diagnosis worker | 100개 / 1개 | `bootstrap/dependencies.py` |
 | source query rows | source·minute당 10,000 | `adapters/outbound/clickhouse/reader.py` |
 | master log | window당 300, report당 120 | `adapters/outbound/deepagents/diagnosis/pipeline` |
 | ClickHouse node-log | default 300, hard cap 2,000 | `application/ports/log_repository.py` |
@@ -163,8 +170,8 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 
 LLM 호출은 `litellm.completion(num_retries=0)` 경로만 쓴다. 가장 흔한 실패는 429이고, 같은 큰
 prompt를 재시도해도 quota를 회복하지 못하며 token 소비만 증가한다. Gemini free tier의
-분당 입력 token 250,000에 대해 5분 window가 약 513,122 input token을 쓴 실측이 있다. retry와
-retrigger가 곱해지면 이 비용이 더 커진다.
+분당 입력 token 250,000에 대해 5분 window가 약 513,122 input token을 쓴 실측이 있다.
+추가 window 분석이나 최종 보고서 수정도 추가 token을 소비한다.
 
 client는 status와 whitelist된 rate-limit header만 log로 남긴다. response body, request URL,
 `str(exc)`는 key를 포함할 수 있어 기록하지 않는다. retry를 끈 대가로 일시적인 5xx도 자동
@@ -245,7 +252,7 @@ uv run python scripts/run_diagnosis.py --at "2026-09-16T04:22:00" --span 6m
 
 ## 코드 workflow
 
-아래는 Kafka 이벤트 하나가 HTML 보고서 하나가 되기까지의 실제 호출 경로다.
+아래는 Kafka 이벤트를 settling으로 묶은 Incident가 HTML 보고서가 되기까지의 호출 경로다.
 `main.py`는 조립만 하고, 각 단계의 규칙은 application/domain에, 외부 시스템 접근은
 adapter에 둔다.
 
@@ -257,20 +264,24 @@ flowchart TD
     D --> E[SlowlogIntake.handle]
     E --> F[micro-batch 대기<br/>유입 정착 settle]
     F --> G[Incident 생성<br/>StartIncident]
-    G --> H[DiagnoseIncident.handle]
+    G --> GQ[bounded Incident Queue]
+    GQ --> GW[Diagnosis Worker<br/>기본 1개]
+    GW --> H[DiagnoseIncident.handle]
     H --> I[IncidentState 생성<br/>초기 분석 구간 생성]
     I --> J[DeepAgentsIncidentAnalyzer.analyze]
     J --> K[Main Agent / Supervisor]
-    K --> L[분석 구간 승인·Diagnosis SubAgent 위임]
+    K --> L[후보 Window 선택·승인<br/>Diagnosis SubAgent 위임]
     L --> M[EvidenceCollector]
     M --> N[ClickHouse<br/>slowlog·query log·node metric·master log]
     M --> O[Elasticsearch<br/>cluster health·node 정보]
     M --> P[SSH node log<br/>문제 노드가 있을 때만]
     M --> Q[분 단위 로그 선별<br/>LLM은 레코드 ID만 선택]
-    Q --> R[원인 분석·리포트 작성]
-    R --> S[근거 ID·시각·인과 검증]
-    S --> T[구간 리포트 병합]
-    T --> U[HtmlFileReportPublisher]
+    Q --> R[Cross-source 분석<br/>Window Report 작성·반환]
+    R --> K
+    K --> T[finalize_report<br/>Window Report 병합]
+    T --> S[validate_final_report<br/>최종 의미적·근거 검증]
+    S --> SF[finish_incident<br/>COMPLETED는 PASSED 필요]
+    SF --> U[HtmlFileReportPublisher]
     U --> V[reports/report-*.html]
     V --> W[메모리 state·artifact 정리]
 ```
@@ -282,11 +293,11 @@ flowchart TD
 | 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
 | 의존성 조립 | use case와 ClickHouse·ES·SSH·LLM·report adapter 연결 | `src/cluster_doctor/bootstrap/dependencies.py` |
 | Kafka 수신 | JSON에서 event time을 읽어 `SlowlogTrigger`로 변환 | `src/cluster_doctor/adapters/inbound/kafka/consumer.py` |
-| Incident 묶기 | micro-batch, quiet period, 재트리거 제한 | `src/cluster_doctor/application/use_cases/slowlog_intake.py` |
+| Incident 묶기·대기 | micro-batch, quiet period, bounded queue와 diagnosis worker | `src/cluster_doctor/application/use_cases/slowlog_intake.py` |
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달, 정리 | `src/cluster_doctor/application/use_cases/diagnose_incident.py` |
-| Main Agent | 분석 범위 선택, SubAgent 위임, 종료 | `src/cluster_doctor/adapters/outbound/deepagents/adapter.py` |
+| Main Agent | 분석 범위 선택·승인, SubAgent 위임, 최종 보고서 검증·종료 | `src/cluster_doctor/adapters/outbound/deepagents/adapter.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/collector.py` |
-| 리포트 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/validator.py` |
+| 최종 의미적 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사하는 순수 정책 | `src/cluster_doctor/domain/diagnosis/report_validation.py` |
 | HTML 저장 | 최종 리포트를 `reports/`에 기록 | `src/cluster_doctor/adapters/outbound/reporting/html_file_notifier.py` |
 
 Kafka를 거치지 않는 수동 실행은 `scripts/run_diagnosis.py`에서
@@ -333,7 +344,8 @@ asset만 제거하고, `litellm/proxy/` 전체는 실제 `completion()` 경로�
   막아도 busy window가 quota를 넘는다.
 - 모델 narrative field는 실행마다 비어 있을 수 있다. 구조는 빈 narrative에도 observation과
   gap을 전달하지만, 모델 판단의 근본 해결은 아니다.
-- settling이 queue를 비운 뒤 실행이 심하게 실패하면 그 trigger는 재trigger되지 않을 수 있다.
+- Incident queue는 메모리 기반이다. 프로세스 종료 시 대기 중인 Incident를 영속 복구하지 않으며,
+  실패한 Incident를 자동 재실행하지 않는다. 큐가 가득 차면 settling producer가 공간을 기다린다.
 - master log 0건과 아직 ingest되지 않음을 구별하지 못한다. SSH fallback은 ClickHouse query가
   실패한 경우에만 동작한다.
 - data-node log는 SSH credential과 network reachability에 의존한다. Elasticsearch `_nodes`가
@@ -341,9 +353,13 @@ asset만 제거하고, `litellm/proxy/` 전체는 실제 `completion()` 경로�
 
 ## 검증
 
+현재 저장소에는 `tests/`가 포함되어 있지 않다. 기본 정적 검증은 다음으로 실행한다.
+
 ```bash
-uv run pytest -q tests/architecture/test_dependency_rules.py
-uv run pytest -q
 git diff --check
+uv run python -m compileall -q src
 uv run python -c "import cluster_doctor; import cluster_doctor.bootstrap.dependencies"
 ```
+
+실제 외부 시스템과 보고서 생성은 위 Docker Compose 통합 실행으로 확인한다. 테스트 suite를
+별도로 제공받은 환경에서는 해당 suite 경로를 지정해 pytest와 architecture test를 실행한다.
