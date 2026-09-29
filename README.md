@@ -2,7 +2,7 @@
 
 ClusterDoctor는 Kafka의 Elasticsearch slowlog 트리거를 받아 유입이 멎기를 기다린 뒤,
 인시던트 하나를 진단해 HTML 보고서 한 장을 만든다. 요청을 받는 HTTP 서비스가 아니라 계속
-실행되는 Kafka consumer이며, HTTP diagnosis endpoint는 없다.
+실행되는 Kafka consumer이며, HTTP analysis endpoint는 없다.
 
 ## 동작과 아키텍처
 
@@ -20,8 +20,8 @@ KafkaConsumerAdapter
   → SlowlogHandler port
   → SlowlogIntake: micro-batch, quiet-period settling
   → StartIncident
-  → bounded Incident Queue → Diagnosis Worker (기본 1개)
-  → DiagnoseIncident: state, timeout/cancellation, delivery, cleanup
+  → bounded Incident Queue → Analysis Worker (기본 1개)
+  → AnalyzeIncident: state, timeout/cancellation, delivery, cleanup
   → IncidentAnalyzer port: DeepAgents composite adapter
   → application report finalization and HTML publication
 ```
@@ -59,12 +59,12 @@ Application port는 `SlowlogHandler`, `IncidentAnalyzer`, `IncidentStateReposito
 - `adapters.outbound.deepagents`는 하나의 composite outbound adapter다. 공개 API는
   `DeepAgentsConfig`와 `build_deepagents_incident_analyzer`뿐이다. factory는 설정과
   application port 객체를 받아 structured LiteLLM caller, `ReportWriter`, metric
-  threshold, `DiagnosisSeams`, private `_DeepAgentIncidentAnalyzer`를 내부에서 조립한다.
+  threshold, `AnalysisSeams`, private `_DeepAgentIncidentAnalyzer`를 내부에서 조립한다.
   bootstrap은 runtime, supervisor, diagnosis, pipeline internals를 import하지 않는다.
 
 Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼저 후보 window를
 열거하고, 허용된 window를 선택·승인(`propose_analysis`)한 뒤 진단 subagent에 `task`로
-위임한다. 위임 결과(`DiagnosisResult`)의 요약을 읽고 공백이 남았으면 추가 window를
+위임한다. 위임 결과(`LogAnalysisResponse`)의 요약을 읽고 공백이 남았으면 추가 window를
 분석하고, 없으면 `finish_incident`로 종료한다. Main Agent의 도구는 `list_candidate_windows`,
 `propose_analysis`, `finish_incident` 셋뿐이며, 시간·분·호출 상한은 runtime guardrail이 강제한다.
 
@@ -77,7 +77,7 @@ Subagent는 승인된 window 하나를 끝까지 처리한다. evidence를 모�
 `COMPLETED` 종료에는 window report가 하나 이상 있어야 한다.
 
 window report는 합치지 않고 window마다 `IncidentState.report_refs`에 따로 쌓는다.
-`DiagnoseIncident`는 마지막 window의 report를 대표로 HTML에 전달하고, 모든 window의 검증
+`AnalyzeIncident`는 마지막 window의 report를 대표로 HTML에 전달하고, 모든 window의 검증
 불일치를 gap으로 싣는다. Candidate를 prompt에 보이는 방식과 HTML에 보이는 방식은 각
 adapter 안에서 따로 projection한다.
 
@@ -98,7 +98,7 @@ evidence로 후보가 생겼을 때만 `NodeResolver`와 SSH를 통해 읽는다
 
 ## 보고서
 
-Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `DiagnosisReport`는 code가 센
+Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `IncidentAnalysisReport`는 code가 센
 `observations`와 모델이 쓴 `narrative`를 분리한다. 숫자와 slow-query candidate 값은 code가
 정확히 아는 값이므로 모델에게 옮겨 적게 하지 않는다. Narrative의 주장에는 evidence reference가
 붙고, Subagent의 검증은 window의 evidence와 보고서를 대조해 없는 reference,
@@ -152,7 +152,7 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 
 | 한도 | 값 | 위치 |
 |---|---:|---|
-| analysis window | 10분 | `domain/diagnosis/time_range.py` |
+| analysis window | 10분 | `domain/analysis/time_range.py` |
 | incident analysis budget | 60분, 12회 | `domain/incident/guardrails.py` |
 | supervisor cycle / rejected decision | 16회 / 3회 | `domain/incident/guardrails.py` |
 | final report revision | Incident당 최대 1회 | `domain/incident/guardrails.py` |
@@ -160,10 +160,10 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 | incident timeout | 30분 | `domain/incident/guardrails.py` |
 | evidence | source당 25, 전체 80 | `domain/incident/guardrails.py` |
 | raw prompt text | 60,000자 | `domain/incident/guardrails.py` |
-| node investigation | 2 nodes | `adapters/outbound/deepagents/diagnosis/pipeline/node_investigation.py` |
-| Incident Queue / diagnosis worker | 100개 / 1개 | `bootstrap/dependencies.py` |
+| node investigation | 2 nodes | `adapters/outbound/deepagents/analysis/pipeline/node_investigation.py` |
+| Incident Queue / analysis worker | 100개 / 1개 | `bootstrap/dependencies.py` |
 | source query rows | source·minute당 10,000 | `adapters/outbound/clickhouse/reader.py` |
-| master log | window당 300, report당 120 | `adapters/outbound/deepagents/diagnosis/pipeline` |
+| master log | window당 300, report당 120 | `adapters/outbound/deepagents/analysis/pipeline` |
 | ClickHouse node-log | default 300, hard cap 2,000 | `application/ports/log_repository.py` |
 | SSH node-log | default 300 | `application/ports/node_log_fetcher.py` |
 | SSH timeout | connect 10초, command 30초 | `domain/incident/guardrails.py` |
@@ -241,17 +241,17 @@ ClickHouse fixture는 `docker/clickhouse/init.sql`이 빈 Compose 볼륨을 처�
 적재한다. fixture를 처음 상태로 다시 만들려면 `docker compose down -v`로 볼륨을 지운 뒤
 다시 기동한다.
 
-Kafka와 settling을 건너뛰고 같은 `DiagnoseIncident` path를 특정 시각에 실행하려면
-`run_diagnosis.py`를 쓴다. 아래 첫 명령은 **preflight only**이며 moment와 range만 계산하고
-`RunManualDiagnosis`를 호출하지 않는다. 두 번째 명령이 실제 ClickHouse, Elasticsearch, SSH,
+Kafka와 settling을 건너뛰고 같은 `AnalyzeIncident` path를 특정 시각에 실행하려면
+`run_analysis.py`를 쓴다. 아래 첫 명령은 **preflight only**이며 moment와 range만 계산하고
+`RunManualAnalysis`를 호출하지 않는다. 두 번째 명령이 실제 ClickHouse, Elasticsearch, SSH,
 LLM을 호출하는 direct diagnosis다.
 
 ```bash
-# dry-run preflight: no RunManualDiagnosis, no external diagnosis calls
-uv run python scripts/run_diagnosis.py --at "2026-09-16T04:22:00" --span 6m --dry-run
+# dry-run preflight: no RunManualAnalysis, no external diagnosis calls
+uv run python scripts/run_analysis.py --at "2026-09-16T04:22:00" --span 6m --dry-run
 
-# actual direct diagnosis: invokes RunManualDiagnosis
-uv run python scripts/run_diagnosis.py --at "2026-09-16T04:22:00" --span 6m
+# actual direct diagnosis: invokes RunManualAnalysis
+uv run python scripts/run_analysis.py --at "2026-09-16T04:22:00" --span 6m
 ```
 
 ## 코드 workflow
@@ -269,12 +269,12 @@ flowchart TD
     E --> F[micro-batch 대기<br/>유입 정착 settle]
     F --> G[Incident 생성<br/>StartIncident]
     G --> GQ[bounded Incident Queue]
-    GQ --> GW[Diagnosis Worker<br/>기본 1개]
-    GW --> H[DiagnoseIncident.handle]
+    GQ --> GW[Analysis Worker<br/>기본 1개]
+    GW --> H[AnalyzeIncident.handle]
     H --> I[IncidentState 생성<br/>초기 분석 구간 생성]
     I --> J[DeepAgentsIncidentAnalyzer.analyze]
     J --> K[Main Agent / Supervisor]
-    K --> L[후보 Window 선택·승인<br/>Diagnosis SubAgent 위임]
+    K --> L[후보 Window 선택·승인<br/>Analysis SubAgent 위임]
     L --> M[EvidenceCollector]
     M --> N[ClickHouse<br/>slowlog·query log·node metric·master log]
     M --> O[Elasticsearch<br/>cluster health·node 정보]
@@ -296,18 +296,18 @@ flowchart TD
 | 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
 | 의존성 조립 | use case와 ClickHouse·ES·SSH·LLM·report adapter 연결 | `src/cluster_doctor/bootstrap/dependencies.py` |
 | Kafka 수신 | JSON에서 event time을 읽어 `SlowlogTrigger`로 변환 | `src/cluster_doctor/adapters/inbound/kafka/consumer.py` |
-| Incident 묶기·대기 | micro-batch, quiet period, bounded queue와 diagnosis worker | `src/cluster_doctor/application/use_cases/slowlog_intake.py` |
-| 진단 lifecycle | 상태 생성, timeout, 결과 전달, 정리 | `src/cluster_doctor/application/use_cases/diagnose_incident.py` |
+| Incident 묶기·대기 | micro-batch, quiet period, bounded queue와 analysis worker | `src/cluster_doctor/application/use_cases/slowlog_intake.py` |
+| 진단 lifecycle | 상태 생성, timeout, 결과 전달, 정리 | `src/cluster_doctor/application/use_cases/analyze_incident.py` |
 | Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/adapters/outbound/deepagents/adapter.py` |
-| 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/collector.py` |
-| 근거 일관성 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사하는 순수 정책 | `src/cluster_doctor/domain/diagnosis/report_validation.py` |
-| 원문 대조 검증 | Claim을 evidence 원문과 대조하고 불일치를 분류 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/grounding_validator.py` |
-| 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/subagent.py` |
+| 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/adapters/outbound/deepagents/analysis/pipeline/collector.py` |
+| 근거 일관성 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사하는 순수 정책 | `src/cluster_doctor/domain/analysis/report_validation.py` |
+| 원문 대조 검증 | Claim을 evidence 원문과 대조하고 불일치를 분류 | `src/cluster_doctor/adapters/outbound/deepagents/analysis/pipeline/grounding_validator.py` |
+| 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/adapters/outbound/deepagents/analysis/subagent.py` |
 | HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/adapters/outbound/reporting/html_file_notifier.py` |
 
-Kafka를 거치지 않는 수동 실행은 `scripts/run_diagnosis.py`에서
-`RunManualDiagnosis`를 호출한다. 이 경로는 Kafka 수신·micro-batch·정착만 생략하고,
-그 뒤의 `DiagnoseIncident`와 Agent workflow는 같은 구현을 사용한다.
+Kafka를 거치지 않는 수동 실행은 `scripts/run_analysis.py`에서
+`RunManualAnalysis`를 호출한다. 이 경로는 Kafka 수신·micro-batch·정착만 생략하고,
+그 뒤의 `AnalyzeIncident`와 Agent workflow는 같은 구현을 사용한다.
 
 ## 데이터 소스와 metric 해석
 

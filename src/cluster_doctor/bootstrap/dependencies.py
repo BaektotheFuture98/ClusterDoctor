@@ -36,8 +36,8 @@ from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
 )
 from cluster_doctor.adapters.outbound.ssh.fetcher import SshNodeLogFetcher
 from cluster_doctor.application.ports.slowlog_handler import SlowlogHandler
-from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
-from cluster_doctor.application.use_cases.manual_diagnosis import RunManualDiagnosis
+from cluster_doctor.application.use_cases.analyze_incident import AnalyzeIncident
+from cluster_doctor.application.use_cases.manual_analysis import RunManualAnalysis
 from cluster_doctor.application.use_cases.slowlog_intake import SlowlogIntake
 from cluster_doctor.config.settings import Settings, get_settings
 
@@ -113,7 +113,7 @@ def _get_artifact_store() -> InMemoryArtifactStore:
     return InMemoryArtifactStore()
 
 
-def _build_diagnose_incident(s: Settings) -> DiagnoseIncident:
+def _build_analyze_incident(s: Settings) -> AnalyzeIncident:
     if s is None:
         s = get_settings()
 
@@ -145,7 +145,7 @@ def _build_diagnose_incident(s: Settings) -> DiagnoseIncident:
         ),
     )
 
-    return DiagnoseIncident(
+    return AnalyzeIncident(
         incident_analyzer=incident_analyzer,
         state_repository=state_repo,
         artifact_store=store,
@@ -159,7 +159,7 @@ def build_slowlog_intake(s: Settings | None = None) -> SlowlogIntake:
     if s is None:
         s = get_settings()
     return SlowlogIntake(
-        diagnose_incident=_build_diagnose_incident(s),
+        analyze_incident=_build_analyze_incident(s),
         cluster=s.cluster_name,
         micro_batch_seconds=s.micro_batch_seconds,
         max_pending=10_000,
@@ -167,11 +167,11 @@ def build_slowlog_intake(s: Settings | None = None) -> SlowlogIntake:
         worker_count=1,
     )
 
-def build_manual_diagnosis(s: Settings | None = None) -> RunManualDiagnosis:
+def build_manual_analysis(s: Settings | None = None) -> RunManualAnalysis:
     if s is None:
         s = get_settings()
-    return RunManualDiagnosis(
-        diagnose_incident=_build_diagnose_incident(s), cluster=s.cluster_name
+    return RunManualAnalysis(
+        analyze_incident=_build_analyze_incident(s), cluster=s.cluster_name
     )
 
 def build_kafka_consumer(

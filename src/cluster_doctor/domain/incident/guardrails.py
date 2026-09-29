@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from math import ceil
 
-from cluster_doctor.domain.diagnosis.time_range import (
+from cluster_doctor.domain.analysis.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     is_covered,

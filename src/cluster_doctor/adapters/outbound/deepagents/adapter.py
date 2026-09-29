@@ -17,16 +17,16 @@ from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage
 
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.datasource.node_metric import (
+from cluster_doctor.adapters.outbound.deepagents.analysis.pipeline.datasource.node_metric import (
     NodeMetricThresholds,
 )
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.report_writer import (
+from cluster_doctor.adapters.outbound.deepagents.analysis.pipeline.report_writer import (
     ReportWriter,
     build_structured_call,
 )
-from cluster_doctor.adapters.outbound.deepagents.diagnosis.subagent import (
-    DiagnosisSeams,
-    build_diagnosis_subagent,
+from cluster_doctor.adapters.outbound.deepagents.analysis.subagent import (
+    AnalysisSeams,
+    build_analysis_subagent,
 )
 from cluster_doctor.adapters.outbound.deepagents.runtime.chat_model import (
     build_chat_model,
@@ -64,7 +64,7 @@ from cluster_doctor.application.ports.incident_state_repository import (
 )
 from cluster_doctor.application.ports.log_repository import LogRepository
 from cluster_doctor.application.ports.node_log_fetcher import NodeLogFetcher
-from cluster_doctor.domain.diagnosis.kst import format_kst
+from cluster_doctor.domain.analysis.kst import format_kst
 from cluster_doctor.domain.incident.guardrails import MAX_SUPERVISOR_CYCLES
 from cluster_doctor.domain.incident.models import Incident, IncidentStatus
 from cluster_doctor.domain.incident.state import IncidentState
@@ -111,7 +111,7 @@ def build_deepagents_incident_analyzer(
     call_llm = build_structured_call(
         provider=provider, model=config.model, api_key=config.api_key
     )
-    seams = DiagnosisSeams(
+    seams = AnalysisSeams(
         store=artifact_store,
         fetch_logs=log_repository.fetch_logs,
         fetch_node_logs=log_repository.fetch_node_logs,
@@ -143,14 +143,14 @@ class _DeepAgentIncidentAnalyzer:
         provider: str,
         model: str,
         api_key: str,
-        seams: DiagnosisSeams,
+        seams: AnalysisSeams,
         state_repository: IncidentStateRepository,
         recursion_limit: int = _RECURSION_LIMIT,
     ) -> None:
         # 모델은 한 번만 만든다. tool calling 지원 검증도 여기서 끝난다 —
         # 기동 시점에 실패해야 하고, 첫 Incident가 들어온 뒤가 아니다.
         self._model = build_chat_model(provider=provider, model=model, api_key=api_key)
-        # 그래프를 만들기 **전에** 한 번 건다. Main과 Diagnosis가 같은 모델을
+        # 그래프를 만들기 **전에** 한 번 건다. Main과 Analysis가 같은 모델을
         # 쓰므로 등록 하나가 둘 다에 걸린다. 조립 순서에 기대지 않으려고
         # 여기서 부른다 — 어느 쪽이 먼저 만들어지든 이미 등록되어 있다.
         restrict_harness(self._model)
@@ -195,7 +195,7 @@ class _DeepAgentIncidentAnalyzer:
         middleware = [
             DelegationGuardrailMiddleware(state=state, repository=self._states)
         ]
-        diagnosis = build_diagnosis_subagent(
+        analysis_subagent = build_analysis_subagent(
             seams=self._seams,
             state=state,
             repository=self._states,
@@ -206,7 +206,7 @@ class _DeepAgentIncidentAnalyzer:
             model=self._model,
             tools=tools,
             middleware=middleware,
-            diagnosis_subagent=diagnosis,
+            analysis_subagent=analysis_subagent,
         )
 
     # ── 결과 ─────────────────────────────────────────────────────────

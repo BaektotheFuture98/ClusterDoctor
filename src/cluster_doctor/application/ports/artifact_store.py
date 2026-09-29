@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from cluster_doctor.domain.diagnosis.observations import Observations
-from cluster_doctor.domain.diagnosis.evidence import Evidence
-from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
+from cluster_doctor.domain.analysis.observations import Observations
+from cluster_doctor.domain.analysis.evidence import Evidence
+from cluster_doctor.domain.analysis.report import LogAnalysisReport
 
 
 @runtime_checkable

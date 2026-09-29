@@ -1,4 +1,4 @@
-"""Main DeepAgent와 Diagnosis SubAgent 사이를 흐르는 state 계약.
+"""Main DeepAgent와 Analysis SubAgent 사이를 흐르는 state 계약.
 
 ``task`` 도구는 타입을 넘기지 못한다. 스키마가 ``{description: str,
 subagent_type: str}``로 고정되어 있고, description은 모델이 쓴 자유 텍스트다.
@@ -26,7 +26,7 @@ ADMITTED_WINDOW = "admitted_window"
 ADMITTED_GOAL = "admitted_goal"
 
 # SubAgent 이름. ``task(subagent_type=...)``이 이 값을 받는다.
-DIAGNOSIS_SUBAGENT = "diagnosis"
+ANALYSIS_SUBAGENT = "analysis"
 
 
 def _last_write_wins(_current: Any, incoming: Any) -> Any:
@@ -38,12 +38,19 @@ def _last_write_wins(_current: Any, incoming: Any) -> Any:
     return incoming
 
 
-class IncidentAgentState(DeepAgentState):
-    """Main DeepAgent의 state.
+class MainAgentState(DeepAgentState):
+    """Main DeepAgent(Supervisor) 그래프의 state_schema.
 
-    ``DeepAgentState``를 상속하는 이유는 ``task`` 도구가 ``messages``를
-    요구하기 때문이다(``CompiledSubAgent``는 반드시 ``messages``를 돌려줘야
-    한다).
+    ``propose_analysis``가 승인한 분석 구간·목표만 담고, ``task`` 위임 시
+    Analysis SubAgent로 그대로 복사된다. ``DeepAgentState``를 상속하는
+    이유는 ``task`` 도구가 ``messages``를 요구하기 때문이다(``CompiledSubAgent``는
+    반드시 ``messages``를 돌려줘야 한다). Analysis SubAgent 자신의 내부
+    그래프는 이 타입이 아니라 ``AnalysisAgentState``(``analysis/state.py``)를
+    쓴다.
+
+    ``LogAnalysisRequest``/``LogAnalysisResponse``는 이 state의 필드가
+    아니다 — 두 계약은 ``_run`` 함수 호출 하나 안에서 만들어지고 소비되므로
+    그래프 채널에 실릴 이유가 없다.
     """
 
     # 승인된 구간. ``{"start": "<iso>", "end": "<iso>"}`` 또는 ``None``.

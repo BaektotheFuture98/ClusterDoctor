@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
-from cluster_doctor.domain.diagnosis.time_range import TimeRange, is_covered
+from cluster_doctor.domain.analysis.report import LogAnalysisStatus, VerificationStatus
+from cluster_doctor.domain.analysis.time_range import TimeRange, is_covered
 from cluster_doctor.domain.incident.models import IncidentStatus
 
 
@@ -26,6 +26,9 @@ class IncidentState(BaseModel):
     """Incident 전체의 진행, 예산, 분석 구간과 산출물 참조를 보관한다.
 
     시작 맥락인 Incident와 달리 실행 중 갱신되며, Agent 대화 상태와도 별개다.
+    ``MainAgentState``(LangGraph 실행 상태, 프로세스 메모리에만 존재)와 달리
+    ``IncidentStateRepository``로 저장소에 영속되어 Agent 실행이 끝난 뒤에도
+    남는다 — 리포트 전달과 예산 조회가 이 값을 읽는다.
     """
 
     incident_id: str
@@ -59,7 +62,7 @@ class IncidentState(BaseModel):
 
     def remaining_of(self, window: TimeRange) -> list[TimeRange]:
         """이 구간에서 아직 보지 않은 부분만."""
-        from cluster_doctor.domain.diagnosis.time_range import subtract_spans
+        from cluster_doctor.domain.analysis.time_range import subtract_spans
 
         return subtract_spans(window, self.analyzed_windows)
 

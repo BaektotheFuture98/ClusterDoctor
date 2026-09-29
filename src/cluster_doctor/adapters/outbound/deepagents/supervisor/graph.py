@@ -28,13 +28,13 @@ from cluster_doctor.adapters.outbound.deepagents.runtime.harness import (
     restrict_harness,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
-    DIAGNOSIS_SUBAGENT,
-    IncidentAgentState,
+    ANALYSIS_SUBAGENT,
+    MainAgentState,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import TASK_TOOL_NAME
 
 # 문자열 보간을 쓰지 않는다(f-string 아님). 본문에 중괄호가 들어가면 어느
-# 단계에서든 서식으로 해석되어 프롬프트가 조용히 망가진다 — diagnosis
+# 단계에서든 서식으로 해석되어 프롬프트가 조용히 망가진다 — analysis
 # prompts.py와 같은 규칙이다. SubAgent 이름 한 자리만 치환해야 하는데,
 # 그것도 format이 아니라 replace로 채운다.
 _SYSTEM_PROMPT_TEMPLATE = """<role>
@@ -44,7 +44,7 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
 뿐이다. 어느 시간대를 볼 것인가, 더 볼 것인가, 여기서 끝낼 것인가.
 
 로그의 해석, DataSource별 선별, Cross-source 분석, Root Cause 판단, 리포트
-작성, 그리고 리포트의 근거 검증과 수정은 diagnosis SubAgent의 일이다.
+작성, 그리고 리포트의 근거 검증과 수정은 analysis SubAgent의 일이다.
 SubAgent는 구간 하나를 끝까지 처리해 **검증을 마친 리포트** 하나를 돌려준다.
 </role>
 
@@ -79,7 +79,7 @@ SubAgent는 구간 하나를 끝까지 처리해 **검증을 마친 리포트** 
 
 2. <<task>>(description=..., subagent_type="<<subagent>>")
 
-   승인받은 구간의 분석을 diagnosis SubAgent에게 넘긴다.
+   승인받은 구간의 분석을 analysis SubAgent에게 넘긴다.
 
    **propose_analysis가 성공한 직후에만 부른다.** 승인 하나에 위임 하나다.
    승인 없이 부르면 거절당하고, 거절은 사이클만 먹는다.
@@ -194,7 +194,7 @@ SubAgent가 쓸 수 있는 리포트를 하나도 내놓지 못한 경우.
 """
 
 SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
-    "<<subagent>>", DIAGNOSIS_SUBAGENT
+    "<<subagent>>", ANALYSIS_SUBAGENT
 ).replace("<<task>>", TASK_TOOL_NAME)
 
 
@@ -203,7 +203,7 @@ def build_main_agent(
     model: BaseChatModel,
     tools: Sequence[BaseTool],
     middleware: Sequence[AgentMiddleware],
-    diagnosis_subagent: CompiledSubAgent,
+    analysis_subagent: CompiledSubAgent,
 ) -> Runnable:
     """도구·Guardrail·SubAgent를 하나의 DeepAgent로 묶는다.
 
@@ -221,12 +221,12 @@ def build_main_agent(
         # harness 도구 감추기를 **맨 뒤에** 둔다. 앞쪽 미들웨어가 도구를
         # 끼워 넣은 뒤에 걸러야 그 도구까지 걸린다.
         middleware=[*middleware, HideHarnessToolsMiddleware()],
-        # 위임처는 diagnosis 하나뿐이다.
-        subagents=[diagnosis_subagent],
+        # 위임처는 analysis 하나뿐이다.
+        subagents=[analysis_subagent],
         # 구조화된 값이 SubAgent에 닿는 통로는 이 state뿐이다. task 도구는
         # 자유 텍스트 description밖에 넘기지 못하므로, 승인된 구간은 문장이
         # 아니라 여기에 실려 건너간다(state.py를 볼 것).
-        state_schema=IncidentAgentState,
+        state_schema=MainAgentState,
         # 심층 방어. ``restrict_harness``가 파일 도구를 모델의 목록에서 지우지만
         # 그것은 **보이지 않게 하는 것**이고, 도구 자체는 ToolNode에 묶인 채
         # 남는다. 모델이 목록에 없는 이름을 지어내 호출하면 그대로 실행된다.

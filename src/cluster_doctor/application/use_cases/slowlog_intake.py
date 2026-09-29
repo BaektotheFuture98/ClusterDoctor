@@ -1,4 +1,4 @@
-"""Batch and settle slowlog triggers before starting diagnosis."""
+"""Batch and settle slowlog triggers before starting analysis."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from cluster_doctor.application.commands import StartIncident
-from cluster_doctor.application.use_cases.diagnose_incident import DiagnoseIncident
+from cluster_doctor.application.use_cases.analyze_incident import AnalyzeIncident
 from cluster_doctor.domain.incident.guardrails import (
     MAX_SINGLE_WAIT_SECONDS,
     MAX_TOTAL_WAIT_SECONDS,
@@ -33,15 +33,15 @@ class _Arrival:
 
 
 class SlowlogIntake:
-    """유입 큐에서 slowlog를 묶고 정착 후 진단 명령 큐에 넣는다.
+    """유입 큐에서 slowlog를 묶고 정착 후 분석 명령 큐에 넣는다.
 
-    진단 워커가 StartIncident를 소비하며, 큐와 활성 작업 수는 프로세스 내 상태다.
+    분석 워커가 StartIncident를 소비하며, 큐와 활성 작업 수는 프로세스 내 상태다.
     """
 
     def __init__(
         self,
         *,
-        diagnose_incident: DiagnoseIncident,
+        analyze_incident: AnalyzeIncident,
         cluster: str = "elasticsearch",
         micro_batch_seconds: float = 10.0,
         quiet_period_seconds: float = 15.0,
@@ -52,7 +52,7 @@ class SlowlogIntake:
     ) -> None:
         if max_incidents < 1 or worker_count < 1:
             raise ValueError("max_incidents and worker_count must be positive")
-        self._diagnose = diagnose_incident
+        self._analyze = analyze_incident
         self._cluster = cluster
         self._micro_batch_seconds = micro_batch_seconds
         self._quiet_period_seconds = quiet_period_seconds
@@ -90,7 +90,7 @@ class SlowlogIntake:
             return
         if not self._workers:
             self._workers = [
-                asyncio.create_task(self._diagnose_worker())
+                asyncio.create_task(self._analysis_worker())
                 for _ in range(self._worker_count)
             ]
         if self._task is not None:
@@ -127,7 +127,7 @@ class SlowlogIntake:
                 if not self._closed and not self._pending.empty():
                     self._task = asyncio.create_task(self._publish_settled())
 
-    async def _diagnose_worker(self) -> None:
+    async def _analysis_worker(self) -> None:
         while True:
             command = await self._incidents.get()
             if command is None:
@@ -138,15 +138,15 @@ class SlowlogIntake:
                 continue
             self._active += 1
             try:
-                await self._diagnose.handle(command)
+                await self._analyze.handle(command)
             except Exception:
-                _logger.exception("incident diagnosis failed; worker will continue")
+                _logger.exception("incident analysis failed; worker will continue")
             finally:
                 self._active -= 1
                 self._incidents.task_done()
 
     async def close(self) -> None:
-        """Discard buffered work and wait for active diagnoses before closing."""
+        """Discard buffered work and wait for active analyses before closing."""
         self._closed = True
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._close())

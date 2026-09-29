@@ -14,7 +14,7 @@
 한 줄 바꾸는 순간 위 문단이 통째로 거짓이 된다 — 그때 이 차단이 이미 서 있는
 것과, 그때부터 찾아 붙이는 것은 다르다.
 
-Main과 Diagnosis 둘 다 ``create_deep_agent``이고, 둘 다 여기를 지나야 한다.
+Main과 Analysis 둘 다 ``create_deep_agent``이고, 둘 다 여기를 지나야 한다.
 한쪽만 막으면 다른 쪽이 그대로 열려 있고, 실제로 한동안 그랬다.
 
 차단은 두 겹이다.
@@ -139,14 +139,14 @@ class HideHarnessToolsMiddleware(AgentMiddleware):
 class RefuseDelegationMiddleware(AgentMiddleware):
     """``task`` 호출을 전부 거절한다.
 
-    Diagnosis SubAgent를 위한 것이다. 이 Agent는 **위임의 끝**이어야 한다 —
+    Analysis SubAgent를 위한 것이다. 이 Agent는 **위임의 끝**이어야 한다 —
     여기서 또 넘기면 분 단위 선별도 Evidence 선별도 Validator도 거치지 않은 무언가가
     리포트 재료로 섞여 들고, 그 비용은 이미 예약이 끝난 예산 안에서 나간다.
 
     평소에는 할 일이 없다. ``restrict_harness``가 general-purpose SubAgent를
     꺼서 위임처가 없으면 ``task`` 자체가 만들어지지 않기 때문이다. 이것은 그
     등록이 키 불일치로 조용히 빠졌을 때를 위한 층이다 — Main Agent 쪽은
-    ``DelegationGuardrailMiddleware``가 diagnosis 아닌 위임처를 거절해 같은
+    ``DelegationGuardrailMiddleware``가 analysis 아닌 위임처를 거절해 같은
     구멍이 막혀 있는데, 이쪽에는 그에 해당하는 것이 없었다.
     """
 
@@ -156,7 +156,7 @@ class RefuseDelegationMiddleware(AgentMiddleware):
             return handler(request)
         return ToolMessage(
             content=(
-                "진단 SubAgent는 다른 Agent에게 위임할 수 없다. "
+                "분석 SubAgent는 다른 Agent에게 위임할 수 없다. "
                 "주어진 도구로 이 구간을 직접 처리하라."
             ),
             tool_call_id=call.get("id", ""),

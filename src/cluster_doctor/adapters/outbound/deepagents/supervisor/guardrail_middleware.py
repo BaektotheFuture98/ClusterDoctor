@@ -32,14 +32,14 @@ from langgraph.types import Command
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
-    DIAGNOSIS_SUBAGENT,
+    ANALYSIS_SUBAGENT,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import TASK_TOOL_NAME
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
-from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.analysis.kst import format_kst, parse_kst
+from cluster_doctor.domain.analysis.time_range import InvalidTimeRangeError, TimeRange
 from cluster_doctor.domain.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_REJECTED_DECISIONS,
@@ -128,13 +128,13 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
 
         tool_call_id = str(request.tool_call.get("id") or "")
         subagent_type = str(request.tool_call.get("args", {}).get("subagent_type") or "")
-        if subagent_type != DIAGNOSIS_SUBAGENT:
+        if subagent_type != ANALYSIS_SUBAGENT:
             # 진단 외의 SubAgent를 허용하면 예산 회계가 깨진다. 승인 하나에
             # 위임 하나라는 규칙은 "그 위임이 승인된 구간을 쓴다"를 전제로 한다.
             return self._reject(
                 tool_call_id,
                 f'subagent_type="{subagent_type}"에는 위임할 수 없다. '
-                f'이 Incident에서 허용된 것은 "{DIAGNOSIS_SUBAGENT}" 하나뿐이다.',
+                f'이 Incident에서 허용된 것은 "{ANALYSIS_SUBAGENT}" 하나뿐이다.',
             )
 
         admitted = _read_state_value(request.state, ADMITTED_WINDOW)

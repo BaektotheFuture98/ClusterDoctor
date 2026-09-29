@@ -1,4 +1,4 @@
-"""``DiagnosisReport``를 평문으로 그린다.
+"""``IncidentAnalysisReport``를 평문으로 그린다.
 
 줄 포맷이 여기 한 벌만 있다. HTML 어댑터는 같은 함수로 만든 줄을 ``<pre>``에
 담고, 로그 폴백과 HTML의 ``<details>`` 원문 블록은 ``render_text``가
@@ -15,14 +15,14 @@ import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from cluster_doctor.domain.diagnosis.health_point import HealthPoint
-from cluster_doctor.domain.diagnosis.incident_timeline import (
+from cluster_doctor.domain.analysis.health_point import HealthPoint
+from cluster_doctor.domain.analysis.incident_timeline import (
     TimelineCard,
     TimelineItem,
     project_timeline,
 )
-from cluster_doctor.domain.diagnosis.diagnosis_report import DiagnosisReport
-from cluster_doctor.domain.diagnosis.observations import (
+from cluster_doctor.domain.analysis.incident_analysis_report import IncidentAnalysisReport
+from cluster_doctor.domain.analysis.observations import (
     MasterEvent,
     NodeMetricRow,
     Observations,
@@ -110,7 +110,7 @@ def timeline_line(row: TimelineRow) -> str:
     return line
 
 
-def projected_timeline(report: DiagnosisReport) -> tuple[TimelineCard, ...]:
+def projected_timeline(report: IncidentAnalysisReport) -> tuple[TimelineCard, ...]:
     """두 표현 어댑터가 공유하는 카드 투영 진입점."""
     return project_timeline(
         report.observations,
@@ -131,7 +131,7 @@ def _card_item_line(item: TimelineItem) -> str:
     return f"    - {item.text}{refs}"
 
 
-def timeline_card_lines(report: DiagnosisReport) -> list[str]:
+def timeline_card_lines(report: IncidentAnalysisReport) -> list[str]:
     """통합 카드와 전체 원시 분 관측을 평문 한 블록으로 그린다."""
     cards = projected_timeline(report)
     lines: list[str] = []
@@ -459,7 +459,7 @@ def scrub(text: str) -> str:
     return text.encode("utf-8", "replace").decode("utf-8")
 
 
-def render_text(report: DiagnosisReport) -> str:
+def render_text(report: IncidentAnalysisReport) -> str:
     """리포트 전체를 평문 한 장으로.
 
     로그 폴백과 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
