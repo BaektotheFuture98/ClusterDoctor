@@ -45,18 +45,3 @@ def test_incident_state_accumulates_report_refs():
     s.report_refs.append("RPT-INC-004-1")
     s.report_refs.append("RPT-INC-004-2")
     assert len(s.report_refs) == 2
-
-
-# merge 계약 — Task 6에서 이 테스트 두 개를 삭제한다
-def test_merge_window_reports_concatenates():
-    from cluster_doctor.domain.incident.report_merge import merge_window_reports
-    r1 = _report("INC-005", frm=_T0, to=_T_MID, summary="w1")
-    r2 = _report("INC-005", frm=_T_MID, to=_T1, summary="w2")
-    merged = merge_window_reports([r1, r2])
-    assert merged.incident_id == "INC-005"
-
-
-def test_merge_window_reports_empty_raises():
-    from cluster_doctor.domain.incident.report_merge import merge_window_reports
-    with pytest.raises(ValueError):
-        merge_window_reports([])

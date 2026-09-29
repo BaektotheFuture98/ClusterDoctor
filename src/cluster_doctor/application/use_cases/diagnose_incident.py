@@ -18,7 +18,6 @@ from cluster_doctor.application.ports.report_publisher import (
     ReportPublication,
     ReportPublisher,
 )
-from cluster_doctor.application.report_finalization import finalize_incident_report
 from cluster_doctor.domain.diagnosis.evidence import Evidence
 from cluster_doctor.domain.diagnosis.observations import Observations
 from cluster_doctor.domain.diagnosis.report import (
@@ -133,7 +132,7 @@ class DiagnoseIncident:
                     or state.latest_verification_status is VerificationStatus.MISMATCH
                 ),
                 gaps=gaps,
-                report_ref=state.final_report_ref,
+                report_ref=state.report_refs[-1] if state.report_refs else None,
                 analysis_calls=state.analysis_call_count,
                 reason=state.closing_reason,
                 diagnostics=diagnostics,
@@ -193,24 +192,21 @@ class DiagnoseIncident:
         analysis_failed: bool,
         gaps: tuple[str, ...],
     ) -> IncidentDiagnostics:
-        if state.final_report_ref is None and state.report_refs:
-            fallback_ref = finalize_incident_report(
-                incident.incident_id, state.report_refs, self._store
-            )
-            if fallback_ref is not None:
-                state.final_report_ref = fallback_ref
-                self._states.save(state)
+        # 구간마다 검증된 리포트가 따로 있다. 합치지 않고 마지막 구간의 것을
+        # 대표로 전달하되, 어느 구간의 검증 불일치든 운영자가 볼 수 있게
+        # gap에는 전부 싣는다.
+        reports = [
+            report
+            for ref in state.report_refs
+            if (report := self._store.get_report(ref)) is not None
+        ]
+        report = reports[-1] if reports else None
         observations = self._store.get_observations(incident.incident_id)
-        report = (
-            self._store.get_report(state.final_report_ref)
-            if state.final_report_ref
-            else None
-        )
         evidence = self._store.list_evidence(incident.incident_id)
         all_gaps = list(gaps)
-        if report is not None and report.verification_issues:
+        for item in reports:
             all_gaps.extend(
-                f"리포트 검증 불일치: {issue}" for issue in report.verification_issues
+                f"리포트 검증 불일치: {issue}" for issue in item.verification_issues
             )
         if state.closing_reason and state.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {state.closing_reason}")
