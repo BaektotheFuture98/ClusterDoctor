@@ -24,13 +24,13 @@ from langgraph.types import Command
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
-    DIAGNOSIS_SUBAGENT,
+    ANALYSIS_SUBAGENT,
 )
 from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
-from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
-from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.analysis.kst import format_kst, parse_kst
+from cluster_doctor.domain.analysis.time_range import InvalidTimeRangeError, TimeRange
 from cluster_doctor.domain.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
     MAX_ANALYSIS_WINDOW_MINUTES,
@@ -53,7 +53,7 @@ TASK_TOOL_NAME = "task"
 
 _PROPOSE_DESCRIPTION = f"""\
 분석하고 싶은 시간 구간을 제안한다. 승인되면 그 구간이 내부 상태에 기록되고,
-그 다음에야 {TASK_TOOL_NAME}(subagent_type="{DIAGNOSIS_SUBAGENT}")으로 위임할 수 있다.
+그 다음에야 {TASK_TOOL_NAME}(subagent_type="{ANALYSIS_SUBAGENT}")으로 위임할 수 있다.
 
 - start_kst / end_kst: KST 기준 ISO 8601. 예: 2026-09-18T13:50:00+09:00
 - goal: 이 구간을 보려는 이유. 진단 SubAgent가 읽는다.
@@ -274,7 +274,7 @@ def _admission_message(*, requested: TimeRange, admitted: TimeRange, goal: str) 
     if goal.strip():
         lines.append(f"목표: {goal.strip()}")
     lines.append(
-        f'이제 {TASK_TOOL_NAME}(subagent_type="{DIAGNOSIS_SUBAGENT}")으로 위임해라. '
+        f'이제 {TASK_TOOL_NAME}(subagent_type="{ANALYSIS_SUBAGENT}")으로 위임해라. '
         "구간은 이미 내부 상태에 있으므로 description에 시각을 적을 필요가 없고, "
         "적더라도 무시된다."
     )

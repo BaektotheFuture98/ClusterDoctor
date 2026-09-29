@@ -1,14 +1,14 @@
 import logging
 from datetime import datetime, timedelta
 
-from cluster_doctor.domain.diagnosis.log_entries import (
+from cluster_doctor.domain.analysis.log_entries import (
     LogEntry,
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.domain.diagnosis.time_range import (
+from cluster_doctor.domain.analysis.time_range import (
     InvalidTimeRangeError,
     TimeRange,
 )

@@ -1,6 +1,6 @@
-"""Application output mapping from ``LogAnalysisReport`` to ``DiagnosisReport``.
+"""Application output mapping from ``LogAnalysisReport`` to ``IncidentAnalysisReport``.
 
-표현 계층(HTML 렌더러, report_text)은 ``DiagnosisReport``를 읽는다. 그쪽을
+표현 계층(HTML 렌더러, report_text)은 ``IncidentAnalysisReport``를 읽는다. 그쪽을
 새 타입에 맞춰 다시 쓰지 않는 이유는 그 코드가 잘 돌고 있고, 바꿔야 할 이유가
 "모양이 달라서"뿐이기 때문이다. 대신 경계에 매핑 함수 하나를 둔다 — 이 저장소가
 pydantic 스키마와 도메인 dataclass 사이에 ``to_domain``을 둔 것과 같은 자리다.
@@ -16,22 +16,22 @@ the resulting domain object.
 
 from __future__ import annotations
 
-from cluster_doctor.domain.diagnosis.evidence import Evidence
-from cluster_doctor.domain.diagnosis.diagnosis_report import (
-    DiagnosisReport,
+from cluster_doctor.domain.analysis.evidence import Evidence
+from cluster_doctor.domain.analysis.incident_analysis_report import (
+    IncidentAnalysisReport,
     Finding,
     Narrative,
     TimelineAnnotation,
 )
-from cluster_doctor.domain.diagnosis.observations import Observations
-from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
+from cluster_doctor.domain.analysis.observations import Observations
+from cluster_doctor.domain.analysis.report import LogAnalysisReport
 
 
-def to_diagnosis_report(
+def to_incident_analysis_report(
     report: LogAnalysisReport | None,
     observations: Observations,
     evidence: list[Evidence],
-) -> DiagnosisReport:
+) -> IncidentAnalysisReport:
     """최종 전달용 리포트를 만든다.
 
     ``report``가 ``None``이어도 관측값 섹션은 그대로 렌더된다. 이 저장소의
@@ -39,10 +39,10 @@ def to_diagnosis_report(
     못해도 그 시각에 무슨 일이 있었는지는 남아야 한다.
     """
     if report is None:
-        return DiagnosisReport(observations=observations, evidence=tuple(evidence))
+        return IncidentAnalysisReport(observations=observations, evidence=tuple(evidence))
 
     cite = {item.evidence_id: item for item in evidence}
-    return DiagnosisReport(
+    return IncidentAnalysisReport(
         observations=observations,
         evidence=tuple(evidence),
         timeline_annotations=tuple(

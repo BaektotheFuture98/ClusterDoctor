@@ -1,21 +1,21 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from cluster_doctor.domain.diagnosis.diagnosis_report import DiagnosisReport
+from cluster_doctor.domain.analysis.incident_analysis_report import IncidentAnalysisReport
 
 
 @dataclass(frozen=True)
 class ReportPublication:
     """보고서 전달 구현이 반환하는 게시 결과 메타데이터.
 
-    전달할 내용인 DiagnosisReport와 달리 현재는 생성된 텍스트 길이만 담는다.
+    전달할 내용인 IncidentAnalysisReport와 달리 현재는 생성된 텍스트 길이만 담는다.
     """
 
     text_length: int = 0
 
 
 class ReportPublisher(ABC):
-    """운영자용 DiagnosisReport를 실제 전달 매체로 게시하는 포트.
+    """운영자용 IncidentAnalysisReport를 실제 전달 매체로 게시하는 포트.
 
     애플리케이션은 매체 구현 대신 게시 결과와 분석 누락 여부를 주고받는다.
     """
@@ -23,7 +23,7 @@ class ReportPublisher(ABC):
     @abstractmethod
     async def publish(
         self,
-        report: DiagnosisReport,
+        report: IncidentAnalysisReport,
         *,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
@@ -37,7 +37,7 @@ class ReportPublisher(ABC):
         본문과 시스템이 덧붙인 것이 구별되지 않는다.
 
         기본값을 둔 것은 두 값이 없는 호출을 허용하기 위해서다 — 알림 자체는
-        진단 결과의 완전성을 모르고도 성립한다.
+        분석 결과의 완전성을 모르고도 성립한다.
 
         ``report``가 문자열이 아니라 객체인 이유: 리포트에는 코드가 관측한
         사실(분 단위 건수·노드 최대값·마스터 로그·상태 이력)과 모델의 판단이
@@ -46,7 +46,7 @@ class ReportPublisher(ABC):
         slowlog의 took이 "미확인"으로 실린 적이 있다.
 
         구조화가 실패해도 이 타입은 바뀌지 않는다. "모델의 판단이 있는가"는
-        ``DiagnosisReport`` 안의 ``narrative``/``narrative_text``가 표현하므로,
+        ``IncidentAnalysisReport`` 안의 ``narrative``/``narrative_text``가 표현하므로,
         구현체는 언제나 같은 타입을 받고 관측값은 언제나 그릴 수 있다.
 
         Args:

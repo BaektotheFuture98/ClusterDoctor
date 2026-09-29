@@ -1,4 +1,4 @@
-"""시각 인자 처리. produce_test_message와 run_diagnosis가 함께 쓴다.
+"""시각 인자 처리. produce_test_message와 run_analysis가 함께 쓴다.
 
 두 스크립트가 같은 파싱을 각자 들고 있으면 한쪽만 고쳤을 때 서로 다른
 시각을 뜻하게 된다 — 같은 이유로 KST 파싱이 세 벌의 복붙을
@@ -42,7 +42,7 @@ force_utf8_console()
 
 KST = timezone(timedelta(hours=9))
 
-# diagnosis_state._base_time이 기준 시각을 kafka_receive_time으로 바꾸는 경계.
+# analysis_state._base_time이 기준 시각을 kafka_receive_time으로 바꾸는 경계.
 # 같은 값이어야 안내가 실제 동작과 맞는다.
 PIPELINE_LAG_THRESHOLD = timedelta(minutes=30)
 

@@ -47,9 +47,9 @@ from cluster_doctor.application.ports.report_publisher import (
     ReportPublication,
     ReportPublisher,
 )
-from cluster_doctor.domain.diagnosis.incident_timeline import TimelineCard, TimelineItem
-from cluster_doctor.domain.diagnosis.diagnosis_report import DiagnosisReport
-from cluster_doctor.domain.diagnosis.observations import (
+from cluster_doctor.domain.analysis.incident_timeline import TimelineCard, TimelineItem
+from cluster_doctor.domain.analysis.incident_analysis_report import IncidentAnalysisReport
+from cluster_doctor.domain.analysis.observations import (
     Observations,
     observed_severity,
 )
@@ -92,7 +92,7 @@ class HtmlFileReportPublisher(ReportPublisher):
 
     async def publish(
         self,
-        report: DiagnosisReport,
+        report: IncidentAnalysisReport,
         *,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
@@ -128,7 +128,7 @@ class HtmlFileReportPublisher(ReportPublisher):
 
     def _write(
         self,
-        report: DiagnosisReport,
+        report: IncidentAnalysisReport,
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
     ) -> Path:
@@ -456,8 +456,8 @@ def _raw_block(lines: list[str]) -> list[dict]:
     return [{"kind": "raw", "text": "\n".join(lines)}] if lines else []
 
 
-def _sections_from_report(report: DiagnosisReport) -> list[_Section]:
-    """``DiagnosisReport``를 기존 ``_Section`` 표현으로 옮긴다.
+def _sections_from_report(report: IncidentAnalysisReport) -> list[_Section]:
+    """``IncidentAnalysisReport``를 기존 ``_Section`` 표현으로 옮긴다.
 
     렌더러를 새로 쓰지 않는 이유: ``_render_items``·``_e``·``_CSS``·TOC·배너가
     전부 그대로 쓸 수 있고, 새로 쓰면 다크모드·인쇄·``sev-*`` 배지가 전부
@@ -569,7 +569,7 @@ def _sections_from_report(report: DiagnosisReport) -> list[_Section]:
 
 
 def render_report(
-    report: DiagnosisReport,
+    report: IncidentAnalysisReport,
     generated_at: datetime | None = None,
     gaps: tuple[str, ...] = (),
     analysis_failed: bool = False,

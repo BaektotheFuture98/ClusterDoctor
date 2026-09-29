@@ -1,0 +1,88 @@
+"""datasource workflow가 골라낸 의미 있는 근거 하나.
+
+분 단위 선별이 요약 문자열만 돌려주면 Cross-source 분석이 그 문장을 다시 파싱해야
+하고, 그 순간 시각·노드·수치가 모델이 옮겨 적은 값이 된다. 이 저장소가 두 번
+당한 실패가 그것이다(``contracts/observations.py`` 모듈 docstring). 그래서 근거는
+**필드로** 나른다.
+
+``raw_ref``가 요점이다. 원문 전량을 Evidence에 싣지 않으면서도 필요할 때 다시
+꺼낼 수 있어야 한다 — 리포트 검증이 "이 주장이 실제 로그 줄과 맞는가"를 보려면
+원문에 닿아야 하고, Context에는 원문을 쌓지 않아야 한다. 참조는
+``ArtifactStore``가 푼다.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class EvidenceSource(StrEnum):
+    """근거가 어느 datasource에서 왔는가.
+
+    값은 ``LogEntry.source``의 문자열과 맞춘다. 두 체계가 갈리면 소스별 집계가
+    조용히 어긋난다.
+    """
+
+    SLOWLOG = "slowlog"
+    QUERY_LOG = "es_query_log"
+    NODE_METRIC = "node_metric"
+    MASTER_LOG = "master_log"
+    NODE_LOG = "node_log"
+    CLUSTER_STATE = "cluster_state"
+
+
+class Evidence(BaseModel):
+    """소스별 원자료에서 선별해 Incident 식별자를 부여한 근거 한 건.
+
+    조회 계약 LogEntry, 실행 내 번호를 쓰는 RawRecord와 달리 보고서가 참조한다.
+    수집기(``collector.py``/``minute_analysis/nodes.py``/``datasource/node_metric.py``)
+    셋만 만든다.
+
+    ``message``는 Cross-source 프롬프트(``format_evidence_line``)와 운영자
+    리포트 인용(``output_mapping._cite``)이 함께 읽는, 코드가 렌더링한 한
+    줄이다. 소스가 파일 원문이면(SSH ``node_log``) 원문 그대로이고, 그 외에는
+    구조화된 필드에서 조립한 서술이다. 원문 자체가 필요하면
+    (``GroundingValidator``만 그렇다) ``raw_ref``로 ``ArtifactStore``에서
+    따로 꺼낸다 — 지금은 세 생성 지점 모두 두 값이 같은 문자열이지만, 그것은
+    "이보다 더 원본에 가까운 것이 없다"는 사정이지 지켜야 할 규약이 아니다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    evidence_id: str
+
+    event_time: datetime
+    source: EvidenceSource
+
+    node_id: str | None = None
+    node_name: str | None = None
+
+    event_type: str | None = None
+    severity: str | None = None
+
+    # 코드가 렌더링한 근거 한 줄. 소스에 따라 원문 그대로이거나 구조화된 값을
+    # 조립한 서술이다. 프롬프트와 운영자 리포트가 함께 읽는다.
+    message: str
+
+    # 원문을 다시 꺼낼 참조. 비어 있으면 그 근거는 인용으로 검증할 수 없다.
+    raw_ref: str | None = None
+    # 왜 이 줄을 남겼는가. Reduce 단계가 채운다.
+    selection_reason: str | None = None
+
+
+class ProblemNodeCandidate(BaseModel):
+    """마스터 로그가 지목한, 더 들여다볼 노드.
+
+    ``evidence_refs``가 비어 있으면 후보가 아니다. 근거 없이 노드를 지목하면
+    SSH 접속 비용을 추측에 쓰게 된다 — Node Investigation이 조건부인 이유가
+    그것이다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    node_id: str
+    reason: str = ""
+    evidence_refs: tuple[str, ...] = Field(default_factory=tuple)

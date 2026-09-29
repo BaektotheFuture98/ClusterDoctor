@@ -6,8 +6,8 @@ from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store impor
 from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
     HtmlFileReportPublisher,
 )
-from cluster_doctor.application.output_mapping import to_diagnosis_report
-from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, VerificationStatus
+from cluster_doctor.application.output_mapping import to_incident_analysis_report
+from cluster_doctor.domain.analysis.report import LogAnalysisReport, VerificationStatus
 
 _T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
 _T1 = datetime(2024, 1, 1, 13, 10, tzinfo=timezone.utc)
@@ -33,7 +33,7 @@ async def test_last_verified_report_is_published_as_html(tmp_path):
 
     reports = [store.get_report(ref) for ref in refs]
     representative = reports[-1]
-    rendered = to_diagnosis_report(
+    rendered = to_incident_analysis_report(
         representative,
         store.get_observations("INC-1"),
         store.list_evidence("INC-1"),
