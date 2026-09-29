@@ -44,9 +44,6 @@ from cluster_doctor.adapters.outbound.deepagents.supervisor.guardrail_middleware
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
-    CLUSTER,
-    INCIDENT_ID,
-    LAST_RESPONSE,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import (
     make_finish_incident_tool,
@@ -177,11 +174,8 @@ class _DeepAgentIncidentAnalyzer:
                             )
                         )
                     ],
-                    INCIDENT_ID: incident.incident_id,
-                    CLUSTER: incident.cluster,
                     ADMITTED_WINDOW: None,
                     ADMITTED_GOAL: "",
-                    LAST_RESPONSE: None,
                 },
                 {"recursion_limit": self._recursion_limit},
             )

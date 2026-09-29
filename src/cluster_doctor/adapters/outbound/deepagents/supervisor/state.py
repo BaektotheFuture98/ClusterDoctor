@@ -22,11 +22,8 @@ from typing import Annotated, Any, NotRequired
 from deepagents import DeepAgentState
 
 # state 키 이름. 문자열을 각자 박으면 한쪽만 바뀌어도 아무도 모른다.
-INCIDENT_ID = "incident_id"
-CLUSTER = "cluster"
 ADMITTED_WINDOW = "admitted_window"
 ADMITTED_GOAL = "admitted_goal"
-LAST_RESPONSE = "last_response"
 
 # SubAgent 이름. ``task(subagent_type=...)``이 이 값을 받는다.
 DIAGNOSIS_SUBAGENT = "diagnosis"
@@ -49,16 +46,9 @@ class IncidentAgentState(DeepAgentState):
     한다).
     """
 
-    incident_id: NotRequired[str]
-    cluster: NotRequired[str]
-
     # 승인된 구간. ``{"start": "<iso>", "end": "<iso>"}`` 또는 ``None``.
     # TimeRange를 그대로 넣지 않는 이유: frozen dataclass라 langgraph의
     # state 직렬화 경로에서 되살아나지 않고, >10분이면 __post_init__이
     # 예외를 던져 도구 인자 검증 안에서 터진다.
     admitted_window: NotRequired[Annotated[dict[str, str] | None, _last_write_wins]]
     admitted_goal: NotRequired[Annotated[str, _last_write_wins]]
-
-    # 직전 분석 결과 요약. 참조와 요약 문자열만 담는다 — 원문 로그는 절대
-    # 담지 않는다. 담으면 ArtifactStore 간접참조가 통째로 무의미해진다.
-    last_response: NotRequired[Annotated[dict[str, Any] | None, _last_write_wins]]

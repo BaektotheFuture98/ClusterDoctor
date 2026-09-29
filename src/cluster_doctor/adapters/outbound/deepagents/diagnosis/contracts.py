@@ -63,8 +63,6 @@ class LogAnalysisResponse(BaseModel):
     report_ref: str | None = None
     verification_status: VerificationStatus = VerificationStatus.NOT_VERIFIED
 
-    evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
-
     # 확보하지 못한 보조 근거를 사람이 읽을 문장으로. ``unresolved_gaps``와
     # 나누는 이유는 쓰임이 다르기 때문이다 — 저쪽은 Supervisor가 다음 범위를
     # 계산하는 값이고, 이쪽은 notifier가 배너로 그려 운영자에게 닿는 값이다.
