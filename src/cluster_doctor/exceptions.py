@@ -29,10 +29,6 @@ class LlmResponseError(ClusterDoctorError):
     """
 
 
-class IncidentNotFoundError(ClusterDoctorError):
-    """저장소에 없는 Incident를 꺼내려 했다."""
-
-
 class GuardrailViolation(ClusterDoctorError):
     """런타임 상한이 행동을 거절했다.
 
