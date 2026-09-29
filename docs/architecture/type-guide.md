@@ -17,7 +17,9 @@
 | `IncidentOutcome` / `IncidentDiagnostics` | Application · frozen dataclass | 종료 상태와 호출자가 읽는 진단 상세 | DiagnoseIncident → inbound 호출자 |
 | `_Arrival` / `SlowlogIntake` | Application · 수신 값/실행 객체 | 수신 시각 보존, 정착과 워커 큐 관리 | handle → 정착 태스크/진단 워커 |
 | `LogAnalysisRequest` | DeepAgents · BaseModel | 승인된 한 구간의 SubAgent 위임 계약 | Supervisor → Diagnosis SubAgent |
-| `LogAnalysisResponse` / `DiagnosisHandback` | DeepAgents · BaseModel | 구간 결과와 미검증 보고서 참조를 되돌리는 계약 | SubAgent → Supervisor |
+| `LogAnalysisResponse` | DeepAgents · BaseModel | 구간 결과를 IncidentState에 접기 위한 내부 계약 | SubAgent 응답 조립 → 상태 갱신 |
+| `DiagnosisResult` | DeepAgents · frozen BaseModel | 검증을 마친 보고서 참조·검증 상태·요약을 되돌리는 계약 | SubAgent → Supervisor |
+| `MismatchKind` / `ValidationIssue` | Domain · StrEnum/dataclass | 원문 대조 불일치의 분류(분석·표현·검증 불가)와 내용 | GroundingValidator → 검증 루프 |
 
 `Incident`는 시작 맥락이고 `IncidentState`는 갱신되는 업무 상태다. `StartIncident`는 Incident 생명주기를 시작하지만 `LogAnalysisRequest`는 그 안의 한 구간만 분석한다. `IncidentStatus`는 Incident 종료 여부, `LogAnalysisStatus`는 구간 분석 결과, `VerificationStatus`는 근거 일관성 검증 여부를 표현한다. 검증 미실행은 통과가 아니다.
 
@@ -58,9 +60,9 @@ Kafka inbound가 파싱한 `SlowlogTrigger`를 `SlowlogIntake.handle`로 전달�
 
 `DiagnoseIncident`는 업무 상태를 만들고 분석기를 별도 스레드에서 실행한 뒤 종료·최종 전달을 담당한다. 실행 시간 초과에도 이미 실행 중인 스레드가 끝날 때까지 워커를 점유한다. intake 종료는 버퍼를 비우고 활성 진단이 끝나기를 기다린다. 수동 진단은 같은 시작 명령과 진단 생명주기를 사용한다.
 
-Supervisor는 다음 구간과 목표를 고르고 코드 guardrail이 범위·중복·예산을 승인한다. Diagnosis SubAgent는 승인된 범위에서 근거 수집·분별 선별·노드 조사·초안 작성을 수행하고, 의미 검증 전인 Window Report를 반환한다. 구조화 파싱과 타입 변환은 근거 일관성 검증이 아니다. 의미 검증은 Main Agent의 `validate_final_report`가 병합 후 수행하며, 근거 id, 시각, 노드, 지지/반증 충돌 등을 검사한다. 이 검증은 모델 판단의 정답 보증은 아니다.
+Supervisor는 다음 구간과 목표를 고르고 코드 guardrail이 범위·중복·예산을 승인한다. Diagnosis SubAgent는 승인된 범위에서 근거 수집·분별 선별·노드 조사·초안 작성을 수행한 뒤, 코드 검증 루프로 Window Report를 검증하고 `DiagnosisResult`를 반환한다. 구조화 파싱과 타입 변환은 근거 일관성 검증이 아니다. 의미 검증은 `validate_report`(근거 id, 시각, 노드, 지지/반증 충돌 등)와 `GroundingValidator`(Claim과 원문 대조)가 수행한다. 표현 불일치는 리포트를 수정하고, 분석 불일치는 같은 구간을 다시 분석하며, 해소되지 않으면 `MISMATCH`, 원문을 대조하지 못하면 `NOT_VERIFIED`로 남는다. 이 검증은 모델 판단의 정답 보증은 아니다.
 
-Supervisor는 구간 보고서를 병합한 뒤 `validate_final_report`로 최종 일관성을 검증한다. 최종 참조 없이 종료하면 애플리케이션 전달 단계가 `finalize_incident_report`로 병합·저장하는 안전망을 사용한다. 이 안전망 함수 자체는 의미 검증이나 모델 수정을 수행하지 않는다. 출력 매핑은 보고서와 누적 `Observations`, `Evidence`를 `DiagnosisReport`로 만들고 publisher는 누락과 실패 정보도 받는다. 검증 불일치가 있더라도 관측값을 운영자에게 전달한다.
+구간 보고서는 합치지 않고 구간마다 `IncidentState.report_refs`에 쌓이며, 전달 단계는 마지막 구간의 보고서를 대표로 사용하고 모든 구간의 검증 불일치를 gap으로 함께 싣는다. 출력 매핑은 보고서와 누적 `Observations`, `Evidence`를 `DiagnosisReport`로 만들고 publisher는 누락과 실패 정보도 받는다. 검증 불일치가 있더라도 관측값을 운영자에게 전달한다.
 
 ## 타입 형태를 유지하는 이유
 

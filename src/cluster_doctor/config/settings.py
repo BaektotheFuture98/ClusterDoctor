@@ -1,11 +1,10 @@
 from functools import lru_cache
-from typing import Literal, get_args
+from typing import Literal
 
 from pydantic import ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["gemini", "nvidia_nim"]
-_SUPPORTED_LLM_PROVIDERS: tuple[str, ...] = get_args(LlmProvider)
 
 
 class Settings(BaseSettings):
