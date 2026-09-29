@@ -41,7 +41,7 @@ inbound adapters → application → domain ← outbound adapters
 ```
 
 도메인은 incident 상태, guardrail, time range, evidence, 보고서 타입, 순수
-`merge_window_reports` 정책을 가진다. application은 port와 use case를 조정하며 Kafka,
+근거 일관성 검증 정책(`validate_report`)을 가진다. application은 port와 use case를 조정하며 Kafka,
 LangChain, LangGraph, DeepAgents, LiteLLM을 import하지 않는다. `bootstrap`만 구현체를
 선택한다.
 
@@ -64,19 +64,22 @@ Application port는 `SlowlogHandler`, `IncidentAnalyzer`, `IncidentStateReposito
 
 Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼저 후보 window를
 열거하고, 허용된 window를 선택·승인(`propose_analysis`)한 뒤 진단 subagent에 `task`로
-위임한다. 필요하면 추가 window를 분석하고, `finalize_report` → `validate_final_report` →
-`finish_incident` 순서로 종료한다. 시간·분·호출 상한은 runtime guardrail이 강제한다.
-Subagent는 승인된 window의 evidence를 모으고 Window Report를 작성해 injected port로
-저장한다. Schema parsing 같은 기술적 검증은 각 단계에 남고, 최종 보고서의 의미적·근거 기반
-검증과 수정은 Main Agent가 담당한다. `COMPLETED` 종료에는 최종 보고서와 `PASSED` 검증이
-필요하다. 불일치 시 추가 window 분석 또는 Incident당 최대 1회 최종 보고서 수정을 시도하며,
-해소하지 못하면 이슈를 남기고 `FAILED`로 종료한다.
+위임한다. 위임 결과(`DiagnosisResult`)의 요약을 읽고 공백이 남았으면 추가 window를
+분석하고, 없으면 `finish_incident`로 종료한다. Main Agent의 도구는 `list_candidate_windows`,
+`propose_analysis`, `finish_incident` 셋뿐이며, 시간·분·호출 상한은 runtime guardrail이 강제한다.
 
-window report 병합은 `domain.incident.report_merge.merge_window_reports`의 순수 정책이다.
-I/O는 application `finalize_incident_report` service가 맡는다. service가 `ArtifactStore`에서
-window report를 읽어 병합하고 final report를 저장하며, DeepAgents finalization tool과
-`DiagnoseIncident` fallback이 모두 이 service를 사용한다. Candidate를 prompt에 보이는 방식과
-HTML에 보이는 방식은 각 adapter 안에서 따로 projection한다.
+Subagent는 승인된 window 하나를 끝까지 처리한다. evidence를 모으고 Window Report를
+작성한 뒤, LLM 도구가 아닌 코드 루프(`_run_validation_loop`)가 리포트를 검증한다.
+`validate_report`가 근거 id·시각·노드·순서·과장·인과 같은 구조화 필드를 대조하고,
+`GroundingValidator`가 Claim을 evidence 원문과 대조한다. 표현 불일치는 `revise_report`로
+최대 2회 고치고, 분석 불일치는 같은 window를 1회 다시 분석한다. 그래도 남으면
+`MISMATCH`로, 원문을 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
+`COMPLETED` 종료에는 window report가 하나 이상 있어야 한다.
+
+window report는 합치지 않고 window마다 `IncidentState.report_refs`에 따로 쌓는다.
+`DiagnoseIncident`는 마지막 window의 report를 대표로 HTML에 전달하고, 모든 window의 검증
+불일치를 gap으로 싣는다. Candidate를 prompt에 보이는 방식과 HTML에 보이는 방식은 각
+adapter 안에서 따로 projection한다.
 
 ## 분석 모델
 
@@ -98,8 +101,9 @@ evidence로 후보가 생겼을 때만 `NodeResolver`와 SSH를 통해 읽는다
 Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `DiagnosisReport`는 code가 센
 `observations`와 모델이 쓴 `narrative`를 분리한다. 숫자와 slow-query candidate 값은 code가
 정확히 아는 값이므로 모델에게 옮겨 적게 하지 않는다. Narrative의 주장에는 evidence reference가
-붙고, Main Agent의 final validation은 전체 evidence와 최종 보고서를 대조해 없는 reference,
-evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신, 인과 역전과 모순을 검사한다.
+붙고, Subagent의 검증은 window의 evidence와 보고서를 대조해 없는 reference,
+evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신, 인과 역전과 모순을
+검사하고, 주장이 원문과 맞는지도 확인한다.
 
 모델이 빈 draft를 주거나 report 저장이 실패해도 observation은 전달한다. HTML 파일을 쓸 수
 없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 query 원문과
@@ -171,7 +175,7 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 LLM 호출은 `litellm.completion(num_retries=0)` 경로만 쓴다. 가장 흔한 실패는 429이고, 같은 큰
 prompt를 재시도해도 quota를 회복하지 못하며 token 소비만 증가한다. Gemini free tier의
 분당 입력 token 250,000에 대해 5분 window가 약 513,122 input token을 쓴 실측이 있다.
-추가 window 분석이나 최종 보고서 수정도 추가 token을 소비한다.
+추가 window 분석, 리포트 수정·재분석, 원문 대조 검증도 추가 token을 소비한다.
 
 client는 status와 whitelist된 rate-limit header만 log로 남긴다. response body, request URL,
 `str(exc)`는 key를 포함할 수 있어 기록하지 않는다. retry를 끈 대가로 일시적인 5xx도 자동
@@ -276,11 +280,10 @@ flowchart TD
     M --> O[Elasticsearch<br/>cluster health·node 정보]
     M --> P[SSH node log<br/>문제 노드가 있을 때만]
     M --> Q[분 단위 로그 선별<br/>LLM은 레코드 ID만 선택]
-    Q --> R[Cross-source 분석<br/>Window Report 작성·반환]
-    R --> K
-    K --> T[finalize_report<br/>Window Report 병합]
-    T --> S[validate_final_report<br/>최종 의미적·근거 검증]
-    S --> SF[finish_incident<br/>COMPLETED는 PASSED 필요]
+    Q --> R[Cross-source 분석<br/>Window Report 작성]
+    R --> S[검증 루프<br/>근거 대조·원문 대조·수정·재분석]
+    S --> K
+    K --> SF[finish_incident<br/>COMPLETED는 report 필요]
     SF --> U[HtmlFileReportPublisher]
     U --> V[reports/report-*.html]
     V --> W[메모리 state·artifact 정리]
@@ -295,10 +298,12 @@ flowchart TD
 | Kafka 수신 | JSON에서 event time을 읽어 `SlowlogTrigger`로 변환 | `src/cluster_doctor/adapters/inbound/kafka/consumer.py` |
 | Incident 묶기·대기 | micro-batch, quiet period, bounded queue와 diagnosis worker | `src/cluster_doctor/application/use_cases/slowlog_intake.py` |
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달, 정리 | `src/cluster_doctor/application/use_cases/diagnose_incident.py` |
-| Main Agent | 분석 범위 선택·승인, SubAgent 위임, 최종 보고서 검증·종료 | `src/cluster_doctor/adapters/outbound/deepagents/adapter.py` |
+| Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/adapters/outbound/deepagents/adapter.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/collector.py` |
-| 최종 의미적 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사하는 순수 정책 | `src/cluster_doctor/domain/diagnosis/report_validation.py` |
-| HTML 저장 | 최종 리포트를 `reports/`에 기록 | `src/cluster_doctor/adapters/outbound/reporting/html_file_notifier.py` |
+| 근거 일관성 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사하는 순수 정책 | `src/cluster_doctor/domain/diagnosis/report_validation.py` |
+| 원문 대조 검증 | Claim을 evidence 원문과 대조하고 불일치를 분류 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/pipeline/grounding_validator.py` |
+| 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/adapters/outbound/deepagents/diagnosis/subagent.py` |
+| HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/adapters/outbound/reporting/html_file_notifier.py` |
 
 Kafka를 거치지 않는 수동 실행은 `scripts/run_diagnosis.py`에서
 `RunManualDiagnosis`를 호출한다. 이 경로는 Kafka 수신·micro-batch·정착만 생략하고,

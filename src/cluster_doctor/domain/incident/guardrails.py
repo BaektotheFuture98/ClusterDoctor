@@ -63,12 +63,6 @@ MAX_SUPERVISOR_CYCLES = MAX_ANALYSIS_CALLS + 4
 # 되풀이하면 여기서 끊는다.
 MAX_REJECTED_DECISIONS = 3
 
-# Evidence와 Report가 어긋났을 때 다시 쓰게 하는 횟수. 0이면 검증 결과를
-# 기록만 하고 고치지 않는다는 뜻이고, 2를 넘기면 같은 지적을 되풀이하며
-# 호출만 태우는 것을 실패 모드로 본다.
-MAX_REPORT_REVISIONS = 1
-MAX_FINAL_REPORT_REVISIONS = 1
-
 # 유입이 멎기를 기다리는 예산. 기다리는 동안 분석은 시작조차 되지 않고 큐만
 # 쌓이므로, 1회를 짧게 끊어 매 사이클 유입을 다시 본다.
 MAX_SINGLE_WAIT_SECONDS = 60
@@ -226,12 +220,6 @@ def check_not_duplicate(window: TimeRange, state: IncidentState) -> None:
         raise GuardrailViolation(
             f"{window.start:%H:%M}~{window.end:%H:%M} 구간은 이미 분석했다"
         )
-
-
-def clamp_wait(requested_seconds: float, state: IncidentState) -> float:
-    """실제로 기다릴 시간. 1회 상한과 누적 예산을 함께 적용한다."""
-    remaining = MAX_TOTAL_WAIT_SECONDS - state.total_wait_seconds
-    return max(0.0, min(float(requested_seconds), float(MAX_SINGLE_WAIT_SECONDS), remaining))
 
 
 def clamp_evidence(items: list, limit: int, *, what: str) -> list:
