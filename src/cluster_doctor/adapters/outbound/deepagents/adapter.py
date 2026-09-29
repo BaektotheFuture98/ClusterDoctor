@@ -49,11 +49,9 @@ from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     LAST_RESPONSE,
 )
 from cluster_doctor.adapters.outbound.deepagents.supervisor.tools import (
-    make_finalize_report_tool,
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
     make_propose_analysis_tool,
-    make_validate_final_report_tool,
 )
 from cluster_doctor.application.ports.artifact_store import ArtifactStore
 from cluster_doctor.application.ports.cluster_repository import (
@@ -198,14 +196,7 @@ class _DeepAgentIncidentAnalyzer:
         tools = [
             make_list_candidate_windows_tool(state=state),
             make_propose_analysis_tool(state=state, repository=self._states),
-            make_finalize_report_tool(
-                state=state, repository=self._states, store=self._seams.store
-            ),
             make_finish_incident_tool(state=state, repository=self._states),
-            make_validate_final_report_tool(
-                state=state, repository=self._states, store=self._seams.store,
-                reviser=self._seams.report_writer.revise_report,
-            ),
         ]
         middleware = [
             DelegationGuardrailMiddleware(state=state, repository=self._states)
