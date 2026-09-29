@@ -34,7 +34,6 @@ class IncidentState(BaseModel):
     pending_windows: list[TimeRange] = Field(default_factory=list)
     unresolved_gaps: list[TimeRange] = Field(default_factory=list)
 
-    evidence_refs: list[str] = Field(default_factory=list)
     # 구간별 분석이 낸 검증 완료 보고서 참조. 위임이 끝날 때마다 순서대로
     # 쌓이고, 구간마다 따로 보관한다.
     report_refs: list[str] = Field(default_factory=list)
@@ -45,7 +44,6 @@ class IncidentState(BaseModel):
 
     latest_analysis_status: LogAnalysisStatus | None = None
     latest_verification_status: VerificationStatus | None = None
-    latest_analysis_summary: str = ""
 
     analysis_call_count: int = 0
     # 지금까지 분석한 **분 수**. 예산의 단위다 — 비용 동인이 호출이 아니라

@@ -89,10 +89,7 @@ from cluster_doctor.adapters.outbound.deepagents.runtime.harness import (
 from cluster_doctor.adapters.outbound.deepagents.supervisor.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
-    CLUSTER,
     DIAGNOSIS_SUBAGENT,
-    INCIDENT_ID,
-    LAST_RESPONSE,
     IncidentAgentState,
 )
 from cluster_doctor.application.ports.incident_state_repository import (
@@ -200,8 +197,6 @@ def build_diagnosis_subagent(
                 ADMITTED_WINDOW: None,
             }
 
-        _warn_on_identity_mismatch(agent_state, incident)
-
         goal = _analysis_goal(agent_state)
         request = LogAnalysisRequest(
             incident_id=incident.incident_id,
@@ -239,7 +234,6 @@ def build_diagnosis_subagent(
             "messages": [AIMessage(content=_message_text(result))],
             "structured_response": result,
             ADMITTED_WINDOW: None,
-            LAST_RESPONSE: result.model_dump(mode="json"),
         }
 
     return CompiledSubAgent(
@@ -284,7 +278,6 @@ def _run_validation_loop(
     revisions = 0
 
     for round_no in range(_MAX_VALIDATION_ROUNDS + 1):
-        session.validation_rounds += 1
         evidence = seams.store.list_evidence(incident_id)
         candidate_ids = {
             item.candidate_id
@@ -292,7 +285,6 @@ def _run_validation_loop(
         }
         deterministic = validate_report(report, evidence, candidate_ids=candidate_ids)
         found = grounding.validate(report, incident_id)
-        session.grounding_issues = found
 
         analysis = [i.description for i in found if i.kind is MismatchKind.ANALYSIS_MISMATCH]
         expression = [i.description for i in found if i.kind is MismatchKind.REPORT_MISMATCH]
@@ -407,7 +399,6 @@ def _assemble_response(
         unresolved_gaps=_unresolved_gaps(seams, delegation),
         report_ref=delegation.report_ref,
         verification_status=_verification_of(delegation),
-        evidence_refs=tuple(item.evidence_id for item in delegation.evidence),
         gaps=tuple(run_state.gaps),
         analysis_summary=(
             seams.report_writer.summary_for_supervisor(report, run_state)
@@ -432,12 +423,8 @@ def _apply_response(
     """
     state.latest_analysis_status = response.status
     state.latest_verification_status = response.verification_status
-    state.latest_analysis_summary = response.analysis_summary
     if response.report_ref:
         state.report_refs.append(response.report_ref)
-    for ref in response.evidence_refs:
-        if ref not in state.evidence_refs:
-            state.evidence_refs.append(ref)
 
     for gap in response.gaps:
         if gap not in state.accumulated_gaps:
@@ -521,21 +508,3 @@ def _analysis_goal(agent_state: dict[str, Any]) -> str:
         if isinstance(text, str) and text.strip():
             return text.strip()
     return ""
-
-
-def _warn_on_identity_mismatch(agent_state: dict[str, Any], incident: Incident) -> None:
-    """graph state의 Incident와 클로저가 붙잡은 Incident가 다르면 남긴다."""
-    graph_id = agent_state.get(INCIDENT_ID)
-    if graph_id and graph_id != incident.incident_id:
-        _logger.warning(
-            "[diagnosis] state의 incident_id %s가 위임 대상 %s와 다르다",
-            graph_id,
-            incident.incident_id,
-        )
-    graph_cluster = agent_state.get(CLUSTER)
-    if graph_cluster and graph_cluster != incident.cluster:
-        _logger.warning(
-            "[diagnosis] state의 cluster %s가 위임 대상 %s와 다르다",
-            graph_cluster,
-            incident.cluster,
-        )
