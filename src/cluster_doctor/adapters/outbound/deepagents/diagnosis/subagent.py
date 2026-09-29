@@ -52,6 +52,7 @@ DeepAgent다. 모델이 자기 루프를 도는 것이 원래 설계와 어긋�
 from __future__ import annotations
 
 import logging
+from enum import StrEnum
 from typing import Any
 
 from deepagents import CompiledSubAgent, create_deep_agent
@@ -95,7 +96,7 @@ from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
 from cluster_doctor.domain.diagnosis.kst import parse_kst
-from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus
+from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
 from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
 from cluster_doctor.domain.incident.models import Incident
 from cluster_doctor.domain.incident.state import IncidentState
@@ -147,6 +148,23 @@ class DiagnosisHandback(BaseModel):
     unresolved_gaps: list[_WindowRef] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     analysis_summary: str = ""
+
+
+class DiagnosisStatus(StrEnum):
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class DiagnosisResult(BaseModel, frozen=True):
+    """Diagnosis SubAgent가 Main Agent에 반환하는 최종 결과.
+
+    한 TimeRange의 검증 완료 Report 참조와 상태만 노출한다.
+    """
+
+    status: DiagnosisStatus
+    report_ref: str | None
+    verification_status: VerificationStatus
+    failure_reason: str | None = None
 
 
 def build_diagnosis_subagent(
