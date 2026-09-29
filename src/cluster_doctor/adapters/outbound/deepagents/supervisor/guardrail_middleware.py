@@ -39,7 +39,6 @@ from cluster_doctor.application.ports.incident_state_repository import (
     IncidentStateRepository,
 )
 from cluster_doctor.domain.diagnosis.kst import format_kst, parse_kst
-from cluster_doctor.domain.diagnosis.report import VerificationStatus
 from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
 from cluster_doctor.domain.incident.guardrails import (
     MAX_ANALYSIS_CALLS,
@@ -104,10 +103,10 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
                 "[guardrail] 연속 거절 %d회 — Incident를 닫는다",
                 current.rejected_decision_count,
             )
-            # 런타임 종료도 Main의 최종 검증을 통과해야 완료로 기록한다.
+            # 런타임 종료도 구간별 리포트가 있어야 완료로 기록한다.
             current.status = (
                 IncidentStatus.COMPLETED
-                if current.final_verification_status is VerificationStatus.PASSED
+                if current.report_refs
                 else IncidentStatus.FAILED
             )
             current.closing_reason = (
