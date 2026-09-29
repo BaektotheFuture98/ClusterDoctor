@@ -1,13 +1,16 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.adapters.outbound.persistence.in_memory_artifact_store import (
-    InMemoryArtifactStore,
+from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.basemodel.report import (
+    LogAnalysisReport,
+    VerificationStatus,
 )
-from cluster_doctor.adapters.outbound.reporting.html_file_notifier import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
+    to_incident_analysis_report,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
     HtmlFileReportPublisher,
 )
-from cluster_doctor.application.output_mapping import to_incident_analysis_report
-from cluster_doctor.domain.analysis.report import LogAnalysisReport, VerificationStatus
 
 _T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
 _T1 = datetime(2024, 1, 1, 13, 10, tzinfo=timezone.utc)
@@ -25,19 +28,14 @@ def _report(summary: str, start, end) -> LogAnalysisReport:
 
 
 async def test_last_verified_report_is_published_as_html(tmp_path):
-    store = InMemoryArtifactStore()
-    refs = [
-        store.put_report("INC-1", _report("cpu spike in window A", _T0, _T1)),
-        store.put_report("INC-1", _report("query timeout in window B", _T1, _T2)),
+    # 여러 window의 리포트가 IncidentState.window_results에 순서대로 쌓이고,
+    # 대표로는 마지막 window의 리포트를 쓴다 — ArtifactStore 없이도 같은 동작이다.
+    reports = [
+        _report("cpu spike in window A", _T0, _T1),
+        _report("query timeout in window B", _T1, _T2),
     ]
-
-    reports = [store.get_report(ref) for ref in refs]
     representative = reports[-1]
-    rendered = to_incident_analysis_report(
-        representative,
-        store.get_observations("INC-1"),
-        store.list_evidence("INC-1"),
-    )
+    rendered = to_incident_analysis_report(representative, Observations(), [])
 
     publication = await HtmlFileReportPublisher(output_dir=tmp_path).publish(rendered)
 

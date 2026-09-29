@@ -35,12 +35,12 @@ from _timeargs import KST
 # import 시점에 configure_logging()이 돌아 stderr와 logs/app.log에 로그가 붙는다.
 import cluster_doctor.main  # noqa: F401
 
-from cluster_doctor.bootstrap.dependencies import (
-    build_manual_analysis,
-    close_clickhouse_client,
+from cluster_doctor.bootstrap.configuration.settings import get_settings
+from cluster_doctor.bootstrap.dependency.wiring import build_manual_analysis
+from cluster_doctor.bootstrap.lifecycle.app_lifecycle import close_clickhouse_client
+from cluster_doctor.incident_orchestrator_agent.service.manual_analysis.manual_analysis import (
+    RunManualAnalysis,
 )
-from cluster_doctor.config.settings import get_settings
-from cluster_doctor.application.use_cases.manual_analysis import RunManualAnalysis
 
 
 # ── LLM 호출 측정 ──────────────────────────────────────────────────
