@@ -18,19 +18,31 @@ from cluster_doctor.domain.diagnosis.validation_types import (
     MismatchKind,
     ValidationIssue,
 )
+from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 
 _logger = logging.getLogger(__name__)
 
 # 원문 한 건이 프롬프트에서 차지할 수 있는 최대 길이. 원문 전량을 실으면
 # Claim 수만큼 비용이 곱해진다.
 _MAX_RAW_CHARS = 2000
+_MAX_TOKENS = 4096
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 
 
+def _unverifiable(description: str) -> ValidationIssue:
+    # 검증을 돌리지 못한 것은 통과가 아니다. 빈 목록으로 돌려주면 대조하지
+    # 못한 리포트가 PASSED로 나간다.
+    return ValidationIssue(
+        kind=MismatchKind.UNVERIFIABLE,
+        description=description,
+        affected_window=None,
+    )
+
+
 class GroundingValidator:
     def __init__(
-        self, *, store: ArtifactStore, call_llm: Callable[[str], str]
+        self, *, store: ArtifactStore, call_llm: Callable[..., str]
     ) -> None:
         self._store = store
         self._call_llm = call_llm
@@ -43,7 +55,12 @@ class GroundingValidator:
             return []
         evidence = self._store.get_evidence(incident_id, tuple(report.evidence_refs))
         prompt = self._build_prompt(claims, {item.evidence_id: item for item in evidence})
-        return self._parse_response(self._call_llm(prompt))
+        try:
+            text = self._call_llm([{"role": "user", "content": prompt}], _MAX_TOKENS)
+        except (LlmApiError, LlmResponseError) as exc:
+            _logger.warning("[grounding] 원문 대조 호출이 실패했다: %s", exc)
+            return [_unverifiable(f"원문 대조 호출이 실패했다: {exc}")]
+        return self._parse_response(text)
 
     @staticmethod
     def _extract_claims(report: LogAnalysisReport) -> list[dict]:
@@ -97,9 +114,9 @@ class GroundingValidator:
             items = json.loads(_FENCE.sub("", response.strip()))
         except json.JSONDecodeError:
             _logger.warning("[grounding] 검증 응답을 JSON으로 읽지 못했다")
-            return []
+            return [_unverifiable("원문 대조 응답을 읽지 못했다")]
         if not isinstance(items, list):
-            return []
+            return [_unverifiable("원문 대조 응답이 배열이 아니다")]
 
         issues: list[ValidationIssue] = []
         for item in items:

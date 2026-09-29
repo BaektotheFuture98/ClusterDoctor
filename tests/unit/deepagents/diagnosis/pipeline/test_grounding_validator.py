@@ -7,6 +7,7 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.grounding_va
 )
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport, TimelineEvent
 from cluster_doctor.domain.diagnosis.validation_types import MismatchKind
+from cluster_doctor.exceptions import LlmApiError
 
 _T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
 
@@ -71,6 +72,15 @@ def test_code_fenced_json_is_parsed():
     assert issues[0].kind == MismatchKind.REPORT_MISMATCH
 
 
+def test_llm_is_called_with_messages_and_max_tokens():
+    validator, call_llm = _make_validator("[]")
+    validator.validate(_make_report(), "INC-1")
+    messages, max_tokens = call_llm.call_args.args
+    assert messages[0]["role"] == "user"
+    assert "cpu_usage=10%" in messages[0]["content"]
+    assert isinstance(max_tokens, int)
+
+
 def test_no_claims_skips_llm():
     validator, call_llm = _make_validator("[]")
     empty = LogAnalysisReport(incident_id="INC-1", analyzed_from=_T0, analyzed_to=_T0)
@@ -78,6 +88,14 @@ def test_no_claims_skips_llm():
     call_llm.assert_not_called()
 
 
-def test_unparseable_response_returns_no_issue():
+def test_unparseable_response_is_unverifiable_not_passed():
     validator, _ = _make_validator("not json")
-    assert validator.validate(_make_report(), "INC-1") == []
+    issues = validator.validate(_make_report(), "INC-1")
+    assert [i.kind for i in issues] == [MismatchKind.UNVERIFIABLE]
+
+
+def test_llm_failure_is_unverifiable_not_passed():
+    validator, call_llm = _make_validator("[]")
+    call_llm.side_effect = LlmApiError("boom")
+    issues = validator.validate(_make_report(), "INC-1")
+    assert [i.kind for i in issues] == [MismatchKind.UNVERIFIABLE]
