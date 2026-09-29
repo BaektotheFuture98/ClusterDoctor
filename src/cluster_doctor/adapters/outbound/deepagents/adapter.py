@@ -227,13 +227,10 @@ class _DeepAgentIncidentAnalyzer:
         """
         current = self._states.get(incident.incident_id) or state
 
-        if current.status is IncidentStatus.COMPLETED and (
-            not current.final_report_ref
-            or current.final_verification_status != "PASSED"
-        ):
+        if current.status is IncidentStatus.COMPLETED and not current.report_refs:
             return IncidentAnalysisResult(
                 status=IncidentStatus.FAILED,
-                reason="최종 보고서 검증 없이 완료 상태가 기록됐다",
+                reason="구간별 리포트 없이 완료 상태가 기록됐다",
                 failed=True,
             )
         if current.status.is_terminal():

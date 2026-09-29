@@ -59,7 +59,7 @@ from deepagents import CompiledSubAgent, create_deep_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.contracts import (
     LogAnalysisRequest,
@@ -120,44 +120,6 @@ _SUBAGENT_DESCRIPTION = (
     "써 둔 값을 쓰므로 description에 시각을 적어도 무시된다. description에는 "
     "'왜 이 구간을 보는가'만 적는다."
 )
-
-
-class _WindowRef(BaseModel):
-    """구간 하나를 ISO 문자열 쌍으로.
-
-    ``TimeRange``를 그대로 싣지 않는 이유는 frozen dataclass라 JSON 직렬화
-    경로를 그냥 통과하지 못하고, ``task`` 도구가 structured_response를
-    JSON으로 찍어 ToolMessage에 넣기 때문이다.
-    """
-
-    start: str
-    end: str
-
-    @classmethod
-    def of(cls, window: TimeRange) -> _WindowRef:
-        return cls(start=window.start.isoformat(), end=window.end.isoformat())
-
-
-class DiagnosisHandback(BaseModel):
-    """SubAgent → Main DeepAgent. **이 파일에서 가장 중요한 타입이다.**
-
-    담는 것은 참조와 개수와 요약뿐이다. evidence 본문도, 로그 한 줄도, 리포트
-    전문도 여기 없다 — 전문이 필요하면 ``report_ref``로 ArtifactStore에서 꺼낸다.
-    필드를 하나 더 늘리고 싶을 때마다 그것이 참조인지 원문인지 먼저 묻는다.
-
-    **모델이 채우지 않는다.** 코드가 실제로 일어난 일에서 조립한다. Main Agent가
-    이 숫자로 예산과 종료를 판단하므로, 지어낼 수 있는 자리를 두면 안 된다.
-    """
-
-    status: str
-    analyzed_window: _WindowRef
-    report_ref: str | None = None
-    verification_status: str
-    evidence_ref_count: int = 0
-    suggested_windows: list[_WindowRef] = Field(default_factory=list)
-    unresolved_gaps: list[_WindowRef] = Field(default_factory=list)
-    gaps: list[str] = Field(default_factory=list)
-    analysis_summary: str = ""
 
 
 class DiagnosisStatus(StrEnum):
@@ -529,20 +491,6 @@ def _summary_without_report(delegation: _DiagnosisSession) -> str:
     if delegation.run_state.gaps:
         parts.append(f"확보하지 못한 근거 {len(delegation.run_state.gaps)}건")
     return " / ".join(parts)
-
-
-def _to_handback(response: LogAnalysisResponse) -> DiagnosisHandback:
-    return DiagnosisHandback(
-        status=str(response.status),
-        analyzed_window=_WindowRef.of(response.analyzed_window),
-        report_ref=response.report_ref,
-        verification_status=str(response.verification_status),
-        evidence_ref_count=len(response.evidence_refs),
-        suggested_windows=[_WindowRef.of(w) for w in response.suggested_windows],
-        unresolved_gaps=[_WindowRef.of(w) for w in response.unresolved_gaps],
-        gaps=list(response.gaps),
-        analysis_summary=response.analysis_summary,
-    )
 
 
 def _message_text(result: DiagnosisResult) -> str:
