@@ -66,6 +66,9 @@ from cluster_doctor.adapters.outbound.deepagents.diagnosis.contracts import (
     LogAnalysisResponse,
 )
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.graph import _drive
+from cluster_doctor.adapters.outbound.deepagents.diagnosis.pipeline.grounding_validator import (
+    GroundingValidator,
+)
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.prompt_subagent import (
     build_subagent_prompt,
 )
@@ -97,16 +100,23 @@ from cluster_doctor.application.ports.incident_state_repository import (
 )
 from cluster_doctor.domain.diagnosis.kst import parse_kst
 from cluster_doctor.domain.diagnosis.report import LogAnalysisStatus, VerificationStatus
+from cluster_doctor.domain.diagnosis.report_validation import validate_report
 from cluster_doctor.domain.diagnosis.time_range import InvalidTimeRangeError, TimeRange
+from cluster_doctor.domain.diagnosis.validation_types import MismatchKind
 from cluster_doctor.domain.incident.models import Incident
 from cluster_doctor.domain.incident.state import IncidentState
 from cluster_doctor.domain.incident.window_planner import plan_new_windows
 
 _logger = logging.getLogger(__name__)
 
+# 검증이 지적을 내놓았을 때 리포트를 고치고 다시 검증하는 횟수.
+_MAX_VALIDATION_ROUNDS = 2
+# 분석 자체가 원문과 어긋났을 때 같은 구간을 처음부터 다시 분석하는 횟수.
+_MAX_REANALYSIS_ATTEMPTS = 1
+
 _SUBAGENT_DESCRIPTION = (
-    "승인된 analysis window 하나를 조사해 근거 수집·원인 분석·미검증 리포트 작성까지 "
-    "끝내고 구조화된 결과를 돌려준다. 구간은 propose_analysis가 승인받아 state에 "
+    "승인된 analysis window 하나를 조사해 근거 수집·원인 분석·리포트 작성·원문 대조 "
+    "검증까지 끝내고 검증된 리포트의 참조를 돌려준다. 구간은 propose_analysis가 승인받아 state에 "
     "써 둔 값을 쓰므로 description에 시각을 적어도 무시된다. description에는 "
     "'왜 이 구간을 보는가'만 적는다."
 )
@@ -158,13 +168,16 @@ class DiagnosisStatus(StrEnum):
 class DiagnosisResult(BaseModel, frozen=True):
     """Diagnosis SubAgent가 Main Agent에 반환하는 최종 결과.
 
-    한 TimeRange의 검증 완료 Report 참조와 상태만 노출한다.
+    한 TimeRange의 검증 완료 Report 참조와 상태만 노출한다. ``analysis_summary``는
+    코드가 리포트에서 뽑은 한두 문단이며, Main Agent가 충분성을 판단하는 유일한
+    글이다.
     """
 
     status: DiagnosisStatus
     report_ref: str | None
     verification_status: VerificationStatus
     failure_reason: str | None = None
+    analysis_summary: str = ""
 
 
 def build_diagnosis_subagent(
@@ -255,15 +268,16 @@ def build_diagnosis_subagent(
 
         _drive(graph, agent_state, delegation)
 
+        result = _run_validation_loop(session=delegation, seams=seams)
         response = _assemble_response(seams, delegation, request)
         _apply_response(state, response, repository)
 
-        handback = _to_handback(response)
+        result = result.model_copy(update={"analysis_summary": response.analysis_summary})
         return {
-            "messages": [AIMessage(content=_message_text(handback))],
-            "structured_response": handback,
+            "messages": [AIMessage(content=_message_text(result))],
+            "structured_response": result,
             ADMITTED_WINDOW: None,
-            LAST_RESPONSE: handback.model_dump(mode="json"),
+            LAST_RESPONSE: result.model_dump(mode="json"),
         }
 
     return CompiledSubAgent(
@@ -271,6 +285,135 @@ def build_diagnosis_subagent(
         description=_SUBAGENT_DESCRIPTION,
         runnable=RunnableLambda(_run, name=f"{DIAGNOSIS_SUBAGENT}_subagent"),
     )
+
+
+def _run_validation_loop(
+    *, session: _DiagnosisSession, seams: DiagnosisSeams
+) -> DiagnosisResult:
+    """리포트를 근거와 원문에 대조하고, 어긋나면 고쳐서 다시 대조한다.
+
+    Deterministic 검증(``validate_report``)과 원문 대조(``GroundingValidator``)를
+    함께 돌린다. 지적의 종류가 처방을 정한다.
+
+    * 분석 불일치 → 같은 구간을 다시 분석한다(``_MAX_REANALYSIS_ATTEMPTS``회).
+      그래도 남으면 MISMATCH로 내보낸다. 표현만 고쳐서는 틀린 분석이 낫지 않는다.
+    * 표현 불일치·Deterministic 지적 → ``revise_report``로 고친다
+      (``_MAX_VALIDATION_ROUNDS``회).
+    * 검증 불가 → 고칠 수 없다. 통과도 아니므로 NOT_VERIFIED로 남긴다.
+
+    마지막 수정본도 다시 검증한 뒤에 확정한다. 검증하지 않은 수정본에 PASSED를
+    붙이지 않기 위해서다.
+
+    LLM 도구가 아니다. 모델이 검증을 건너뛰거나 횟수를 늘릴 수 없어야 한다.
+    """
+    report = session.report
+    if report is None:
+        return DiagnosisResult(
+            status=DiagnosisStatus.FAILED,
+            report_ref=None,
+            verification_status=VerificationStatus.NOT_VERIFIED,
+            failure_reason=_summary_without_report(session),
+        )
+
+    incident_id = session.request.incident_id
+    grounding = GroundingValidator(store=seams.store, call_llm=seams.call_llm)
+    blocking: list[str] = []
+    unverifiable: list[str] = []
+    revisions = 0
+
+    for round_no in range(_MAX_VALIDATION_ROUNDS + 1):
+        session.validation_rounds += 1
+        evidence = seams.store.list_evidence(incident_id)
+        candidate_ids = {
+            item.candidate_id
+            for item in seams.store.get_observations(incident_id).candidates
+        }
+        deterministic = validate_report(report, evidence, candidate_ids=candidate_ids)
+        found = grounding.validate(report, incident_id)
+        session.grounding_issues = found
+
+        analysis = [i.description for i in found if i.kind is MismatchKind.ANALYSIS_MISMATCH]
+        expression = [i.description for i in found if i.kind is MismatchKind.REPORT_MISMATCH]
+        unverifiable = [i.description for i in found if i.kind is MismatchKind.UNVERIFIABLE]
+        blocking = [*deterministic.issues, *analysis, *expression]
+
+        if not blocking or round_no == _MAX_VALIDATION_ROUNDS:
+            break
+
+        if analysis:
+            fresh = None
+            if session.reanalysis_count < _MAX_REANALYSIS_ATTEMPTS:
+                session.reanalysis_count += 1
+                fresh = _reanalyze_window(
+                    seams=seams, session=session, focus="; ".join(analysis)
+                )
+            if fresh is None:
+                break
+            _adopt(session, fresh)
+            report = session.report
+            continue
+
+        revised = seams.report_writer.revise_report(report, tuple(blocking), evidence)
+        if revised is None:
+            break
+        revisions += 1
+        report = revised
+
+    if blocking:
+        status, issues = VerificationStatus.MISMATCH, blocking
+    elif unverifiable:
+        status, issues = VerificationStatus.NOT_VERIFIED, unverifiable
+    else:
+        status, issues = VerificationStatus.PASSED, []
+
+    final = report.model_copy(
+        update={
+            "verification_status": status,
+            "verification_issues": tuple(issues),
+            "revision_count": revisions,
+        }
+    )
+    session.report = final
+    session.report_ref = seams.store.put_report(incident_id, final)
+    return DiagnosisResult(
+        status=DiagnosisStatus.COMPLETED,
+        report_ref=session.report_ref,
+        verification_status=status,
+        failure_reason="; ".join(issues) or None,
+    )
+
+
+def _reanalyze_window(
+    *, seams: DiagnosisSeams, session: _DiagnosisSession, focus: str
+) -> _DiagnosisSession | None:
+    """같은 구간을 새 위임 상태에서 근거 수집부터 다시 돌린다.
+
+    캐시를 이어받지 않는다. ``collect_evidence``는 위임당 한 번만 도는 도구라
+    이전 세션을 재사용하면 같은 결과가 돌아온다. 순서가 고정된 두 단계이므로
+    모델 루프 없이 도구를 직접 부른다.
+    """
+    goal = f"{session.request.analysis_goal}\n[재분석] 이전 리포트가 원문과 어긋났다: {focus}"
+    request = session.request.model_copy(update={"analysis_goal": goal.strip()})
+    fresh = _DiagnosisSession(session.window, request)
+    tools = {item.name: item for item in _build_tools(seams, fresh)}
+    try:
+        tools["collect_evidence"].invoke({})
+        tools["write_report"].invoke({"focus": request.analysis_goal})
+    except Exception:
+        _logger.exception("[diagnosis] 구간 재분석이 실패했다")
+        return None
+    return fresh if fresh.report is not None else None
+
+
+def _adopt(session: _DiagnosisSession, fresh: _DiagnosisSession) -> None:
+    """재분석 결과를 위임 상태로 옮긴다. 응답 조립이 이 상태를 읽는다."""
+    session.collected = fresh.collected
+    session.evidence = fresh.evidence
+    session.run_state = fresh.run_state
+    session.draft = fresh.draft
+    session.report = fresh.report
+    session.report_ref = fresh.report_ref
+    session.report_attempts += fresh.report_attempts
 
 
 def _assemble_response(
@@ -402,21 +545,17 @@ def _to_handback(response: LogAnalysisResponse) -> DiagnosisHandback:
     )
 
 
-def _message_text(handback: DiagnosisHandback) -> str:
+def _message_text(result: DiagnosisResult) -> str:
     """``messages``에 실을 한 줄.
 
     ``structured_response``가 있으면 부모가 보는 것은 그쪽이므로 이 문장은
     대체 경로다. 그래도 결정적으로 만든다 — 여기서 원문을 붙이면 대체 경로가
     열릴 때마다 Context 오염이 따라온다.
     """
-    head = (
-        f"분석 종료 status={handback.status} "
-        f"verification={handback.verification_status} "
-        f"evidence={handback.evidence_ref_count}건"
-    )
-    if handback.report_ref:
-        head += f" report_ref={handback.report_ref}"
-    return f"{head}\n{handback.analysis_summary}".strip()
+    head = f"분석 종료 status={result.status} verification={result.verification_status}"
+    if result.report_ref:
+        head += f" report_ref={result.report_ref}"
+    return f"{head}\n{result.analysis_summary}".strip()
 
 
 def _analysis_goal(agent_state: dict[str, Any]) -> str:

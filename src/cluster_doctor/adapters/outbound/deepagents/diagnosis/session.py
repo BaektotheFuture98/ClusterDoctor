@@ -21,6 +21,7 @@ from cluster_doctor.domain.diagnosis.log_entries import LogEntry, NodeLogEntry
 from cluster_doctor.domain.diagnosis.evidence import Evidence
 from cluster_doctor.domain.diagnosis.time_range import TimeRange
 from cluster_doctor.domain.diagnosis.report import LogAnalysisReport
+from cluster_doctor.domain.diagnosis.validation_types import ValidationIssue
 from cluster_doctor.adapters.outbound.deepagents.diagnosis.contracts import (
     LogAnalysisRequest,
 )
@@ -79,6 +80,9 @@ class _DiagnosisSession:
         self.report_attempts = 0
         self.insufficient_reason = ""
         self.suggested: list[TimeRange] = []
+        self.validation_rounds = 0
+        self.reanalysis_count = 0
+        self.grounding_issues: list[ValidationIssue] = []
 
     @property
     def collected_once(self) -> bool:

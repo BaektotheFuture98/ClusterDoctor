@@ -130,7 +130,7 @@ SubAgent는 구간 하나를 끝까지 처리해 **검증을 마친 리포트** 
 4. 확인: list_candidate_windows로 남은 후보와 예산을 본다.
 5. 제안: propose_analysis를 부르고, **응답에 적힌 승인 구간을 확인한다.**
 6. 위임: 승인됐으면 <<task>>로 넘긴다.
-7. 반영: SubAgent의 응답을 읽는다. JSON 하나로 오고, 읽을 필드는 넷이다.
+7. 반영: SubAgent의 응답을 읽는다. JSON 하나로 오고, 읽을 필드는 다섯이다.
 
    - status
      completed  이 구간의 검증 절차를 마치고 리포트를 남겼다.
@@ -142,6 +142,10 @@ SubAgent는 구간 하나를 끝까지 처리해 **검증을 마친 리포트** 
      NOT_VERIFIED 리포트가 없다.
    - report_ref      없으면 이번 위임은 리포트를 남기지 못했다.
    - failure_reason  실패하거나 MISMATCH일 때의 사유.
+   - analysis_summary  그 구간 리포트의 요약. 충분성 판단은 이 글로 한다.
+
+   구간 밖을 봐야 한다는 SubAgent의 제안은 응답에 오지 않는다.
+   list_candidate_windows의 후보로 반영되니 거기서 고른다.
 
    구간마다 리포트는 따로 보관되고 합쳐지지 않는다. MISMATCH 리포트는
    신뢰도가 낮다는 뜻이므로, 충분성을 판단할 때 그 구간을 근거로 쳐도 되는지
