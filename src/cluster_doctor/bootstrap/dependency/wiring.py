@@ -37,7 +37,6 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 )
 from cluster_doctor.kafka_consumer.consumer.kafka.consumer import KafkaConsumerAdapter
 from cluster_doctor.kafka_consumer.trigger_settling.service.intake import SlowlogIntake
-from cluster_doctor.kafka_consumer.trigger_settling.service.slowlog_handler import SlowlogHandler
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
@@ -149,7 +148,7 @@ def build_manual_analysis(s: Settings | None = None) -> RunManualAnalysis:
     )
 
 def build_kafka_consumer(
-    intake: SlowlogHandler, s: Settings | None = None
+    intake: SlowlogIntake, s: Settings | None = None
 ) -> KafkaConsumerAdapter:
     if s is None:
         s = get_settings()

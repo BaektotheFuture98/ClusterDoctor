@@ -77,4 +77,4 @@ Main Agent는 다음 구간과 목표를 고르고 코드 guardrail이 범위·�
 
 BaseModel은 구조화 LLM 응답 스키마, 직렬화, 필드 기본값, 기존 변환/검증 호출에 사용된다. 특정 모듈에 있다는 이유만으로 일괄 dataclass 변환하지 않는다. dataclass는 이미 프레임워크 검증이 필요 없는 값에 사용하고 TypedDict는 그래프 상태 계약에 사용한다. 이번 리팩터링은 기존 타입 형태와 동작을 유지했다 — 파일 위치와 의존 방향만 실행 주체 중심으로 재배치했다.
 
-`IncidentAnalyzer`, `NodeResolver`, `SlowlogHandler`의 Protocol은 구조적 계약이다. `LogRepository`, `ClusterRepository`, `NodeLogFetcher`, `ReportPublisher`의 ABC는 기존 상속 계약이다. 두 형태 모두 실행 경계를 표현하므로 이름이나 모양의 통일만을 위해 강제 변환하지 않는다. `IncidentStateRepository`와 `ArtifactStore`는 제거했다 — `IncidentState`/`AnalysisSession`이 데이터를 직접 소유하면서 그 경계가 필요 없어졌다.
+`IncidentAnalyzer`, `NodeResolver`의 Protocol은 구조적 계약이다. `LogRepository`, `ClusterRepository`, `NodeLogFetcher`, `ReportPublisher`의 ABC는 기존 상속 계약이다. 두 형태 모두 실행 경계를 표현하므로 이름이나 모양의 통일만을 위해 강제 변환하지 않는다. `IncidentStateRepository`와 `ArtifactStore`는 제거했다 — `IncidentState`/`AnalysisSession`이 데이터를 직접 소유하면서 그 경계가 필요 없어졌다.
