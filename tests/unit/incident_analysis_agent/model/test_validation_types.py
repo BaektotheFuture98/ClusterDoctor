@@ -1,6 +1,6 @@
 import pytest
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.validation_types import (
+from cluster_doctor.incident_analysis_agent.model.validation import (
     VerificationIssue,
     VerificationIssueType,
 )

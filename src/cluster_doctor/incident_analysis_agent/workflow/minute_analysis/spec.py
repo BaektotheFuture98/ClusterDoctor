@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
     MAX_EVIDENCE_PER_SOURCE,
 )

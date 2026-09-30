@@ -15,7 +15,7 @@ from typing import Protocol, runtime_checkable
 
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.resolved_node import ResolvedNode
+from cluster_doctor.incident_analysis_agent.model.resolved_node import ResolvedNode
 
 _logger = logging.getLogger(__name__)
 

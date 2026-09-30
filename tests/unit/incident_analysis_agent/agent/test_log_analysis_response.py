@@ -1,10 +1,10 @@
 import pytest
 
-from cluster_doctor.incident_analysis_agent.agent.contracts import (
+from cluster_doctor.incident_analysis_agent.model.analysis_contract import (
     AnalysisStatus,
     LogAnalysisResponse,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import VerificationStatus
+from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
 
 
 def test_completed_result():

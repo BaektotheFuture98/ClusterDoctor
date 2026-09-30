@@ -3,15 +3,15 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from cluster_doctor.exceptions import LlmApiError
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import (
+from cluster_doctor.incident_analysis_agent.model.evidence import (
     Evidence,
     EvidenceSource,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import (
+from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     TimelineEvent,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.validation_types import (
+from cluster_doctor.incident_analysis_agent.model.validation import (
     VerificationIssueType,
 )
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import (

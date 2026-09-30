@@ -37,28 +37,26 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolv
     NodeResolver,
 )
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.kst import KST
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import (
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
     MAX_EVIDENCE_TOTAL,
     clamp_evidence,
     truncate_raw,
 )
 from cluster_doctor.incident_analysis_agent.service.node_investigation import node_investigation
-from cluster_doctor.incident_analysis_agent.model.state.analysis_session import AnalysisRunState
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
+from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import run_analysis
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     AnalysisResult,
-    run_analysis,
-)
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
     MinuteBucket,
     group_into_buckets,
 )
@@ -80,11 +78,10 @@ def _shift_ids(records: list, start: int) -> list:
 class CollectedEvidence:
     """한 구간의 수집 실행이 반환하는 근거 묶음과 조사 진행 정보.
 
-    단일 Evidence와 달리 마스터 근거·조사 노드·실패한 분을 함께 전달한다.
+    단일 Evidence와 달리 조사 노드·실패한 분을 함께 전달한다.
     """
 
     evidence: list[Evidence] = field(default_factory=list)
-    master_evidence: list[Evidence] = field(default_factory=list)
     investigated_nodes: list[str] = field(default_factory=list)
     # 선별이 실패해 근거가 비어 있는 분. 호출자가 unresolved gap으로 올린다.
     failed_minutes: set = field(default_factory=set)
@@ -118,7 +115,7 @@ class EvidenceCollector:
         self._failed_minutes: set = set()
 
     # ── 수집 ─────────────────────────────────────────────────────────
-    def collect(self, window: TimeRange, state: AnalysisRunState) -> CollectedEvidence:
+    def collect(self, window: TimeRange, state: ObservationBuilder) -> CollectedEvidence:
         collected = CollectedEvidence()
         self._failed_minutes = set()
 
@@ -135,7 +132,6 @@ class EvidenceCollector:
         collected.evidence.extend(self._node_metric_evidence(metric_entries))
 
         master = self._collect_master(window, state)
-        collected.master_evidence = master
         collected.evidence.extend(master)
 
         investigation = self._investigate_nodes(master, window, state)
@@ -162,7 +158,7 @@ class EvidenceCollector:
 
     # ── 개별 소스 ────────────────────────────────────────────────────
     def _fetch_and_bucket(
-        self, window: TimeRange, state: AnalysisRunState
+        self, window: TimeRange, state: ObservationBuilder
     ) -> tuple[list[MinuteBucket], list[MinuteBucket], list[NodeMetricEntry]]:
         """분마다 조회 → 즉시 datasource별 버킷으로 변환. LogEntry는 분 단위로 버린다.
 
@@ -223,7 +219,7 @@ class EvidenceCollector:
             thresholds=self._metric_thresholds,
         )
 
-    def _run_analysis(self, spec, buckets, state: AnalysisRunState) -> AnalysisResult:
+    def _run_analysis(self, spec, buckets, state: ObservationBuilder) -> AnalysisResult:
         """분 단위 선별 하나를 돌리고 실패를 gap으로 남긴다."""
         try:
             result = run_analysis(
@@ -254,7 +250,7 @@ class EvidenceCollector:
             )
         return result
 
-    def _collect_cluster_health(self, state: AnalysisRunState) -> list[Evidence]:
+    def _collect_cluster_health(self, state: ObservationBuilder) -> list[Evidence]:
         """클러스터 상태를 관측값으로 남기고, green이 아니면 근거로도 만든다.
 
         이 값은 **실시간**이다. 과거 사고를 분석하면 분석을 돌린 시점의 상태이지
@@ -310,7 +306,7 @@ class EvidenceCollector:
         ]
 
     def _collect_master(
-        self, window: TimeRange, state: AnalysisRunState
+        self, window: TimeRange, state: ObservationBuilder
     ) -> list[Evidence]:
         """마스터 로그를 모아 분 단위 선별한다. ClickHouse를 먼저, 실패하면 SSH.
 
@@ -351,7 +347,7 @@ class EvidenceCollector:
             master_log.SPEC, group_into_buckets(records), state
         ).evidence
 
-    def _master_via_ssh(self, window: TimeRange, state: AnalysisRunState) -> str:
+    def _master_via_ssh(self, window: TimeRange, state: ObservationBuilder) -> str:
         try:
             resolved = self._node_resolver.resolve("_master")
         except Exception as exc:
@@ -373,7 +369,7 @@ class EvidenceCollector:
             return ""
 
     def _investigate_nodes(
-        self, master_evidence: list[Evidence], window: TimeRange, state: AnalysisRunState
+        self, master_evidence: list[Evidence], window: TimeRange, state: ObservationBuilder
     ) -> node_investigation.NodeInvestigationResult:
         candidates = node_investigation.find_problem_nodes(
             master_evidence, self._call_llm

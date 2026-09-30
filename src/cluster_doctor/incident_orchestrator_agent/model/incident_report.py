@@ -40,9 +40,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import SuspectPick
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.report import SuspectPick
 
 
 @dataclass(frozen=True)

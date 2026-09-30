@@ -7,8 +7,8 @@
 
 from functools import singledispatch
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import (
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,

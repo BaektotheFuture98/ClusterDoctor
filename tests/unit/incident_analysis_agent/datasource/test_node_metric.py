@@ -4,7 +4,7 @@ from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric im
     NodeMetricThresholds,
     to_evidence,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import NodeMetricEntry
+from cluster_doctor.incident_analysis_agent.model.log_entries import NodeMetricEntry
 
 _T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
 

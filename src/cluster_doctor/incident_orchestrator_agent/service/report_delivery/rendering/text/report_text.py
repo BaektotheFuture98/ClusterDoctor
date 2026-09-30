@@ -16,8 +16,8 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.health_point import HealthPoint
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
+from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
+from cluster_doctor.incident_analysis_agent.model.observations import (
     MasterEvent,
     NodeMetricRow,
     Observations,
@@ -25,7 +25,7 @@ from cluster_doctor.incident_analysis_agent.model.basemodel.observations import 
     TimelineRow,
     observed_severity,
 )
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     IncidentAnalysisReport,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import (

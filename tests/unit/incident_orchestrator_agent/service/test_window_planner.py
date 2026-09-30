@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.kst import KST
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_orchestrator_agent.service.analysis_window.window_planner import (
     initial_windows,
 )

@@ -13,9 +13,9 @@ import re
 from collections.abc import Callable
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import LogAnalysisReport
-from cluster_doctor.incident_analysis_agent.model.basemodel.validation_types import (
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.model.validation import (
     VerificationIssue,
     VerificationIssueType,
 )

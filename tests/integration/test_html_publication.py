@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import (
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     VerificationStatus,
 )
@@ -28,7 +28,7 @@ def _report(summary: str, start, end) -> LogAnalysisReport:
 
 
 async def test_last_verified_report_is_published_as_html(tmp_path):
-    # 여러 window의 리포트가 IncidentState.window_results에 순서대로 쌓이고,
+    # 여러 window의 리포트가 MainAgentState.window_results에 순서대로 쌓이고,
     # 대표로는 마지막 window의 리포트를 쓴다 — ArtifactStore 없이도 같은 동작이다.
     reports = [
         _report("cpu spike in window A", _T0, _T1),

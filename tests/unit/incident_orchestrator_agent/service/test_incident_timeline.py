@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations, TimelineRow
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.observations import Observations, TimelineRow
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import (
     project_timeline,
 )

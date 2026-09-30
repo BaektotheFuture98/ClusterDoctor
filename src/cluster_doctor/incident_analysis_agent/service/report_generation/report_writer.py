@@ -12,15 +12,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import timedelta
 from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
-from cluster_doctor.incident_analysis_agent.agent.contracts import LogAnalysisRequest
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import LogAnalysisReport
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.model.state.analysis_session import AnalysisRunState
+from cluster_doctor.incident_analysis_agent.model.analysis_contract import LogAnalysisRequest
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
 from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import (
     build_analysis_prompt,
     build_revision_prompt,
@@ -29,7 +27,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.schema imp
     DraftReport,
     parse_draft,
 )
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.litellm_client import complete
+from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import complete
 
 _logger = logging.getLogger(__name__)
 
@@ -45,7 +43,7 @@ class ReportWriter:
         self,
         request: LogAnalysisRequest,
         evidence: list[Evidence],
-        state: AnalysisRunState,
+        state: ObservationBuilder,
     ) -> DraftReport:
         """모든 근거를 놓고 원인을 묻는다. 실패하면 빈 초안.
 
@@ -114,7 +112,7 @@ class ReportWriter:
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[subagent] revision 호출 실패: %s", exc)
             return None
-        from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import split_span
+        from cluster_doctor.incident_analysis_agent.model.time_range import split_span
 
         return parse_draft(text).to_domain(
             incident_id=report.incident_id,
@@ -127,25 +125,7 @@ class ReportWriter:
 
     # ── 응답 조립 ────────────────────────────────────────────────────
     @staticmethod
-    def unresolved_gaps(
-        collected, state: AnalysisRunState, window: TimeRange
-    ) -> tuple[TimeRange, ...]:
-        """근거를 확보하지 못한 시간 범위.
-
-        문장이 아니라 ``TimeRange``인 것이 요점이다. Supervisor가 다음 분석
-        범위를 정할 때 쓰는 값이므로 계산 가능한 형태여야 한다. 사람이 읽을
-        설명은 ``gaps``로 따로 남아 리포트 배너가 된다.
-        """
-        if state.degraded:
-            return (window,)
-        gaps = [
-            TimeRange(start=minute, end=minute + timedelta(minutes=1))
-            for minute in sorted(collected.failed_minutes)
-        ]
-        return tuple(gaps)
-
-    @staticmethod
-    def summary_for_supervisor(report: LogAnalysisReport, state: AnalysisRunState) -> str:
+    def summary_for_supervisor(report: LogAnalysisReport, state: ObservationBuilder) -> str:
         """Supervisor가 읽을 한두 문단. 리포트 전문이 아니다."""
         parts = [report.summary or "(요약 없음)"]
         if report.root_causes:

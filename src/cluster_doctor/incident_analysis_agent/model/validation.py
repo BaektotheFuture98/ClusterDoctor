@@ -13,7 +13,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 
 
 class VerificationIssueType(StrEnum):

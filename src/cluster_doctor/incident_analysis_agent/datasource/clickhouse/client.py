@@ -9,11 +9,11 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import (
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     NodeLogEntry,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import (
+from cluster_doctor.incident_analysis_agent.model.time_range import (
     InvalidTimeRangeError,
     TimeRange,
 )

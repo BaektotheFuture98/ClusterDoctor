@@ -20,10 +20,10 @@ from datetime import datetime, timedelta, timezone
 
 import paramiko
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.kst import KST
+from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import RawRecord
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
 
 _logger = logging.getLogger(__name__)
 _KST = timezone(timedelta(hours=9))

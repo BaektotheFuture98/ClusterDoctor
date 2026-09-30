@@ -1,36 +1,30 @@
-"""Analysis SubAgent가 위임 하나의 진행 상황을 담는 실행 상태.
+"""관측값 parsing·집계·prompt projection을 수행하는 호출 단위 계산기.
 
-``AnalysisRunState``는 한 window에서 코드가 관측한 사실(분 단위 건수·노드
-최대값·마스터 로그 원문·상태 이력·느린 요청 후보)과 수집 누락을 보관한다.
-``AnalysisSession``은 그 위임 하나가 실제로 어디까지 갔는지(수집/작성/재분석
-진행 상황)를 추적하는, 도구들이 공유하는 유일한 가변 상태다.
-
-Incident 하나에 위임이 여럿이고, 앞 위임의 상태가 다음 위임에 남으면
-``collect_evidence``의 멱등성이 위임 경계를 넘어 잘못 작동하므로 위임마다
-새로 만든다. ``AnalysisAgentState``(내부 그래프의 LangGraph state)와는 다른
-층이다 — 도구는 그래프 채널을 읽지 않고 이 객체를 클로저로만 참조한다.
+``AnalysisAgentState`` snapshot에서 필요한 값을 읽어 함수 호출 안에서만
+계산하고, 결과를 immutable State update로 반환한다. Agent State나 Tool
+closure에 보관하지 않으며 호출 사이의 실행 상태를 소유하지 않는다.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.health_point import HealthPoint
-from cluster_doctor.incident_analysis_agent.model.basemodel.kst import KST
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import LogEntry, NodeLogEntry
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
+from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
+from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
+    LogEntry,
+    NodeLogEntry,
+)
+from cluster_doctor.incident_analysis_agent.model.observations import (
     MasterEvent,
     NodeMetricRow,
     Observations,
     SlowCandidate,
     TimelineRow,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import LogAnalysisReport
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.observation.compute import (
     candidate_key,
     merge_node_rows,
@@ -83,14 +77,11 @@ def _candidate_prompt_line(candidate: SlowCandidate) -> str:
     return " ".join(parts)
 
 
-class AnalysisRunState:
-    """한 구간에서 코드가 누적한 관측값과 수집 누락을 보관한다.
+class ObservationBuilder:
+    """수집 호출 안에서만 사용하는 관측값 계산기.
 
-    분별 그래프 AnalysisState나 Main Agent의 MainAgentState와 수명이 다르다.
-    ``AnalysisSession.run_state``로 위임 하나에 하나씩 물린 순수 파이썬
-    객체이고, ``AnalysisAgentState``(SubAgent 내부 그래프의 LangGraph state)는
-    전혀 거치지 않는다 — 도구가 이 값을 직접 들고 있다가 응답 조립 시점에
-    ``Observations``로 굳힌다.
+    Agent State나 closure에 보관하지 않는다. 호출 시작 시 snapshot에서
+    만들고 계산 결과를 State update로 반환한 뒤 폐기한다.
     """
 
     def __init__(self, window: TimeRange, time_basis: str = "") -> None:
@@ -109,6 +100,41 @@ class AnalysisRunState:
         # 분석 자체가 성립하지 않았는가. 리포트를 버리지는 않지만 재트리거를
         # 막는 유일한 조건이다.
         self.degraded = False
+        self.master_log_total = 0
+
+    @classmethod
+    def from_state(cls, window: TimeRange, state: dict) -> "ObservationBuilder":
+        """Rebuild a short-lived local builder from AnalysisAgentState snapshots."""
+        builder = cls(window, str(state.get("time_basis", "")))
+        builder.timeline = {row.minute: row for row in state.get("timeline", ())}
+        builder.nodes = {row.node: row for row in state.get("nodes", ())}
+        builder.master_logs = {
+            (event.timestamp, event.node, event.line): event
+            for event in state.get("master_events", ())
+        }
+        builder.health = list(state.get("health", ()))
+        builder.candidates = {
+            candidate_key(item): item for item in state.get("candidates", ())
+        }
+        builder.gaps = list(state.get("gaps", ()))
+        builder.degraded = bool(state.get("degraded", False))
+        builder.master_log_total = int(state.get("master_log_total", 0))
+        return builder
+
+    def state_update(self) -> dict[str, object]:
+        """Project mutable local work back to immutable AnalysisAgentState values."""
+        observations = self.to_observations()
+        return {
+            "timeline": observations.timeline,
+            "nodes": observations.nodes,
+            "master_events": observations.master_events,
+            "health": observations.health,
+            "candidates": observations.candidates,
+            "gaps": tuple(self.gaps),
+            "degraded": self.degraded,
+            "time_basis": self.time_basis,
+            "master_log_total": observations.master_log_total,
+        }
 
     def mark_gap(self, observation: str) -> str:
         """근거가 일부 빠졌다는 사실을 남긴다. 리포트는 버리지 않는다.
@@ -167,7 +193,9 @@ class AnalysisRunState:
                 level = match.group(2).strip()
                 logger_name = match.group(3).strip()
                 try:
-                    timestamp = datetime.fromisoformat(match.group(1)).replace(tzinfo=KST)
+                    timestamp = datetime.fromisoformat(match.group(1)).replace(
+                        tzinfo=KST
+                    )
                 except ValueError:
                     timestamp = None
             self.master_logs[line] = MasterEvent(
@@ -276,7 +304,7 @@ class AnalysisRunState:
             timeline=tuple(self.timeline[minute] for minute in sorted(self.timeline)),
             nodes=tuple(sorted(self.nodes.values(), key=lambda row: row.node)),
             master_events=master_events[:MASTER_LOG_REPORT_MAX],
-            master_log_total=len(master_events),
+            master_log_total=max(self.master_log_total, len(master_events)),
             health=tuple(self.health),
             # id는 C1, C2 … 순으로 붙었으므로 발견 순서로 정렬하려면 숫자 부분을
             # 봐야 한다. 문자열 정렬이면 C10이 C2 앞에 온다. int()로 파싱하지
@@ -324,19 +352,24 @@ class AnalysisRunState:
         lines: list[str] = []
         for minute in sorted(self.timeline):
             row = self.timeline[minute]
-            counts = ", ".join(f"{key}={value}" for key, value in sorted(row.counts.items()))
+            counts = ", ".join(
+                f"{key}={value}" for key, value in sorted(row.counts.items())
+            )
             extra = []
             if row.took_max:
                 extra.append(f"took_max={row.took_max}")
             if row.jvm_heap_max is not None:
-                extra.append(f"jvm_heap_max={row.jvm_heap_max}%({row.jvm_heap_max_node})")
+                extra.append(
+                    f"jvm_heap_max={row.jvm_heap_max}%({row.jvm_heap_max_node})"
+                )
             if row.search_rejected_max or row.write_rejected_max:
                 extra.append(
                     f"rejected(search={row.search_rejected_max}, write={row.write_rejected_max})"
                 )
             marker = " [선별 실패]" if row.failed else ""
             lines.append(
-                f"{minute:%H:%M}{marker} {counts}" + (f" | {' '.join(extra)}" if extra else "")
+                f"{minute:%H:%M}{marker} {counts}"
+                + (f" | {' '.join(extra)}" if extra else "")
             )
         if self.health:
             last = self.health[-1]
@@ -345,44 +378,3 @@ class AnalysisRunState:
                 f"unassigned={last.unassigned_shards} nodes={last.number_of_nodes}"
             )
         return "\n".join(lines) or "(관측값 없음)"
-
-
-class AnalysisSession:
-    """위임 하나가 실제로 어디까지 갔는가.
-
-    도구들이 공유하는 유일한 가변 상태다. 위임마다 새로 만든다 — Incident
-    하나에 위임이 여럿이고, 앞 위임의 근거가 다음 위임에 남으면
-    ``collect_evidence``의 멱등성이 위임 경계를 넘어 잘못 작동한다.
-
-    ``AnalysisAgentState``(내부 그래프의 LangGraph state)와는 다른 층이다 —
-    도구는 그래프 채널을 읽지 않고 이 객체를 클로저로만 참조하므로, 내부
-    그래프의 state_schema에는 이 세션의 필드가 하나도 노출되지 않는다.
-
-    ``new_evidence_id``는 이 Incident 전체에서 단조 증가해야 하는 번호
-    발급기다 — 소유자는 ``IncidentState``이고, 이 세션은 그 콜백만 클로저로
-    받는다(별도의 저장 계층을 만들지 않는다).
-    """
-
-    def __init__(
-        self,
-        window: TimeRange,
-        request,
-        *,
-        new_evidence_id: Callable[[], str],
-    ) -> None:
-        self.window = window
-        self.request = request
-        self.new_evidence_id = new_evidence_id
-        self.run_state = AnalysisRunState(window)
-        self.collected = None
-        self.evidence: list[Evidence] = []
-        self.report: LogAnalysisReport | None = None
-        self.draft = None
-        self.report_attempts = 0
-        self.insufficient_reason = ""
-        self.suggested: list[TimeRange] = []
-        self.reanalysis_count = 0
-
-    @property
-    def collected_once(self) -> bool:
-        return self.collected is not None

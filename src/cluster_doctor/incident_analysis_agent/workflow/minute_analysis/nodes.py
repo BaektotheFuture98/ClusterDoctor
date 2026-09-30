@@ -14,22 +14,25 @@ import json
 import logging
 from collections.abc import Callable
 
-from pydantic import BaseModel, Field
-
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import truncate_raw
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.prompt import (
     build_map_prompt,
     build_reduce_prompt,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
-    AnalysisState,
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     MinuteBucket,
     MinuteResult,
-    RawRecord,
     SelectedRecord,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.schema import (
+    MapOutput,
+    ReduceOutput,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
+    MinuteAnalysisState,
 )
 
 _logger = logging.getLogger(__name__)
@@ -44,25 +47,6 @@ _REDUCE_MAX_TOKENS = 2048
 # 메시지·토큰 한도·응답 스키마만 정한다.
 StructuredLlmCaller = Callable[..., str]
 EvidenceIdFactory = Callable[[], str]
-
-
-class MapSelection(BaseModel):
-    record_id: int
-    event_type: str = ""
-    reason: str = ""
-
-
-class MapOutput(BaseModel):
-    selected: list[MapSelection] = Field(default_factory=list)
-
-
-class ReduceSelection(BaseModel):
-    record_id: int
-    selection_reason: str = ""
-
-
-class ReduceOutput(BaseModel):
-    keep: list[ReduceSelection] = Field(default_factory=list)
 
 
 def make_map_minute(spec: AnalysisSpec, call_llm: StructuredLlmCaller):
@@ -142,7 +126,7 @@ def make_reduce_to_evidence(
     gap으로 남긴다 — 조용히 넘기면 걸러지지 않은 목록이 걸러진 것처럼 쓰인다.
     """
 
-    def reduce(state: AnalysisState) -> dict:
+    def reduce(state: MinuteAnalysisState) -> dict:
         records = {r.record_id: r for b in state["buckets"] for r in b.records}
         results = state["minute_results"]
         selections = {

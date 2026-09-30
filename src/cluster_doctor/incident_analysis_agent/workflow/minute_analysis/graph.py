@@ -15,12 +15,9 @@ datasource마다 그래프를 새로 짜지 않는다. 절차는 같고 판단 �
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.nodes import (
     EvidenceIdFactory,
     StructuredLlmCaller,
@@ -28,9 +25,12 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.nodes impor
     make_reduce_to_evidence,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
-    AnalysisState,
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
+    AnalysisResult,
     MinuteBucket,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
+    MinuteAnalysisState,
 )
 
 _MAP = "map_minute"
@@ -38,28 +38,6 @@ _REDUCE = "reduce"
 
 # 분별 호출의 동시 실행 수. 올리면 429가 빨라진다.
 MAX_CONCURRENCY = 5
-
-
-@dataclass(frozen=True)
-class AnalysisResult:
-    """한 datasource workflow의 산출물.
-
-    Evidence만 돌려주지 않는 이유: 몇 분이 실패했는지를 호출자가 알아야 한다.
-    실패한 분이 있는 리포트와 없는 리포트는 다른 것이고, 그 차이가 드러나지
-    않으면 "그 시각에는 아무 일도 없었다"로 읽힌다.
-    """
-
-    evidence: list[Evidence]
-    analyzed_minutes: int = 0
-    failed_minutes: int = 0
-    reduce_degraded: bool = False
-    # 선별이 실패한 분의 시각. 호출자가 이것을 unresolved gap으로 올린다 —
-    # 개수만으로는 "어느 시각을 못 봤는가"를 말할 수 없다.
-    failed_minutes_at: tuple = ()
-
-    @property
-    def fully_failed(self) -> bool:
-        return self.analyzed_minutes > 0 and self.failed_minutes == self.analyzed_minutes
 
 
 def run_analysis(
@@ -79,14 +57,14 @@ def run_analysis(
     if not buckets:
         return AnalysisResult(evidence=[])
 
-    builder = StateGraph(AnalysisState)
+    builder = StateGraph(MinuteAnalysisState)
     builder.add_node(_MAP, make_map_minute(spec, call_llm))
     builder.add_node(
         _REDUCE,
         make_reduce_to_evidence(spec, call_llm, new_evidence_id=new_evidence_id),
     )
 
-    def dispatch(state: AnalysisState) -> list:
+    def dispatch(state: MinuteAnalysisState) -> list:
         if not state["buckets"]:
             return [_REDUCE]
         return [Send(_MAP, bucket) for bucket in state["buckets"]]

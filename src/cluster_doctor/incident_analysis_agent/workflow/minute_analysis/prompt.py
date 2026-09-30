@@ -13,7 +13,7 @@ datasource만 보고 내려진 것이 되며, 뒤 단계는 이미 내려진 결
 from __future__ import annotations
 
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     MinuteBucket,
     MinuteResult,
     RawRecord,

@@ -17,12 +17,12 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
 from cluster_doctor.incident_orchestrator_agent.agent.prompts.system_prompt import SYSTEM_PROMPT
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.harness import (
+from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
     restrict_harness,
 )
-from cluster_doctor.incident_orchestrator_agent.model.state.main_agent_state import MainAgentState
+from cluster_doctor.incident_orchestrator_agent.agent.state import MainAgentState
 
 
 def build_main_agent(
@@ -52,7 +52,7 @@ def build_main_agent(
         subagents=[analysis_subagent],
         # 구조화된 값이 SubAgent에 닿는 통로는 이 state뿐이다. task 도구는
         # 자유 텍스트 description밖에 넘기지 못하므로, 승인된 구간은 문장이
-        # 아니라 여기에 실려 건너간다(model/state/main_agent_state.py를 볼 것).
+        # 아니라 여기에 실려 건너간다(agent/state.py를 볼 것).
         state_schema=MainAgentState,
         # 심층 방어. ``restrict_harness``가 파일 도구를 모델의 목록에서 지우지만
         # 그것은 **보이지 않게 하는 것**이고, 도구 자체는 ToolNode에 묶인 채
