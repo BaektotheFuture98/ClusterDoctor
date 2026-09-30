@@ -24,6 +24,9 @@ from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysi
     Narrative,
     TimelineAnnotation,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
+    cite,
+)
 
 
 def to_incident_analysis_report(
@@ -40,7 +43,7 @@ def to_incident_analysis_report(
     if report is None:
         return IncidentAnalysisReport(observations=observations, evidence=tuple(evidence))
 
-    cite = {item.evidence_id: item for item in evidence}
+    evidence_by_id = {item.evidence_id: item for item in evidence}
     return IncidentAnalysisReport(
         observations=observations,
         evidence=tuple(evidence),
@@ -62,7 +65,7 @@ def to_incident_analysis_report(
                 Finding(
                     severity=item.severity,
                     title=item.title,
-                    evidence=_quote(item.evidence_refs, cite, extra=item.detail),
+                    evidence=_quote(item.evidence_refs, evidence_by_id, extra=item.detail),
                 )
                 for item in report.findings
             ),
@@ -73,7 +76,7 @@ def to_incident_analysis_report(
                     for cause in report.root_causes
                     for ref in cause.supporting_evidence_refs
                 ),
-                cite,
+                evidence_by_id,
             ),
             contradicting=_quote(
                 tuple(
@@ -81,7 +84,7 @@ def to_incident_analysis_report(
                     for cause in report.root_causes
                     for ref in cause.counter_evidence_refs
                 ),
-                cite,
+                evidence_by_id,
             ),
             unverified=report.unresolved_questions,
             suspect_picks=report.suspect_picks,
@@ -104,20 +107,8 @@ def _root_cause_text(report: LogAnalysisReport) -> str:
     return " / ".join(parts)
 
 
-def _cite(evidence: Evidence) -> str:
-    """근거 하나를 사람이 읽을 한 줄로 그린다."""
-    parts = [f"[{evidence.evidence_id}]", evidence.event_time.strftime("%Y-%m-%d %H:%M:%S")]
-    parts.append(str(evidence.source))
-    if evidence.severity:
-        parts.append(evidence.severity)
-    if evidence.node_name or evidence.node_id:
-        parts.append(f"node={evidence.node_name or evidence.node_id}")
-    parts.append(evidence.message)
-    return " | ".join(parts)
-
-
 def _quote(
-    refs: tuple[str, ...], cite: dict[str, Evidence], *, extra: str = ""
+    refs: tuple[str, ...], evidence_by_id: dict[str, Evidence], *, extra: str = ""
 ) -> tuple[str, ...]:
     """근거 참조를 원문 인용으로 푼다. 없는 참조는 그 사실을 적는다.
 
@@ -130,6 +121,6 @@ def _quote(
         if ref in seen:
             continue
         seen.add(ref)
-        found = cite.get(ref)
-        lines.append(_cite(found) if found else f"[{ref}] (존재하지 않는 근거 참조)")
+        found = evidence_by_id.get(ref)
+        lines.append(cite(found) if found else f"[{ref}] (존재하지 않는 근거 참조)")
     return tuple(lines)
