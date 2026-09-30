@@ -110,6 +110,7 @@ class AnalyzeIncident:
         deadline = Deadline(remaining_seconds)
         state = IncidentState(
             incident_id=incident.incident_id,
+            observed_end=command.observed_end,
             pending_windows=initial_windows(
                 command.observed_start, command.observed_end
             ),
