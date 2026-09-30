@@ -4,6 +4,7 @@ from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysi
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
     render_report,
+    _sections_from_report,
 )
 
 from datetime import datetime, timezone
@@ -25,3 +26,6 @@ def test_render_report_includes_offender_section():
     report = IncidentAnalysisReport(observations=Observations(candidates=(candidate,)), evidence=())
     html = render_report(report)
     assert "가해자 집계 (관측값)" in html
+
+    sections = _sections_from_report(report)
+    assert any(section.title == "가해자 집계 (관측값)" for section in sections)
