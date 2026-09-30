@@ -16,8 +16,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 
 _logger = logging.getLogger(__name__)
 
@@ -55,16 +55,6 @@ class ValidationResult:
     """
 
     issues: list[str] = field(default_factory=list)
-
-    @property
-    def passed(self) -> bool:
-        """지적이 하나도 없는가.
-
-        "검증하지 못함"과 구분하지 않는다 — 이 검사는 항상 끝까지 돌므로
-        구분할 대상이 없다. 그 구분이 필요한 쪽은
-        ``VerificationIssueType.UNVERIFIABLE``다.
-        """
-        return not self.issues
 
 
 def validate_report(

@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import (
     format_evidence_line,
 )

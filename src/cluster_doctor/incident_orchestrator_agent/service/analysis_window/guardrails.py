@@ -20,20 +20,13 @@ from datetime import timedelta
 from math import ceil
 
 from cluster_doctor.exceptions import GuardrailViolation
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import (
-    MAX_TIME_RANGE_DURATION,
+from cluster_doctor.incident_analysis_agent.model.time_range import (
     TimeRange,
     is_covered,
 )
-from cluster_doctor.incident_orchestrator_agent.model.state.incident_state import IncidentState
+from collections.abc import Mapping
 
 _logger = logging.getLogger(__name__)
-
-# 분석 창 상한. TimeRange가 같은 제약을 강제하므로 값을 두 번 쓰지 않는다.
-# 그래도 여기서 다시 보는 이유는 반환 형태가 다르기 때문이다 — 그쪽은 어떤
-# 호출자에게든 예외를 던지고, 여기서는 Main Agent 사이클이 잡아 다음 행동을
-# 고를 수 있는 ``GuardrailViolation``으로 만든다.
-MAX_ANALYSIS_WINDOW_MINUTES = int(MAX_TIME_RANGE_DURATION.total_seconds() // 60)
 
 # 한 Incident가 분석할 수 있는 **분 수**. 이것이 주 예산이다.
 #
@@ -121,23 +114,27 @@ def window_minutes(window: TimeRange) -> int:
     return max(1, ceil(seconds / 60))
 
 
-def remaining_minutes(state: IncidentState) -> int:
-    return max(0, MAX_ANALYZED_MINUTES - state.analyzed_minutes)
+def _value(state: Mapping[str, object], key: str, default):
+    return state.get(key, default)
 
 
-def check_analysis_budget(state: IncidentState) -> None:
+def remaining_minutes(state: Mapping[str, object]) -> int:
+    return max(0, MAX_ANALYZED_MINUTES - int(_value(state, "analyzed_minutes", 0)))
+
+
+def check_analysis_budget(state: Mapping[str, object]) -> None:
     """이 Incident가 분석을 한 번 더 시킬 수 있는가."""
     if remaining_minutes(state) <= 0:
         raise GuardrailViolation(
             f"분석 예산 {MAX_ANALYZED_MINUTES}분을 모두 썼다"
         )
-    if state.analysis_call_count >= MAX_ANALYSIS_CALLS:
+    if int(_value(state, "analysis_call_count", 0)) >= MAX_ANALYSIS_CALLS:
         raise GuardrailViolation(
             f"분석 호출 상한 {MAX_ANALYSIS_CALLS}회에 도달했다"
         )
 
 
-def fit_to_budget(window: TimeRange, state: IncidentState) -> TimeRange:
+def fit_to_budget(window: TimeRange, state: Mapping[str, object]) -> TimeRange:
     """남은 예산에 맞게 구간을 줄인다. 예산이 없으면 ``GuardrailViolation``.
 
     거절하지 않고 줄이는 이유: 4분이 남았는데 10분을 요청받아 통째로 거절하면
@@ -153,7 +150,7 @@ def fit_to_budget(window: TimeRange, state: IncidentState) -> TimeRange:
     return TimeRange(start=window.start, end=window.start + timedelta(minutes=budget))
 
 
-def admit_window(window: TimeRange, state: IncidentState) -> TimeRange:
+def admit_window(window: TimeRange, state: Mapping[str, object]) -> TimeRange:
     """Guardrail을 통과한 실제 분석 구간. 통과하지 못하면 ``GuardrailViolation``.
 
     **부분 중복은 잘라서 통과시킨다.** 13:50~14:05를 요청받았고 14:00~14:10이
@@ -165,7 +162,9 @@ def admit_window(window: TimeRange, state: IncidentState) -> TimeRange:
     """
     check_analysis_budget(state)
 
-    remaining = state.remaining_of(window)
+    from cluster_doctor.incident_analysis_agent.model.time_range import subtract_spans
+
+    remaining = subtract_spans(window, tuple(_value(state, "analyzed_windows", ())))
     if not remaining:
         raise GuardrailViolation(
             f"{window.start:%H:%M}~{window.end:%H:%M} 구간은 이미 전부 분석했다"
@@ -178,14 +177,14 @@ def admit_window(window: TimeRange, state: IncidentState) -> TimeRange:
     return admitted
 
 
-def check_not_duplicate(window: TimeRange, state: IncidentState) -> None:
+def check_not_duplicate(window: TimeRange, state: Mapping[str, object]) -> None:
     """이미 본 구간을 다시 보려는가.
 
     **완전히 같은 구간만 막는 것이 아니다.** 14:00~14:10을 분석한 뒤
     14:02~14:05를 요청하면 새로 얻는 것이 없는데, 같은지만 보면 통과한다.
     덮였는지로 판정하는 이유가 그것이다.
     """
-    if is_covered(window, state.analyzed_windows):
+    if is_covered(window, tuple(_value(state, "analyzed_windows", ()))):
         raise GuardrailViolation(
             f"{window.start:%H:%M}~{window.end:%H:%M} 구간은 이미 분석했다"
         )

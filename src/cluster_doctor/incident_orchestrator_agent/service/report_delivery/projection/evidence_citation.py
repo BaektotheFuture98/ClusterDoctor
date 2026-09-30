@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 
 
 def cite(evidence: Evidence) -> str:

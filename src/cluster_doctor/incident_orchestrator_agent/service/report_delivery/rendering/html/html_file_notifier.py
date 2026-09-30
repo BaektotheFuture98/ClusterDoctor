@@ -30,17 +30,17 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
+from cluster_doctor.incident_analysis_agent.model.observations import (
     Observations,
     observed_severity,
 )
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     IncidentAnalysisReport,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
-    ReportPublication,
     ReportPublisher,
 )
+from cluster_doctor.incident_orchestrator_agent.model.report_delivery import ReportPublication
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import (
     TimelineCard,
     TimelineItem,

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
     cite,
 )

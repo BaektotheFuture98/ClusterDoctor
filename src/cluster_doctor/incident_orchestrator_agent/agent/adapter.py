@@ -1,14 +1,12 @@
 """Main DeepAgent를 ``IncidentAnalyzer`` 포트 뒤에 놓는다.
 
 ``incident_lifecycle`` 서비스는 ``deepagents``도 ``langchain``도 모른다. 아는
-것은 "Incident 하나와 그 IncidentState를 맡기면 어떻게 끝났는지 돌려준다"뿐이고,
+것은 "Incident 입력 DTO를 맡기면 결과 DTO를 돌려준다"뿐이고,
 그 경계가 이 파일이다.
 
-**그래프는 Incident마다 새로 만든다.** 도구와 미들웨어가 그 Incident의
-``IncidentState``를 클로저로 쥐기 때문이다 — 프로세스 전역에 하나를 만들어
-두고 incident_id를 인자로 받게 하면, 모델이 그 인자를 채우게 되고 남의
-Incident 예산을 쓰는 길이 열린다. 조립 비용은 LLM 왕복 수십 번에 비하면
-무시할 수 있다.
+그래프는 Incident마다 조립하고 State는 실행 입력에서 초기화한다.
+도구와 미들웨어는 State를 보관하지 않고 ToolRuntime에서 읽는다.
+종료 시 마지막으로 커밋된 State를 framework-independent DTO로 투영한다.
 """
 
 from __future__ import annotations
@@ -18,9 +16,13 @@ from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage
 
-from cluster_doctor.incident_analysis_agent.agent.session import AnalysisSeams
-from cluster_doctor.incident_analysis_agent.agent.subagent import build_analysis_subagent
-from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import LogRepository
+from cluster_doctor.incident_analysis_agent.agent.dependencies import AnalysisSeams
+from cluster_doctor.incident_orchestrator_agent.agent.analysis_subagent import (
+    build_analysis_subagent,
+)
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
+    LogRepository,
+)
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import (
     NodeMetricThresholds,
 )
@@ -30,8 +32,14 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_hea
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     NodeResolver,
 )
-from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
-from cluster_doctor.incident_analysis_agent.model.basemodel.kst import format_kst
+from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
+    NodeLogFetcher,
+)
+from cluster_doctor.incident_analysis_agent.model.kst import format_kst
+from cluster_doctor.incident_analysis_agent.model.report import (
+    LogAnalysisStatus,
+    VerificationStatus,
+)
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
     build_structured_call,
@@ -40,9 +48,13 @@ from cluster_doctor.incident_orchestrator_agent.agent.graph import build_main_ag
 from cluster_doctor.incident_orchestrator_agent.agent.middleware import (
     DelegationGuardrailMiddleware,
 )
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.chat_model import build_chat_model
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.harness import restrict_harness
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.litellm_client import (
+from cluster_doctor.incident_orchestrator_agent.agent.runtime.chat_model import (
+    build_chat_model,
+)
+from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
+    restrict_harness,
+)
+from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (
     require_supported_provider,
 )
 from cluster_doctor.incident_orchestrator_agent.agent.tools import (
@@ -50,21 +62,25 @@ from cluster_doctor.incident_orchestrator_agent.agent.tools import (
     make_list_candidate_windows_tool,
     make_propose_analysis_tool,
 )
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident import (
+from cluster_doctor.incident_orchestrator_agent.model.incident import (
     Incident,
     IncidentStatus,
 )
-from cluster_doctor.incident_orchestrator_agent.model.state.incident_state import IncidentState
-from cluster_doctor.incident_orchestrator_agent.model.state.main_agent_state import (
-    ADMITTED_GOAL,
-    ADMITTED_WINDOW,
+from cluster_doctor.incident_orchestrator_agent.agent.state import (
+    initial_main_agent_state,
 )
 from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrails import (
     MAX_SUPERVISOR_CYCLES,
 )
+from cluster_doctor.incident_orchestrator_agent.service.analysis_window.window_planner import (
+    initial_windows,
+)
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.incident_analyzer import (
-    IncidentAnalysisResult,
     IncidentAnalyzer,
+)
+from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
+    IncidentAnalysisRequest,
+    IncidentAnalysisResult,
 )
 
 _logger = logging.getLogger(__name__)
@@ -150,48 +166,61 @@ class _DeepAgentIncidentAnalyzer:
         self._seams = seams
         self._recursion_limit = recursion_limit
 
-    def analyze(self, incident: Incident, state: IncidentState) -> IncidentAnalysisResult:
+    def analyze(self, request: IncidentAnalysisRequest) -> IncidentAnalysisResult:
         """Incident 하나의 분석을 끝까지 진행한다. 예외를 올리지 않는다.
 
-        ``state``는 호출부(``AnalyzeIncident``)가 만들어 넘긴 살아 있는
-        객체다. 별도 저장소가 없으므로 이 함수가 직접 갱신하고, 호출부는
-        반환 뒤 같은 객체를 그대로 다시 읽는다.
+        호출부와 mutable State를 공유하지 않는다. 예외가 나도 마지막
+        커밋된 snapshot에서 확보한 근거와 리포트를 반환한다.
         """
-        graph = self._compile(incident, state)
+        incident = request.incident
 
+        final_state = {
+            "messages": [
+                HumanMessage(
+                    content=_KICKOFF.format(
+                        cluster=incident.cluster,
+                        trigger=format_kst(incident.trigger_time),
+                    )
+                )
+            ],
+            **initial_main_agent_state(
+                incident_id=incident.incident_id,
+                observed_end=request.observed_end,
+                pending_windows=tuple(
+                    initial_windows(request.observed_start, request.observed_end)
+                ),
+                total_wait_seconds=request.settling_wait_seconds,
+            ),
+        }
         try:
-            graph.invoke(
-                {
-                    "messages": [
-                        HumanMessage(
-                            content=_KICKOFF.format(
-                                cluster=incident.cluster,
-                                trigger=format_kst(incident.trigger_time),
-                            )
-                        )
-                    ],
-                    ADMITTED_WINDOW: None,
-                    ADMITTED_GOAL: "",
-                },
+            graph = self._compile(incident)
+            for snapshot in graph.stream(
+                final_state,
                 {"recursion_limit": self._recursion_limit},
-            )
+                stream_mode="values",
+            ):
+                final_state = snapshot
         except Exception as exc:
-            return self._fallback(exc)
+            _logger.exception("Agent 실행 실패")
+            final_state = {
+                **final_state,
+                "status": IncidentStatus.FAILED,
+                "closing_reason": f"Agent 실행이 {type(exc).__name__}로 끝났다",
+            }
 
-        return self._result_from(state)
+        return self._result_from(final_state)
 
     # ── 조립 ─────────────────────────────────────────────────────────
-    def _compile(self, incident: Incident, state: IncidentState):
-        """이 Incident만을 위한 그래프. 도구가 이 state를 클로저로 쥔다."""
+    def _compile(self, incident: Incident):
+        """Incident 입력과 고정 의존성으로 그래프를 조립한다."""
         tools = [
-            make_list_candidate_windows_tool(state=state),
-            make_propose_analysis_tool(state=state),
-            make_finish_incident_tool(state=state),
+            make_list_candidate_windows_tool(),
+            make_propose_analysis_tool(),
+            make_finish_incident_tool(),
         ]
-        middleware = [DelegationGuardrailMiddleware(state=state)]
+        middleware = [DelegationGuardrailMiddleware()]
         analysis_subagent = build_analysis_subagent(
             seams=self._seams,
-            state=state,
             incident=incident,
             model=self._model,
         )
@@ -203,39 +232,43 @@ class _DeepAgentIncidentAnalyzer:
         )
 
     # ── 결과 ─────────────────────────────────────────────────────────
-    def _result_from(self, state: IncidentState) -> IncidentAnalysisResult:
-        """끝난 뒤의 ``IncidentState``에서 결과를 읽는다.
+    def _result_from(self, state: dict) -> IncidentAnalysisResult:
+        """끝난 뒤의 ``MainAgentState``에서 결과를 읽는다.
 
         그래프의 반환값이 아니라 State를 읽는 이유: 종료를 확정하는 것은
         ``finish_incident`` 도구이고, 그 도구가 쓰는 곳이 State다. 반환
         메시지를 파싱하면 모델의 문장을 믿는 셈이 된다.
         """
-        if state.status is IncidentStatus.COMPLETED and not state.window_results:
-            return IncidentAnalysisResult(
-                status=IncidentStatus.FAILED,
-                reason="구간별 리포트 없이 완료 상태가 기록됐다",
-                failed=True,
+        status, reason = state["status"], state["closing_reason"]
+        if status is IncidentStatus.COMPLETED and not state["window_results"]:
+            status, reason = (
+                IncidentStatus.FAILED,
+                "구간별 리포트 없이 완료 상태가 기록됐다",
             )
-        if state.status.is_terminal():
-            return IncidentAnalysisResult(
-                status=state.status,
-                reason=state.closing_reason,
-                failed=state.status is IncidentStatus.FAILED,
+        elif not status.is_terminal():
+            status, reason = (
+                IncidentStatus.FAILED,
+                "Agent가 종료를 선언하지 않고 끝나 분석을 마감했다",
             )
-
-        # 검증과 명시적인 종료 없이 정상 완료를 추정하지 않는다.
-        _logger.warning("Agent가 종료를 선언하지 않고 끝났다")
-        return IncidentAnalysisResult(
-            status=IncidentStatus.FAILED,
-            reason="Agent가 종료를 선언하지 않고 끝나 분석을 마감했다",
-            failed=True,
+        verification_gaps = tuple(
+            f"리포트 검증 불일치: {issue}"
+            for item in state["window_results"]
+            for issue in item.report.verification_issues
         )
-
-    def _fallback(self, exc: Exception) -> IncidentAnalysisResult:
-        """Agent 실행 오류는 확보한 보고서 유무와 무관하게 실패다."""
-        _logger.exception("Agent 실행 실패")
         return IncidentAnalysisResult(
-            status=IncidentStatus.FAILED,
-            reason=f"Agent 실행이 {type(exc).__name__}로 끝났다",
-            failed=True,
+            status=status,
+            reason=reason,
+            failed=(
+                status is IncidentStatus.FAILED
+                or state.get("latest_analysis_status") is LogAnalysisStatus.FAILED
+                or state.get("latest_verification_status")
+                is VerificationStatus.MISMATCH
+            ),
+            gaps=tuple(dict.fromkeys((*state["accumulated_gaps"], *verification_gaps))),
+            report=state["window_results"][-1].report
+            if state["window_results"]
+            else None,
+            observations=state["observations"],
+            evidence=tuple(state["evidence"]),
+            analysis_calls=state["analysis_call_count"],
         )

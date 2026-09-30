@@ -34,13 +34,13 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolv
 )
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
 from cluster_doctor.incident_analysis_agent.datasource.ssh import node_log
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, ProblemNodeCandidate
-from cluster_doctor.incident_analysis_agent.model.basemodel.resolved_node import ResolvedNode
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, ProblemNodeCandidate
+from cluster_doctor.incident_analysis_agent.model.resolved_node import ResolvedNode
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import truncate_raw
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_evidence_line
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import run_analysis
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import group_into_buckets
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import group_into_buckets
 
 _logger = logging.getLogger(__name__)
 

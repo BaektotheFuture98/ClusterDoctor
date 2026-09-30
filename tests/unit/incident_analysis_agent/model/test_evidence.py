@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import (
+from cluster_doctor.incident_analysis_agent.model.evidence import (
     Evidence,
     EvidenceSource,
 )

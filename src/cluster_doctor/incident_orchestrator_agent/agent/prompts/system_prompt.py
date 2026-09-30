@@ -7,7 +7,7 @@ middleware와 도구 코드이고, 이 모듈은 안내 문장만 담는다.
 from __future__ import annotations
 
 from cluster_doctor.incident_orchestrator_agent.agent.tools import TASK_TOOL_NAME
-from cluster_doctor.incident_orchestrator_agent.model.state.main_agent_state import (
+from cluster_doctor.incident_orchestrator_agent.agent.state import (
     ANALYSIS_SUBAGENT,
 )
 

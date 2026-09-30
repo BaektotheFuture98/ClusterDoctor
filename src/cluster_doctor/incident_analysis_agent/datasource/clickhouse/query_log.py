@@ -10,11 +10,11 @@ from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import 
     MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     query_segment,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import LogEntry, QueryLogEntry
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, QueryLogEntry
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import RawRecord
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
 
 SPEC = AnalysisSpec(
     source=EvidenceSource.QUERY_LOG,

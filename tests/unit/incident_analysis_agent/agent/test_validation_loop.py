@@ -1,193 +1,250 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-from cluster_doctor.incident_analysis_agent.agent import subagent
-from cluster_doctor.incident_analysis_agent.agent.subagent import (
-    AnalysisStatus,
-    _run_validation_loop,
+from cluster_doctor.incident_analysis_agent.agent.state import (
+    initial_analysis_agent_state,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import (
+from cluster_doctor.incident_analysis_agent.agent.subagent import (
+    finalize_update,
+    project_result,
+)
+from cluster_doctor.incident_analysis_agent.model.analysis_contract import (
+    LogAnalysisRequest,
+)
+from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     VerificationStatus,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.model.basemodel.validation_types import (
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.validation import (
     VerificationIssue,
     VerificationIssueType,
 )
-from cluster_doctor.incident_analysis_agent.model.state.analysis_session import AnalysisSession
-from cluster_doctor.incident_orchestrator_agent.model.state.incident_state import IncidentState
-
-_T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
-_T1 = datetime(2024, 1, 1, 13, 10, tzinfo=timezone.utc)
 
 
-def _make_report(summary: str = "") -> LogAnalysisReport:
-    return LogAnalysisReport(
-        incident_id="INC-1", analyzed_from=_T0, analyzed_to=_T1, summary=summary
+def state_with_report():
+    start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    request = LogAnalysisRequest(
+        incident_id="i",
+        cluster="c",
+        analysis_window=TimeRange(start=start, end=start + timedelta(minutes=1)),
+        analysis_goal="approved goal",
     )
+    state = initial_analysis_agent_state(request)
+    return {
+        **state,
+        "collected": True,
+        "report": LogAnalysisReport(
+            incident_id="i",
+            analyzed_from=start,
+            analyzed_to=request.analysis_window.end,
+        ),
+    }
 
 
-def _make_session(report=None) -> AnalysisSession:
-    request = MagicMock()
-    request.incident_id = "INC-1"
-    session = AnalysisSession(
-        TimeRange(start=_T0, end=_T1), request, new_evidence_id=lambda: "E-INC-1-X"
+def test_validation_revises_then_marks_final_report_passed():
+    state = state_with_report()
+    seams = MagicMock()
+    seams.report_writer.revise_report.return_value = state["report"].model_copy(
+        update={"summary": "revised"}
     )
-    session.report = report
-    return session
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            side_effect=[MagicMock(issues=["bad"]), MagicMock(issues=[])],
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+    ):
+        grounding.return_value.validate.return_value = []
+        update = finalize_update(seams, state)
+    assert update["report"].verification_status is VerificationStatus.PASSED
+    assert update["report"].summary == "revised"
+    assert seams.report_writer.revise_report.call_count == 1
 
 
-def _make_state(candidate_ids: tuple[str, ...] = ()) -> IncidentState:
-    state = IncidentState(incident_id="INC-1")
-    state.observations = Observations(
-        candidates=tuple(MagicMock(candidate_id=cid) for cid in candidate_ids)
+def test_revision_is_bounded_to_two_and_last_revision_is_validated():
+    state = state_with_report()
+    seams = MagicMock()
+    seams.report_writer.revise_report.return_value = state["report"]
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            return_value=MagicMock(issues=["bad"]),
+        ) as validate,
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+    ):
+        grounding.return_value.validate.return_value = []
+        update = finalize_update(seams, state)
+    assert validate.call_count == 3
+    assert seams.report_writer.revise_report.call_count == 2
+    assert update["report"].verification_status is VerificationStatus.MISMATCH
+
+
+def test_missing_report_returns_failed_summary_and_gap_without_exception():
+    state = {**state_with_report(), "report": None, "gaps": ("no logs",)}
+    result = project_result(state)
+    assert result.report is None
+    assert result.status.value == "FAILED"
+    assert "no logs" in result.analysis_summary
+
+
+def test_failed_reanalysis_retains_report_and_consumed_sequence():
+    state = state_with_report()
+    seams = MagicMock()
+    mismatch = VerificationIssue(
+        issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="raw mismatch"
     )
-    return state
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            return_value=MagicMock(issues=[]),
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
+            return_value={"collected": True, "evidence_sequence": 7},
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
+            return_value={},
+        ),
+    ):
+        grounding.return_value.validate.return_value = [mismatch]
+        update = finalize_update(seams, state)
+    assert update["report"].verification_status is VerificationStatus.MISMATCH
+    assert update["evidence_sequence"] == 7
+    assert update["reanalysis_count"] == 1
+    assert update["report"].incident_id == state["report"].incident_id
 
 
-def _make_seams() -> MagicMock:
-    return MagicMock()
+def test_successful_reanalysis_uses_fresh_observations_and_actual_focus():
+    state = state_with_report()
+    seams = MagicMock()
+    mismatch = VerificationIssue(
+        issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="raw mismatch"
+    )
+    fresh_report = state["report"].model_copy(update={"summary": "fresh"})
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            return_value=MagicMock(issues=[]),
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
+            return_value={
+                "collected": True,
+                "evidence_sequence": 8,
+                "time_basis": "fresh clock",
+            },
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
+            return_value={"report": fresh_report},
+        ) as write,
+    ):
+        grounding.return_value.validate.side_effect = [[mismatch], []]
+        update = finalize_update(seams, state)
+    assert update["report"].verification_status is VerificationStatus.PASSED
+    assert "raw mismatch" in write.call_args.args[2]
+    result = project_result({**state, **update})
+    assert result.observations.time_basis == "fresh clock"
+    assert result.report.summary == "fresh"
 
 
-def _issue(issue_type: VerificationIssueType, reason: str = "x") -> VerificationIssue:
-    return VerificationIssue(issue_type=issue_type, reason=reason)
-
-
-def _patched(det_results):
-    validate = patch.object(subagent, "validate_report", side_effect=det_results)
-    grounding = patch.object(subagent, "GroundingValidator")
-    return validate, grounding
-
-
-def _det(*issues: str) -> MagicMock:
-    return MagicMock(passed=not issues, issues=list(issues))
-
-
-def test_validation_passed_returns_completed():
-    session = _make_session(_make_report())
-    seams = _make_seams()
-    state = _make_state()
-    validate, grounding = _patched([_det()])
-    with validate, grounding as grounding_cls:
-        grounding_cls.return_value.validate.return_value = []
-        result = _run_validation_loop(session=session, seams=seams, state=state)
-
-    assert result.status == AnalysisStatus.COMPLETED
-    assert result.has_report is True
-    assert result.verification_status == VerificationStatus.PASSED
-    assert session.report.verification_status == VerificationStatus.PASSED
-
-
-def test_no_report_returns_failed():
-    session = _make_session(report=None)
-    result = _run_validation_loop(session=session, seams=MagicMock(), state=_make_state())
-
-    assert result.status == AnalysisStatus.FAILED
-    assert result.has_report is False
-    assert result.verification_status == VerificationStatus.NOT_VERIFIED
-    assert result.failure_reason
-
-
-def test_candidate_ids_are_passed_to_deterministic_validation():
-    session = _make_session(_make_report())
-    seams = _make_seams()
-    state = _make_state(candidate_ids=("C1",))
-    validate, grounding = _patched([_det()])
-    with validate as validate_mock, grounding as grounding_cls:
-        grounding_cls.return_value.validate.return_value = []
-        _run_validation_loop(session=session, seams=seams, state=state)
-
-    assert validate_mock.call_args.kwargs["candidate_ids"] == {"C1"}
-
-
-def test_report_mismatch_triggers_revise_and_revalidates():
-    session = _make_session(_make_report())
-    seams = _make_seams()
-    revised = _make_report("revised")
-    seams.report_writer.revise_report.return_value = revised
-    validate, grounding = _patched([_det("overclaim"), _det()])
-    with validate, grounding as grounding_cls:
-        grounding_cls.return_value.validate.side_effect = [
-            [_issue(VerificationIssueType.REPORT_MISMATCH)],
-            [],
+def test_validation_exception_after_reanalysis_preserves_consumed_ids_and_fresh_artifacts():
+    state = state_with_report()
+    mismatch = VerificationIssue(
+        issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="bad"
+    )
+    fresh_report = state["report"].model_copy(update={"summary": "fresh"})
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            return_value=MagicMock(issues=[]),
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
+            return_value={
+                "collected": True,
+                "evidence_sequence": 8,
+                "time_basis": "fresh clock",
+            },
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
+            return_value={"report": fresh_report},
+        ),
+    ):
+        grounding.return_value.validate.side_effect = [
+            [mismatch],
+            RuntimeError("validation offline"),
         ]
-        result = _run_validation_loop(session=session, seams=seams, state=_make_state())
-
-    seams.report_writer.revise_report.assert_called_once()
-    assert result.status == AnalysisStatus.COMPLETED
-    assert result.verification_status == VerificationStatus.PASSED
-    assert session.report.summary == "revised"
-
-
-def test_revision_is_bounded_and_ends_in_mismatch():
-    session = _make_session(_make_report())
-    seams = _make_seams()
-    seams.report_writer.revise_report.return_value = _make_report("still bad")
-    rounds = subagent._MAX_VALIDATION_ROUNDS
-    validate, grounding = _patched([_det("bad")] * (rounds + 1))
-    with validate, grounding as grounding_cls:
-        grounding_cls.return_value.validate.return_value = []
-        result = _run_validation_loop(session=session, seams=seams, state=_make_state())
-
-    assert seams.report_writer.revise_report.call_count == rounds
-    assert result.status == AnalysisStatus.COMPLETED
-    assert result.verification_status == VerificationStatus.MISMATCH
-    assert result.failure_reason == "bad"
-    assert session.report.verification_status == VerificationStatus.MISMATCH
+        update = finalize_update(MagicMock(), state)
+    assert update["execution_failed"]
+    assert update["evidence_sequence"] == 8
+    result = project_result({**state, **update})
+    assert result.status.value == "FAILED"
+    assert result.report.summary == "fresh"
+    assert result.observations.time_basis == "fresh clock"
+    assert result.verification_status is VerificationStatus.NOT_VERIFIED
 
 
-def test_analysis_mismatch_reanalyzes_once_then_passes():
-    session = _make_session(_make_report("first"))
-    seams = _make_seams()
-    fresh = _make_session(_make_report("second"))
-    validate, grounding = _patched([_det(), _det()])
-    with validate, grounding as grounding_cls, patch.object(
-        subagent, "_reanalyze_window", return_value=fresh
-    ) as reanalyze:
-        grounding_cls.return_value.validate.side_effect = [
-            [_issue(VerificationIssueType.ANALYSIS_MISMATCH, "spike not in raw")],
-            [],
-        ]
-        result = _run_validation_loop(session=session, seams=seams, state=_make_state())
+def test_reanalysis_is_never_repeated_after_a_second_analysis_mismatch():
+    state = state_with_report()
+    mismatch = VerificationIssue(
+        issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="bad"
+    )
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            return_value=MagicMock(issues=[]),
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
+            return_value={"collected": True},
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
+            return_value={"report": state["report"]},
+        ) as write,
+    ):
+        grounding.return_value.validate.return_value = [mismatch]
+        update = finalize_update(MagicMock(), state)
+    assert write.call_count == 1
+    assert update["report"].verification_status is VerificationStatus.MISMATCH
 
-    reanalyze.assert_called_once()
-    assert reanalyze.call_args.kwargs["focus"] == "spike not in raw"
-    assert session.reanalysis_count == 1
-    assert session.report.summary == "second"
-    assert result.verification_status == VerificationStatus.PASSED
 
-
-def test_analysis_mismatch_after_reanalysis_budget_is_returned_as_mismatch():
-    session = _make_session(_make_report())
-    session.reanalysis_count = subagent._MAX_REANALYSIS_ATTEMPTS
-    seams = _make_seams()
-    validate, grounding = _patched([_det()])
-    with validate, grounding as grounding_cls, patch.object(
-        subagent, "_reanalyze_window"
-    ) as reanalyze:
-        grounding_cls.return_value.validate.return_value = [
-            _issue(VerificationIssueType.ANALYSIS_MISMATCH, "spike not in raw")
-        ]
-        result = _run_validation_loop(session=session, seams=seams, state=_make_state())
-
-    reanalyze.assert_not_called()
+def test_unverifiable_is_not_passed_and_does_not_trigger_revision():
+    state = state_with_report()
+    seams = MagicMock()
+    issue = VerificationIssue(
+        issue_type=VerificationIssueType.UNVERIFIABLE, reason="no raw"
+    )
+    with (
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.validate_report",
+            return_value=MagicMock(issues=[]),
+        ),
+        patch(
+            "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
+        ) as grounding,
+    ):
+        grounding.return_value.validate.return_value = [issue]
+        update = finalize_update(seams, state)
+    assert update["report"].verification_status is VerificationStatus.NOT_VERIFIED
     seams.report_writer.revise_report.assert_not_called()
-    assert result.verification_status == VerificationStatus.MISMATCH
-    assert result.failure_reason == "spike not in raw"
-
-
-def test_only_unverifiable_issues_leave_report_not_verified():
-    session = _make_session(_make_report())
-    seams = _make_seams()
-    validate, grounding = _patched([_det()])
-    with validate, grounding as grounding_cls:
-        grounding_cls.return_value.validate.return_value = [
-            _issue(VerificationIssueType.UNVERIFIABLE, "raw 없음")
-        ]
-        result = _run_validation_loop(session=session, seams=seams, state=_make_state())
-
-    seams.report_writer.revise_report.assert_not_called()
-    assert result.status == AnalysisStatus.COMPLETED
-    assert result.verification_status == VerificationStatus.NOT_VERIFIED

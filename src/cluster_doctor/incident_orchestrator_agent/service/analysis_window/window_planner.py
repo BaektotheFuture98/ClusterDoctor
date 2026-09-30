@@ -12,16 +12,16 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import timedelta
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import (
+from cluster_doctor.incident_analysis_agent.model.time_range import (
     MAX_TIME_RANGE_DURATION,
     TimeRange,
     merge_spans,
     split_span,
     subtract_spans,
 )
-from cluster_doctor.incident_orchestrator_agent.model.state.incident_state import IncidentState
 
 _logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ MIN_USEFUL_WINDOW = timedelta(minutes=1)
 
 def plan_new_windows(
     suggested: "list[TimeRange] | tuple[TimeRange, ...]",
-    state: IncidentState,
+    state: Mapping[str, object],
     *,
     limit: int = 4,
 ) -> list[TimeRange]:
@@ -57,7 +57,7 @@ def plan_new_windows(
 
     fresh: list[TimeRange] = []
     for candidate in candidates:
-        for piece in subtract_spans(candidate, state.analyzed_windows):
+        for piece in subtract_spans(candidate, tuple(state.get("analyzed_windows", ()))):
             if piece.end - piece.start >= MIN_USEFUL_WINDOW:
                 fresh.append(piece)
 

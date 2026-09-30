@@ -1,4 +1,4 @@
-"""DeepAgent가 기본으로 딸려 보내는 것들을 떼어 낸다.
+"""Analysis owner의 DeepAgent harness 정책. Orchestrator도 재사용한다.
 
 ``create_deep_agent``은 부르기만 하면 파일시스템과 셸 도구를 함께 묶어 준다 —
 ``ls, read_file, write_file, edit_file, delete, glob, grep, execute``. 범용
@@ -51,7 +51,7 @@ from deepagents._models import get_model_identifier, get_model_provider
 from langchain_core.language_models.chat_models import BaseChatModel
 
 # 파일시스템 접근을 전부 거절한다. 이 저장소의 Agent가 하는 일에 파일은
-# 등장하지 않는다 — 근거도 리포트도 IncidentState/AnalysisSession이 직접
+# 등장하지 않는다 — 근거도 리포트도 MainAgentState/AnalysisAgentState이 직접
 # 들고 있다.
 DENY_ALL_FILESYSTEM = [
     FilesystemPermission(operations=["read", "write"], paths=["/**"], mode="deny")

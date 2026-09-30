@@ -13,14 +13,14 @@ from cluster_doctor.kafka_consumer.trigger_settling.service.inflow import (
     InflowTracker,
     SlowlogTrigger,
 )
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident import (
+from cluster_doctor.incident_orchestrator_agent.model.incident import (
     Incident,
     TriggerType,
 )
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analyze_incident import (
     AnalyzeIncident,
-    StartIncident,
 )
+from cluster_doctor.incident_orchestrator_agent.model.lifecycle import StartIncident
 
 _logger = logging.getLogger(__name__)
 

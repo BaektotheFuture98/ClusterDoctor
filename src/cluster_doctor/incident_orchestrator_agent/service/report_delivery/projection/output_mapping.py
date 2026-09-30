@@ -4,7 +4,7 @@
 새 타입에 맞춰 다시 쓰지 않는 이유는 그 코드가 잘 돌고 있고, 바꿔야 할 이유가
 "모양이 달라서"뿐이기 때문이다. 대신 경계에 매핑 함수 하나를 둔다.
 
-Analysis Agent의 최종 리포트와 IncidentState가 누적한 관측값·근거를 결합해
+Analysis Agent의 최종 리포트와 MainAgentState가 누적한 관측값·근거를 결합해
 운영자 전달용 값을 만드는 것이 이 함수의 일이다. rendering 어댑터는 이
 결과만 읽는다.
 
@@ -15,10 +15,10 @@ Analysis Agent의 최종 리포트와 IncidentState가 누적한 관측값·근�
 
 from __future__ import annotations
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import LogAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     Finding,
     IncidentAnalysisReport,
     Narrative,

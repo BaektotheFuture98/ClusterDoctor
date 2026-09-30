@@ -1,19 +1,9 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from cluster_doctor.incident_orchestrator_agent.model.report_delivery import ReportPublication
 
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     IncidentAnalysisReport,
 )
-
-
-@dataclass(frozen=True)
-class ReportPublication:
-    """보고서 전달 구현이 반환하는 게시 결과 메타데이터.
-
-    전달할 내용인 IncidentAnalysisReport와 달리 현재는 생성된 텍스트 길이만 담는다.
-    """
-
-    text_length: int = 0
 
 
 class ReportPublisher(ABC):

@@ -42,10 +42,10 @@ src/cluster_doctor/
 └── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증
 ```
 
-`kafka_consumer`는 `SlowlogIntake`를 직접 주입받고, 두 Agent 모듈은 서로의
-model(basemodel/state)만 참조하며 구현 프레임워크(`deepagents`, `langchain`,
-`litellm`)를 outbound 방향으로만 안다. `bootstrap`이 유일하게 모든 구현체를
-조립한다.
+`kafka_consumer`는 `SlowlogIntake`를 직접 주입받는다. 실행 State는 각 Agent의
+`agent/state.py`, 공유 데이터 계약은 owner의 `model/`, LLM schema는 해당
+service/workflow에 둔다. Orchestrator가 Analysis 실행을 조립하며 Analysis는
+Orchestrator에 의존하지 않는다. `bootstrap`은 공개 조립 함수로 구현체를 연결한다.
 
 ### Agent 구조
 
@@ -67,14 +67,14 @@ Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼
 `propose_analysis`, `finish_incident` 셋뿐이며, 시간·분·호출 상한은 runtime guardrail이 강제한다.
 
 Analysis SubAgent는 승인된 window 하나를 끝까지 처리한다. evidence를 모으고 Window Report를
-작성한 뒤, LLM 도구가 아닌 코드 루프(`_run_validation_loop`)가 리포트를 검증한다.
+작성한 뒤, 같은 DeepAgent의 `after_agent` middleware가 리포트를 검증한다.
 `validate_report`가 근거 id·시각·노드·순서·과장·인과 같은 구조화 필드를 대조하고,
 `GroundingValidator`가 Claim을 evidence 원문과 대조한다. 표현 불일치는 `revise_report`로
 최대 2회 고치고, 분석 불일치는 같은 window를 1회 다시 분석한다. 그래도 남으면
 `MISMATCH`로, 원문을 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
 `COMPLETED` 종료에는 window report가 하나 이상 있어야 한다.
 
-window report는 합치지 않고 window마다 `IncidentState.window_results`에 리포트 객체를
+window report는 합치지 않고 window마다 `MainAgentState.window_results`에 리포트 객체를
 그대로 쌓는다(별도 저장소를 거치지 않는다). `AnalyzeIncident`는 마지막 window의 report를
 대표로 HTML에 전달하고, 모든 window의 검증 불일치를 gap으로 싣는다. Candidate를 prompt에
 보이는 방식과 HTML에 보이는 방식은 각각 `service/observation`과
@@ -83,7 +83,9 @@ window report는 합치지 않고 window마다 `IncidentState.window_results`에
 ## 분석 모델
 
 Main Agent는 raw log를 보지 않는다. Agent 사이에는 request/response와 요약만 흐르고,
-evidence·원문·report·observation은 `IncidentState`/`AnalysisSession`이 직접 소유한다.
+evidence·원문·report·observation은 각 Agent의 유일한 State가 직접 소유한다.
+Analysis는 자신의 최종 State를 `WindowAnalysisResult`로 투영하고, Orchestrator
+어댑터가 결과를 Main State update에 반영한다. State 객체는 Agent 간에 공유하지 않는다.
 그래야 Main Agent context가 raw log로 불어나지 않는다.
 
 각 datasource는 raw log를 1분 bucket으로 나눠 Map/Reduce로 evidence를 고른다. 모델은 번호와
@@ -151,7 +153,7 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 
 | 한도 | 값 | 위치 |
 |---|---:|---|
-| analysis window | 10분 | `incident_analysis_agent/model/basemodel/time_range.py` |
+| analysis window | 10분 | `incident_analysis_agent/model/time_range.py` |
 | incident analysis budget | 60분, 12회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | main agent cycle / rejected decision | 16회 / 3회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | settling wait | 30초 quiet period, 300초 total | `kafka_consumer/trigger_settling/service/intake.py` |
@@ -160,11 +162,11 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 | raw prompt text | 60,000자 | `incident_analysis_agent/service/evidence_collection/limits.py` |
 | node investigation | 2 nodes | `incident_analysis_agent/service/node_investigation/node_investigation.py` |
 | source query rows | source·minute당 10,000 | `incident_analysis_agent/datasource/clickhouse/client.py` |
-| master log | window당 300, report당 120 | `incident_analysis_agent/model/state/analysis_session.py` |
+| master log | window당 300, report당 120 | `incident_analysis_agent/service/observation/builder.py` |
 | ClickHouse node-log | default 300, hard cap 2,000 | `incident_analysis_agent/datasource/clickhouse/client.py` |
 | SSH node-log | default 300 | `incident_analysis_agent/datasource/ssh/node_log.py` |
 | SSH timeout | connect 10초, command 30초 | `incident_analysis_agent/datasource/ssh/node_log.py` |
-| LLM timeout | 600초 | `incident_orchestrator_agent/agent/runtime/litellm_client.py` |
+| LLM timeout | 1,200초 | `incident_analysis_agent/agent/runtime/litellm_client.py` |
 | ClickHouse timeout | 30초 | `bootstrap/dependency/wiring.py` |
 
 ### 재시도와 rate limit
@@ -266,7 +268,7 @@ flowchart TD
     E --> F[유입 정착 settle]
     F --> G[Incident 생성<br/>StartIncident]
     G --> H[AnalyzeIncident.handle]
-    H --> I[IncidentState 생성<br/>초기 분석 구간 생성]
+    H --> I[입력 DTO → MainAgentState 초기화<br/>초기 분석 구간 생성]
     I --> J[_DeepAgentIncidentAnalyzer.analyze]
     J --> K[Main Agent]
     K --> L[후보 Window 선택·승인<br/>Analysis SubAgent 위임]
@@ -360,6 +362,6 @@ uv run pytest
 ```
 
 `tests/unit`은 각 Agent의 model·datasource·service·agent 단위를 외부 의존 없이
-검증하고, `tests/integration`은 `IncidentState`/HTML publication처럼 여러 모듈이
+검증하고, `tests/integration`은 Agent 결과/HTML publication처럼 여러 모듈이
 맞물리는 경로를 확인한다. 실제 외부 시스템과 보고서 생성은 위 Docker Compose
 통합 실행으로 확인한다.

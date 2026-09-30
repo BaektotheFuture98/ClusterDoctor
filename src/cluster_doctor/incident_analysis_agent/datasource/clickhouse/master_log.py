@@ -12,11 +12,11 @@ ES는 그 사건들을 INFO로 남긴다. 실제 조회(``fetch_node_logs``)는
 
 from __future__ import annotations
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import NodeLogEntry
+from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.log_entries import NodeLogEntry
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_log_line
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import RawRecord
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
 
 # 조회 조건. 레벨만으로는 안 된다 — 실측(packetbeat.loki_logs)에서 INFO 10건 중
 # 진단에 필요한 것은 AllocationService 1건이었고 나머지 9건은 ML 유지보수·만료

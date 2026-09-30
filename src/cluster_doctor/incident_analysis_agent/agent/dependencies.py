@@ -1,8 +1,8 @@
 """Analysis SubAgent 도구 셋이 공유하는 불변 의존성 묶음.
 
 ``AnalysisSeams``는 도구 셋과 응답 조립이 함께 쓰는 파이프라인 조각을 한 곳에
-모은 컨테이너다. 위임마다 달라지는 실행 상태(``AnalysisSession``,
-``model/state/analysis_session.py``)와 분리된 이유는 저 상태는 위임마다
+모은 컨테이너다. 위임마다 달라지는 실행 상태(``agent/state.py``의
+``AnalysisAgentState``)와 분리된 이유는 저 상태는 위임마다
 새로 만들지만 이 의존성들은 프로세스 전체에서 재사용되기 때문이다.
 
 frozen인 이유는 위임 중에 바뀔 값이 하나도 없기 때문이다.
@@ -24,8 +24,8 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolv
     NodeResolver,
 )
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import LogEntry, NodeLogEntry
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, NodeLogEntry
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
 )

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.health_point import HealthPoint
+from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ class Observations:
     """코드가 관측한 사실 전부. 모델을 거치지 않는다.
 
     한 Incident 안에서 분석이 여러 번 일어날 수 있으므로 값들이 누적된다.
-    누적 규칙은 수집하는 쪽(``agent/analysis/run_state.py``와
+    누적 규칙은 수집하는 쪽(``service/observation/builder.py``와
     ``merge_observations``)에 있고, 여기 도착할 때는 이미 병합이 끝나 있다.
     """
 
@@ -132,15 +132,6 @@ class Observations:
     master_log_total: int = 0
     health: tuple[HealthPoint, ...] = ()
     candidates: tuple[SlowCandidate, ...] = ()
-
-    def is_empty(self) -> bool:
-        """관측한 것이 하나도 없는가.
-
-        폴백 사다리의 마지막 칸을 판정한다. 여기까지 비어 있으면 그때만
-        예외를 올린다 — 그 전에는 모델이 아무 말도 남기지 못했더라도
-        관측값만으로 리포트가 성립한다.
-        """
-        return not (self.timeline or self.nodes or self.master_events or self.health)
 
 
 def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
@@ -223,7 +214,7 @@ def merge_node_row(current: NodeMetricRow, new: NodeMetricRow) -> NodeMetricRow:
 
     쌍 단위 병합을 도메인에 두는 이유: 이 값을 합치는 곳이 둘이다. 한 번의
     분석 안에서 구간을 합칠 때(``observations.merge_node_rows``)와, 한 Incident
-    안에서 여러 번의 분석을 합칠 때(``merge_observations``, ``IncidentState.observations``에
+    안에서 여러 번의 분석을 합칠 때(``merge_observations``, ``MainAgentState.observations``에
     접힌다). 규칙이 두 벌이 되면 한쪽만 고쳐지는 날이 온다.
     """
     return replace(

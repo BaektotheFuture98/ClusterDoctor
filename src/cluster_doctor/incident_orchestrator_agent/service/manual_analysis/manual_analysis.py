@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident import (
+from cluster_doctor.incident_orchestrator_agent.model.incident import (
     Incident,
     TriggerType,
 )
@@ -15,6 +15,8 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrai
 )
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analyze_incident import (
     AnalyzeIncident,
+)
+from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
     IncidentOutcome,
     StartIncident,
 )

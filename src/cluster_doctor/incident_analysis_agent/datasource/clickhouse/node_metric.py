@@ -21,9 +21,9 @@ from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import 
     MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     query_segment,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import LogEntry, NodeMetricEntry
-from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, NodeMetricEntry
+from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import truncate_raw
 
 # rejected는 **누적** 카운터다(``_nodes/stats``). 그래서 0이 아니라는 사실

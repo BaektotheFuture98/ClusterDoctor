@@ -15,13 +15,13 @@ import re
 from dataclasses import replace
 from datetime import datetime
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.log_entries import (
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
+from cluster_doctor.incident_analysis_agent.model.observations import (
     NodeMetricRow,
     SlowCandidate,
     TimelineRow,
@@ -196,7 +196,7 @@ def slow_candidates(logs: list[LogEntry], limit: int = 5) -> list[SlowCandidate]
     """느린 요청 후보를 고른다. ``candidate_id``는 비운 채 돌려준다.
 
     id를 여기서 붙이지 않는 이유: 여러 번의 분석에 걸쳐 번호가 이어져야
-    하는데, 그 상태는 호출부(``AnalysisRunState``)가 갖고 있다.
+    하는데, 그 상태는 호출부(``ObservationBuilder``)가 갖고 있다.
 
     두 소스를 각각 상위 ``limit``건씩 고른다. 한쪽으로 합쳐 정렬하면 단위가
     다른 값(``took`` 문자열과 ``run_time`` Decimal)을 견줘야 하고, 실측처럼

@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.basemodel.report import (
+from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     ReportFinding,
 )
