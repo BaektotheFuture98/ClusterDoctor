@@ -12,8 +12,11 @@ from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evid
 
 def cite(evidence: Evidence) -> str:
     """근거 하나를 사람이 읽을 한 줄로 그린다."""
-    timestamp = evidence.event_time.strftime("%Y-%m-%d %H:%M:%S")
-    parts = [f"[{evidence.evidence_id}] {timestamp}", str(evidence.source)]
+    parts = [
+        f"[{evidence.evidence_id}]",
+        evidence.event_time.strftime("%Y-%m-%d %H:%M:%S"),
+    ]
+    parts.append(str(evidence.source))
     if evidence.severity:
         parts.append(evidence.severity)
     if evidence.node_name or evidence.node_id:
