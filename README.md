@@ -164,7 +164,7 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 | ClickHouse node-log | default 300, hard cap 2,000 | `incident_analysis_agent/datasource/clickhouse/client.py` |
 | SSH node-log | default 300 | `incident_analysis_agent/datasource/ssh/node_log.py` |
 | SSH timeout | connect 10초, command 30초 | `incident_analysis_agent/datasource/ssh/node_log.py` |
-| LLM timeout | 120초 | `incident_orchestrator_agent/agent/runtime/litellm_client.py` |
+| LLM timeout | 600초 | `incident_orchestrator_agent/agent/runtime/litellm_client.py` |
 | ClickHouse timeout | 30초 | `bootstrap/dependency/wiring.py` |
 
 ### 재시도와 rate limit
