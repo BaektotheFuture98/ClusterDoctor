@@ -9,7 +9,7 @@ LangChain ``BaseChatModel``이 필요하다.
 값**이어야 하고, 그래서 표를 옮겨 적지 않고 import해서 쓴다:
 
 1. 재시도 0회 (429 증폭 방지)
-2. 요청 타임아웃 120초
+2. 요청 타임아웃 600초
 3. temperature를 비롯한 샘플링 인자를 보내지 않는다
 
 여기에 하나가 더 붙는다. Main DeepAgent는 tool call로만 움직이므로, tool

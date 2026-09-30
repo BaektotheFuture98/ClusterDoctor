@@ -29,7 +29,7 @@ litellm.suppress_debug_info = True
 _logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT_TOKENS = 8192
-_REQUEST_TIMEOUT_SECONDS = 120.0
+_REQUEST_TIMEOUT_SECONDS = 600.0
 
 # 429 진단용으로 남길 응답 헤더. 화이트리스트인 것이 핵심이다 —
 # 응답 본문·요청 URL·str(exc)는 어떤 경우에도 로그에 넣지 않는다. provider에
