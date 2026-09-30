@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from statistics import median
@@ -21,6 +21,9 @@ from cluster_doctor.incident_analysis_agent.model.basemodel.observations import 
 )
 from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
     TimelineAnnotation,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
+    cite,
 )
 
 _ONE_MINUTE = timedelta(minutes=1)
@@ -47,6 +50,7 @@ class TimelineCard:
     interpretations: tuple[TimelineItem, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     raw_rows: tuple[TimelineRow, ...] = ()
+    citations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -83,7 +87,7 @@ def project_timeline(
     if not signals:
         if not rows:
             return ()
-        return (
+        cards = (
             TimelineCard(
                 start=rows[0].minute,
                 end=rows[-1].minute,
@@ -93,8 +97,14 @@ def project_timeline(
                 raw_rows=rows,
             ),
         )
+    else:
+        cards = _merge_cards(signals, rows)
 
-    return _merge_cards(signals, rows)
+    by_id = {item.evidence_id: item for item in evidence}
+    return tuple(
+        replace(card, citations=_citation_lines(card.evidence_refs, by_id))
+        for card in cards
+    )
 
 
 def _minute(moment: datetime) -> datetime:
@@ -841,6 +851,38 @@ def _annotation_signals(
             )
         )
     return signals
+
+
+# 카드 하나가 소스 하나당 인용할 근거 원문 수. 넘으면 "… 외 N건"으로 자른다.
+_CITATIONS_PER_SOURCE_MAX = 3
+
+
+def _citation_lines(
+    evidence_refs: tuple[str, ...], by_id: dict[str, Evidence]
+) -> tuple[str, ...]:
+    """카드의 근거를 출처별로 묶어 사람이 읽을 인용 줄로 그린다.
+
+    근거가 없는 출처는 나오지 않는다 — 없는 값을 지어내지 않는다는 원칙과 같다
+    (``evidence.py``, ``report_text.py`` 등).
+    """
+    by_source: dict[EvidenceSource, list[Evidence]] = {}
+    for ref in evidence_refs:
+        item = by_id.get(ref)
+        if item is None:
+            continue
+        by_source.setdefault(item.source, []).append(item)
+
+    lines: list[str] = []
+    for source in EvidenceSource:
+        items = by_source.get(source)
+        if not items:
+            continue
+        lines.append(f"{source} {len(items)}건")
+        shown = items[:_CITATIONS_PER_SOURCE_MAX]
+        lines.extend(cite(item) for item in shown)
+        if len(items) > len(shown):
+            lines.append(f"… 외 {len(items) - len(shown)}건")
+    return tuple(lines)
 
 
 def _merge_cards(
