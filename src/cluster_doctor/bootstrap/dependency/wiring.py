@@ -138,10 +138,7 @@ def build_slowlog_intake(s: Settings | None = None) -> SlowlogIntake:
     return SlowlogIntake(
         analyze_incident=_build_analyze_incident(s),
         cluster=s.cluster_name,
-        micro_batch_seconds=s.micro_batch_seconds,
         max_pending=10_000,
-        max_incidents=100,
-        worker_count=1,
     )
 
 def build_manual_analysis(s: Settings | None = None) -> RunManualAnalysis:

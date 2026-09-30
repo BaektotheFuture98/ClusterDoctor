@@ -54,8 +54,6 @@ class Settings(BaseSettings):
     kafka_topic: str = "slowlog"
     kafka_group_id: str = "clusterdoctor"
 
-    micro_batch_seconds: float = 10.0
-
     report_dir: str = "reports"
 
     @field_validator("gemini_api_key")

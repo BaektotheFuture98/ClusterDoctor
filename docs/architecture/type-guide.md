@@ -23,7 +23,7 @@
 | `TimeRange` | `incident_analysis_agent/model/basemodel` · frozen dataclass | 시간대와 순서, 최대 10분 상한을 검증하는 구간 | 구간 계획/요청 변환 → 조회·분석·guardrail |
 | `StartIncident` | `incident_orchestrator_agent/service/incident_lifecycle` · frozen dataclass | 정착된 Incident 전체 진단 명령 | intake/수동 진단 → AnalyzeIncident |
 | `IncidentOutcome` / `IncidentAnalysisDetails` | `incident_orchestrator_agent/service/incident_lifecycle` · frozen dataclass | 종료 상태와 호출자가 읽는 진단 상세 | AnalyzeIncident → inbound 호출자 |
-| `_Arrival` / `SlowlogIntake` | `kafka_consumer/trigger_settling` · 수신 값/실행 객체 | 수신 시각 보존, 정착과 워커 큐 관리 | handle → 정착 태스크/진단 워커 |
+| `_Arrival` / `SlowlogIntake` | `kafka_consumer/trigger_settling` · 수신 값/실행 객체 | 수신 시각 보존, 정착과 순차 분석 루프 관리 | handle → 정착·분석 루프 |
 | `LogAnalysisRequest` | `incident_analysis_agent/agent` · BaseModel | 승인된 한 구간의 SubAgent 위임 계약 | Main Agent → Analysis SubAgent |
 | `LogAnalysisResponse` | `incident_analysis_agent/agent` · frozen BaseModel | 검증을 마친 리포트 상태·요약을 되돌리는 좁은 계약(Main Agent의 structured_response) | SubAgent → Main Agent |
 | `WindowOutcome`(private) | `incident_analysis_agent/agent` · frozen BaseModel | 구간 결과를 IncidentState에 접기 위한 내부 전용 계약 — Main Agent 모델은 보지 않음 | SubAgent 응답 조립 → 상태 갱신 |
@@ -65,9 +65,9 @@
 
 ## 현재 큐와 책임 흐름
 
-Kafka inbound가 파싱한 `SlowlogTrigger`를 `SlowlogIntake.handle`로 전달한다. `_pending`은 동기 `queue.Queue[_Arrival]`이며 micro batch와 quiet period/대기 예산으로 유입을 정착시킨다. 정착 태스크는 `StartIncident`를 용량이 있는 `asyncio.Queue`인 `_incidents`에 넣고, 진단 워커는 이를 꺼내 `AnalyzeIncident.handle`을 실행한다. 유입 큐가 가득 차면 해당 트리거를 버리고 경고한다. 진단 큐가 가득 차면 put이 기다린다. 워커 수가 동시 Incident 분석 수를 제한한다.
+Kafka inbound가 파싱한 `SlowlogTrigger`를 `SlowlogIntake.handle`로 전달한다. `_pending`은 동기 `queue.Queue[_Arrival]`이며 quiet period(연속 2번 무유입)와 전체 대기 예산으로 유입을 정착시킨다. 정착과 분석은 하나의 순차 루프다 — 정착이 끝나면 그 자리에서 바로 `StartIncident`를 만들어 `AnalyzeIncident.handle`을 실행하고, 그 분석이 끝나야 큐의 다음 트리거를 정착시킨다. 큐가 가득 차면 해당 트리거를 버리고 경고한다.
 
-`AnalyzeIncident`는 `IncidentState`를 만들고 분석기를 별도 스레드에서 실행한 뒤 종료·최종 전달을 담당한다. `IncidentState`는 Main Agent Tool/미들웨어/Analysis SubAgent가 전부 같은 참조로 공유하므로, 스레드 실행이 끝난 뒤 별도 저장소를 다시 조회할 필요가 없다. 실행 시간 초과에도 이미 실행 중인 스레드가 끝날 때까지 워커를 점유한다. 수동 진단은 같은 시작 명령과 진단 생명주기를 사용한다.
+`AnalyzeIncident`는 `IncidentState`를 만들고 분석기를 별도 스레드에서 실행한 뒤 종료·최종 전달을 담당한다. `IncidentState`는 Main Agent Tool/미들웨어/Analysis SubAgent가 전부 같은 참조로 공유하므로, 스레드 실행이 끝난 뒤 별도 저장소를 다시 조회할 필요가 없다. 실행 시간 초과에도 이미 실행 중인 스레드가 끝날 때까지 정착 루프가 다음 트리거를 처리하지 못한다. 수동 진단은 같은 시작 명령과 진단 생명주기를 사용한다.
 
 Main Agent는 다음 구간과 목표를 고르고 코드 guardrail이 범위·중복·예산을 승인한다. Analysis SubAgent는 승인된 범위에서 근거 수집·분별 선별·노드 조사·초안 작성을 수행한 뒤, 코드 검증 루프로 Window Report를 검증하고 `LogAnalysisResponse`를 반환한다. 구조화 파싱과 타입 변환은 근거 일관성 검증이 아니다. 의미 검증은 `validate_report`(근거 id, 시각, 노드, 지지/반증 충돌 등)와 `GroundingValidator`(Claim과 원문 대조)가 수행한다. 표현 불일치는 리포트를 수정하고, 분석 불일치는 같은 구간을 다시 분석하며, 해소되지 않으면 `MISMATCH`, 원문을 대조하지 못하면 `NOT_VERIFIED`로 남는다. 이 검증은 모델 판단의 정답 보증은 아니다.
 

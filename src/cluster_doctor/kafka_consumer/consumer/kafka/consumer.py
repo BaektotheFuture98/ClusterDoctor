@@ -71,9 +71,8 @@ class KafkaConsumerAdapter:
 def _parse_message(data: dict) -> SlowlogTrigger:
     """Kafka 메시지에서 발생 시각만 뽑는다.
 
-    이 항목은 ``SlowlogIntake``가 micro-batch와 유입 정착 범위를 계산하는 데만
-    쓴다. 상세 분석은 ClickHouse를 조회해서 하므로 여기서 나머지 필드를 채울
-    이유가 없다.
+    이 항목은 ``SlowlogIntake``가 유입 정착 범위를 계산하는 데만 쓴다. 상세
+    분석은 ClickHouse를 조회해서 하므로 여기서 나머지 필드를 채울 이유가 없다.
 
     돌려주는 시각은 반드시 timezone-aware다. naive가 하나라도 섞이면
     유입 정착의 시각 정렬이 TypeError로 터져 analysis가 통째로 죽는 것을
