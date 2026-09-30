@@ -43,7 +43,7 @@ class Evidence(BaseModel):
     ``datasource/clickhouse/node_metric.py``) 셋만 만든다.
 
     ``message``는 Cross-source 프롬프트(``format_evidence_line``)와 운영자
-    리포트 인용(``output_mapping._cite``)이 함께 읽는, 코드가 렌더링한 한
+    리포트 인용(``evidence_citation.cite``)이 함께 읽는, 코드가 렌더링한 한
     줄이다. 소스가 파일 원문이면(SSH ``node_log``) 원문 그대로이고, 그 외에는
     구조화된 필드에서 조립한 서술이다. 원문 자체가 필요하면
     (``GroundingValidator``만 그렇다) ``raw``를 직접 읽는다 — 지금은 세 생성
