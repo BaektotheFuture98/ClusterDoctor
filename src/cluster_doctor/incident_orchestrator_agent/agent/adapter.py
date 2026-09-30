@@ -176,9 +176,9 @@ class _DeepAgentIncidentAnalyzer:
                 {"recursion_limit": self._recursion_limit},
             )
         except Exception as exc:
-            return self._fallback(incident, exc)
+            return self._fallback(exc)
 
-        return self._result_from(incident, state)
+        return self._result_from(state)
 
     # ── 조립 ─────────────────────────────────────────────────────────
     def _compile(self, incident: Incident, state: IncidentState):
@@ -203,9 +203,7 @@ class _DeepAgentIncidentAnalyzer:
         )
 
     # ── 결과 ─────────────────────────────────────────────────────────
-    def _result_from(
-        self, incident: Incident, state: IncidentState
-    ) -> IncidentAnalysisResult:
+    def _result_from(self, state: IncidentState) -> IncidentAnalysisResult:
         """끝난 뒤의 ``IncidentState``에서 결과를 읽는다.
 
         그래프의 반환값이 아니라 State를 읽는 이유: 종료를 확정하는 것은
@@ -226,20 +224,16 @@ class _DeepAgentIncidentAnalyzer:
             )
 
         # 검증과 명시적인 종료 없이 정상 완료를 추정하지 않는다.
-        _logger.warning(
-            "[incident %s] Agent가 종료를 선언하지 않고 끝났다", incident.incident_id
-        )
+        _logger.warning("Agent가 종료를 선언하지 않고 끝났다")
         return IncidentAnalysisResult(
             status=IncidentStatus.FAILED,
             reason="Agent가 종료를 선언하지 않고 끝나 분석을 마감했다",
             failed=True,
         )
 
-    def _fallback(
-        self, incident: Incident, exc: Exception
-    ) -> IncidentAnalysisResult:
+    def _fallback(self, exc: Exception) -> IncidentAnalysisResult:
         """Agent 실행 오류는 확보한 보고서 유무와 무관하게 실패다."""
-        _logger.exception("[incident %s] Agent 실행 실패", incident.incident_id)
+        _logger.exception("Agent 실행 실패")
         return IncidentAnalysisResult(
             status=IncidentStatus.FAILED,
             reason=f"Agent 실행이 {type(exc).__name__}로 끝났다",

@@ -37,6 +37,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publicat
     ReportPublication,
     ReportPublisher,
 )
+from cluster_doctor.log_context import bind_incident_id
 
 _logger = logging.getLogger(__name__)
 
@@ -102,7 +103,13 @@ class AnalyzeIncident:
         self, command: StartIncident, *, cancellation: CancellationToken | None = None
     ) -> IncidentOutcome:
         incident = command.incident
-        token = cancellation or CancellationToken()
+        with bind_incident_id(incident.incident_id):
+            return await self._handle(command, cancellation or CancellationToken())
+
+    async def _handle(
+        self, command: StartIncident, token: CancellationToken
+    ) -> IncidentOutcome:
+        incident = command.incident
         remaining_seconds = max(
             0.0,
             self._incident_timeout_seconds - command.settling_wait_seconds,
@@ -134,7 +141,7 @@ class AnalyzeIncident:
             self._close(state, IncidentStatus.COMPLETED, state.closing_reason)
 
         gaps = tuple(state.accumulated_gaps)
-        diagnostics = await self._deliver(incident, state, analysis_failed, gaps)
+        diagnostics = await self._deliver(state, analysis_failed, gaps)
         return IncidentOutcome(
             incident_id=incident.incident_id,
             status=state.status,
@@ -162,18 +169,16 @@ class AnalyzeIncident:
                 timeout=deadline.remaining,
             )
         except TimeoutError:
-            _logger.warning("[incident %s] execution timed out", incident.incident_id)
+            _logger.warning("execution timed out")
             # A running thread cannot be cancelled. Keep its worker occupied until
             # it finishes so client cleanup and analyzer concurrency remain safe.
             try:
                 await asyncio.shield(analyzer_task)
             except Exception:
-                _logger.exception(
-                    "[incident %s] analyzer raised after timeout", incident.incident_id
-                )
+                _logger.exception("analyzer raised after timeout")
             return True, (IncidentStatus.FAILED, self._timeout_reason())
         except Exception:
-            _logger.exception("[incident %s] analyzer raised", incident.incident_id)
+            _logger.exception("analyzer raised")
             return True, (IncidentStatus.FAILED, "분석 Agent 실행이 예외로 끝났다")
 
         if not state.status.is_terminal():
@@ -192,7 +197,6 @@ class AnalyzeIncident:
 
     async def _deliver(
         self,
-        incident: Incident,
         state: IncidentState,
         analysis_failed: bool,
         gaps: tuple[str, ...],
@@ -220,9 +224,7 @@ class AnalyzeIncident:
                 analysis_failed=analysis_failed,
             )
         except Exception:
-            _logger.exception(
-                "[incident %s] report delivery failed", incident.incident_id
-            )
+            _logger.exception("report delivery failed")
         return IncidentAnalysisDetails(
             report=report,
             observations=observations,

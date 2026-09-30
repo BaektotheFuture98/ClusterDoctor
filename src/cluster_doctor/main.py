@@ -8,8 +8,9 @@ from cluster_doctor.bootstrap.dependency.wiring import (
     build_slowlog_intake,
 )
 from cluster_doctor.bootstrap.lifecycle.app_lifecycle import close_clickhouse_client
+from cluster_doctor.log_context import IncidentIdLogFilter
 
-_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s [%(incident_id)s] %(message)s"
 _HANDLER_MARKER = "_cluster_doctor_owned_handler"
 
 
@@ -25,11 +26,13 @@ def configure_logging() -> None:
 
     os.makedirs("logs", exist_ok=True)
     formatter = logging.Formatter(_LOG_FORMAT)
+    incident_id_filter = IncidentIdLogFilter()
 
     file_handler = logging.FileHandler("logs/app.log", encoding="utf-8")
     stream_handler = logging.StreamHandler()
     for handler in (file_handler, stream_handler):
         handler.setFormatter(formatter)
+        handler.addFilter(incident_id_filter)
         setattr(handler, _HANDLER_MARKER, True)
         root_logger.addHandler(handler)
 

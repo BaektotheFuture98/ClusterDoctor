@@ -122,7 +122,9 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
-        if request.tool_call.get("name") != TASK_TOOL_NAME:
+        tool_name = request.tool_call.get("name")
+        _logger.info("[tool] %s", tool_name)
+        if tool_name != TASK_TOOL_NAME:
             return handler(request)
 
         tool_call_id = str(request.tool_call.get("id") or "")
