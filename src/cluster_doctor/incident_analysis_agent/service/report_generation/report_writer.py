@@ -33,8 +33,6 @@ from cluster_doctor.incident_orchestrator_agent.agent.runtime.litellm_client imp
 
 _logger = logging.getLogger(__name__)
 
-_ANALYSIS_MAX_TOKENS = 8192
-
 
 class ReportWriter:
     """구조화된 초안 작성과 단일 수정 호출. LLM 호출 하나만 의존한다."""
@@ -74,7 +72,7 @@ class ReportWriter:
         try:
             text = self._call_llm(
                 [{"role": "user", "content": prompt}],
-                _ANALYSIS_MAX_TOKENS,
+                None,
                 response_format=DraftReport,
             )
         except (LlmApiError, LlmResponseError) as exc:
@@ -110,7 +108,7 @@ class ReportWriter:
         try:
             text = self._call_llm(
                 [{"role": "user", "content": prompt}],
-                _ANALYSIS_MAX_TOKENS,
+                None,
                 response_format=DraftReport,
             )
         except (LlmApiError, LlmResponseError) as exc:
@@ -175,7 +173,7 @@ def build_structured_call(
 
 def _structured_call(
     messages: list[dict],
-    max_tokens: int,
+    max_tokens: int | None,
     *,
     provider: str,
     model: str,

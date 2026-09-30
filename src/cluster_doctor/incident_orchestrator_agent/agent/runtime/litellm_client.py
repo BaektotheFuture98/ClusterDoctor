@@ -10,6 +10,8 @@
 
 import logging
 import os
+import threading
+import time
 
 # LITELLM_LOCAL_MODEL_COST_MAP은 litellm이 import 시점에 읽는다. import 전에
 # 설정해야 효과가 있으므로 아래 import 순서는 의도적이다 (E402).
@@ -29,7 +31,7 @@ litellm.suppress_debug_info = True
 _logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT_TOKENS = 8192
-_REQUEST_TIMEOUT_SECONDS = 600.0
+_REQUEST_TIMEOUT_SECONDS = 1200.0
 
 # 429 진단용으로 남길 응답 헤더. 화이트리스트인 것이 핵심이다 —
 # 응답 본문·요청 URL·str(exc)는 어떤 경우에도 로그에 넣지 않는다. provider에
@@ -46,6 +48,32 @@ _RATE_LIMIT_HEADERS = (
     "x-ratelimit-remaining-tokens",
     "x-ratelimit-reset-tokens",
 )
+
+# 분당 요청 수(RPM) 상한. provider마다 다르고, 없는 provider는 거르지 않는다
+# (nvidia_nim은 실측 실패가 항상 504였지 429가 아니었다). gemini는 무료 티어
+# 한도가 15 RPM인데, minute_analysis의 map 단계가 MAX_CONCURRENCY=5로 팬아웃
+# 하므로(graph.py) 동시에 여러 스레드가 이 함수를 두드린다. 스레드마다 따로
+# sleep을 넣어도 동시에 깨어나면 순간적으로 한도를 넘기므로, 락으로 감싼
+# 공유 최소 호출 간격으로 건다 — 이 함수가 모든 LLM 호출의 유일한 통로라서
+# 여기 한 곳만 지키면 호출부 동시성 설정과 무관하게 전체가 지켜진다.
+_MIN_CALL_INTERVAL_SECONDS: dict[str, float] = {
+    "gemini": 5.0,  # 12 RPM. 무료 티어 15 RPM에 안전마진을 둔 값.
+}
+_rate_limit_lock = threading.Lock()
+_last_call_at: dict[str, float] = {}
+
+
+def _throttle(provider: str) -> None:
+    interval = _MIN_CALL_INTERVAL_SECONDS.get(provider)
+    if interval is None:
+        return
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait = _last_call_at.get(provider, 0.0) + interval - now
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_at[provider] = time.monotonic()
+
 
 _PROVIDER_PREFIX: dict[str, str] = {
     "gemini": "gemini",
@@ -145,7 +173,7 @@ def complete(
     provider: str,
     model: str,
     api_key: str,
-    max_tokens: int = _MAX_OUTPUT_TOKENS,
+    max_tokens: int | None = _MAX_OUTPUT_TOKENS,
     response_format=None,
 ) -> str:
     """LLM에 한 번 물어보고 텍스트를 받는다.
@@ -154,6 +182,12 @@ def complete(
     요약이면 충분하고, 한도를 낮추면 ``finish_reason="length"``로 잘릴 일도
     줄기 때문이다. 나머지 파라미터는 provider가 바뀌어도 같아야 하므로
     고정한다.
+
+    ``max_tokens=None``이면 이 파라미터 자체를 보내지 않는다 — provider가
+    스스로 정한 상한(모델의 실제 최대 출력 토큰)을 그대로 쓴다. 구조화된
+    JSON을 통째로 돌려받아야 하는 호출(리포트 초안 등)에서, 우리가 임의로
+    건 한도 때문에 응답이 문자열 중간에서 잘려 파싱 자체가 실패하는 사고가
+    있었다 — 그 경로는 자르는 게 아니라 안 자르는 쪽을 택한다.
     """
     prefix = _PROVIDER_PREFIX[provider]
 
@@ -165,7 +199,6 @@ def complete(
             # temperature를 비롯한 샘플링 인자는 보내지 않는다. 명시하지 않으면
             # provider 기본값이 적용되고, 모델을 바꿀 때 그 모델에 맞는 기본값을
             # 그대로 따라간다.
-            "max_tokens": max_tokens,
             "timeout": _REQUEST_TIMEOUT_SECONDS,
             # 재시도하지 않는다. 이 경로의 실패는 대부분 429이고, 그것은
             # 분당 입력 토큰 한도 초과가 원인이다. 같은 프롬프트를 다시
@@ -176,8 +209,11 @@ def complete(
             # 전체는 살아남게 되어 있어(MinuteResult.failed=True) 감당된다.
             "num_retries": 0,
         }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
         if response_format is not None:
             kwargs["response_format"] = response_format
+        _throttle(provider)
         response = litellm.completion(**kwargs)
     except openai.APIError as exc:
         # openai.APIError를 잡는 것이 맞다. litellm.exceptions.APIError는
