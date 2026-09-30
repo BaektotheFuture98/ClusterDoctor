@@ -571,6 +571,7 @@ def render_text(report: IncidentAnalysisReport) -> str:
             for detail in candidate_details(candidate, picks.get(candidate.candidate_id, ""))
         ]
     add("느린 요청 후보 (관측값 + 모델 선정)", candidate_lines)
+    add("가해자 집계 (관측값)", offender_lines(obs.candidates))
 
     narrative = report.narrative
     if narrative is not None:

@@ -52,6 +52,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
     health_lines,
     master_log_lines,
     node_lines,
+    offender_lines,
     overview_lines,
     projected_timeline,
     render_text,
@@ -515,6 +516,7 @@ def _sections_from_report(report: IncidentAnalysisReport) -> list[_Section]:
         for candidate in obs.candidates
     ]
     blocks.append(("느린 요청 후보 (관측값 + 모델 선정)", candidates))
+    blocks.append(("가해자 집계 (관측값)", _raw_block(offender_lines(obs.candidates))))
 
     narrative = report.narrative
     if narrative is not None:

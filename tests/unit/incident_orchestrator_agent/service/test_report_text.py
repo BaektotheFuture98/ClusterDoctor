@@ -1,9 +1,16 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import SlowCandidate
+from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
+    Observations,
+    SlowCandidate,
+)
+from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
+    IncidentAnalysisReport,
+)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
     offender_lines,
+    render_text,
 )
 
 _UTC = timezone.utc
@@ -74,3 +81,13 @@ def test_offender_lines_caps_users_per_company_and_notes_the_cut():
     user_lines = [line for line in lines if line.strip().startswith("user:")]
     assert len(user_lines) == 5
     assert any(line.strip() == "… 외 2명" for line in lines)
+
+
+def test_render_text_includes_offender_section_after_candidates():
+    obs = Observations(
+        candidates=(_query_candidate("C1", "마크로밀엠브레인", "mqtai02@embrain.com", "28.66"),)
+    )
+    report = IncidentAnalysisReport(observations=obs, evidence=())
+    text = render_text(report)
+    assert "가해자 집계 (관측값)" in text
+    assert text.index("느린 요청 후보") < text.index("가해자 집계 (관측값)")
