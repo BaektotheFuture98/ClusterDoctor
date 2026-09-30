@@ -497,10 +497,6 @@ def _sections_from_report(report: IncidentAnalysisReport) -> list[_Section]:
             if obs.timeline or timeline_cards
             else [],
         ),
-        (
-            "클러스터 상태 이력 (관측값)",
-            _raw_block(health_lines(obs.health, obs.requested)),
-        ),
         ("노드별 구간 최대값 (관측값)", _raw_block(node_lines(obs.nodes))),
     ]
 
@@ -601,6 +597,19 @@ def render_report(
     sections = _sections_from_report(report)
     source = render_text(report)
 
+    # 번호 붙은 본문에서 뺀 참고 정보. 사고 시각 상태가 아니라서 본문
+    # 섹션과 나란히 세면 "분석 결과 중 하나"로 읽힌다(report_text.render_text
+    # 와 같은 판단).
+    health = health_lines(report.observations.health, report.observations.requested)
+    health_details = ""
+    if health:
+        health_details = (
+            '<details class="source">'
+            "<summary>참고: 클러스터 현재 상태 (사고 시각 상태 아님)</summary>"
+            f'<pre>{_e("\n".join(health))}</pre>'
+            "</details>"
+        )
+
     banners = []
     if analysis_failed:
         banners.append(
@@ -670,6 +679,7 @@ def render_report(
         banner=banner,
         toc=toc,
         body=body,
+        health=health_details,
         source=_e(source),
         css=_CSS,
     )
@@ -818,6 +828,7 @@ _DOCUMENT = """<!doctype html>
 {banner}
 {toc}
 {body}
+{health}
 <details class="source">
   <summary>리포트 평문 (관측값 + 모델 판단)</summary>
   <pre>{source}</pre>
