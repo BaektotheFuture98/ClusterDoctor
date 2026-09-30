@@ -30,6 +30,7 @@ def test_offender_lines_ranks_by_total_runtime_desc():
     assert lines[0].startswith("가해자 집계 (회사 2곳, es_query_log 기준)")
     body = "\n".join(lines)
     assert body.index("[1] B사") < body.index("[2] A사")
+    assert "합계 20.0s, 최고 20.0s" in body
 
 
 def test_offender_lines_excludes_slowlog_candidates():

@@ -401,7 +401,7 @@ _OFFENDER_USERS_PER_COMPANY_MAX = 5
 
 
 def _format_seconds(value: Decimal) -> str:
-    return f"{value.normalize()}s"
+    return f"{value}s"
 
 
 def offender_lines(candidates: tuple[SlowCandidate, ...]) -> list[str]:
@@ -553,7 +553,6 @@ def render_text(report: IncidentAnalysisReport) -> str:
 
     add("인시던트 개요", overview_lines(obs))
     add("영향·원인 통합 인시던트 타임라인", timeline_card_lines(report))
-    add("클러스터 상태 이력 (관측값)", health_lines(obs.health, obs.requested))
     add("노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
     add(
         "마스터 노드 로그 (관측값)",
@@ -595,5 +594,11 @@ def render_text(report: IncidentAnalysisReport) -> str:
         add("권장 조치", list(narrative.recommendations))
     elif report.narrative_text:
         add("모델 리포트 (평문)", report.narrative_text.splitlines())
+
+    # 번호 붙은 본문에서 뺀다. 사고 원인 분석과 직접 관련 없는 참고 정보라,
+    # 나란히 세면 "분석 결과 중 하나"로 읽힌다(health_lines 독스트링 참고).
+    health = health_lines(obs.health, obs.requested)
+    if health:
+        out.extend(["참고: 클러스터 현재 상태 (사고 시각 상태 아님)", _SEPARATOR, *health, ""])
 
     return "\n".join(out).rstrip() + "\n"
