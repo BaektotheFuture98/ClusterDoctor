@@ -17,7 +17,6 @@ ES slowlog → Filebeat → Elasticsearch data stream → Kafka source connector
 
 ```text
 KafkaConsumerAdapter
-  → SlowlogHandler port
   → SlowlogIntake: quiet-period settling
   → StartIncident
   → AnalyzeIncident: state, timeout/cancellation, delivery, cleanup
@@ -43,14 +42,14 @@ src/cluster_doctor/
 └── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증
 ```
 
-`kafka_consumer`가 아는 것은 `SlowlogHandler` 포트뿐이고, 두 Agent 모듈은 서로의
+`kafka_consumer`는 `SlowlogIntake`를 직접 주입받고, 두 Agent 모듈은 서로의
 model(basemodel/state)만 참조하며 구현 프레임워크(`deepagents`, `langchain`,
 `litellm`)를 outbound 방향으로만 안다. `bootstrap`이 유일하게 모든 구현체를
 조립한다.
 
 ### Agent 구조
 
-- Kafka inbound는 record를 `SlowlogTrigger`로 파싱해 `SlowlogHandler`에 넘긴다.
+- Kafka inbound는 record를 `SlowlogTrigger`로 파싱해 `SlowlogIntake`에 넘긴다.
   `aiokafka` 의존성은 `kafka_consumer/consumer/kafka`에만 있다.
 - `incident_analysis_agent/datasource`가 ClickHouse(`clickhouse/client.py`),
   Elasticsearch(`elasticsearch/cluster_health.py`, `node_resolver.py`),
