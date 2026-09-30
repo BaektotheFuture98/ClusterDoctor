@@ -24,9 +24,11 @@ from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analy
 
 _logger = logging.getLogger(__name__)
 
-# 유입이 멎기를 기다리는 예산. 기다리는 동안 분석은 시작조차 되지 않고 큐만
-# 쌓이므로, 1회를 짧게 끊어 매 사이클 유입을 다시 본다.
-MAX_SINGLE_WAIT_SECONDS = 60
+# 정착 확인 주기. 이 주기 동안 연속 2번(SETTLED_ZERO_STREAK) 새 유입이
+# 없어야 정착으로 본다.
+QUIET_PERIOD_SECONDS = 30.0
+# 유입이 멎기를 기다리는 전체 예산. 만성적으로 계속되는 유입 때문에
+# 정착 판단이 무한정 미뤄지지 않게 막는 상한이다.
 MAX_TOTAL_WAIT_SECONDS = 300
 
 
@@ -42,9 +44,11 @@ class _Arrival:
 
 
 class SlowlogIntake:
-    """유입 큐에서 slowlog를 묶고 정착 후 분석 명령 큐에 넣는다.
+    """유입 큐에서 slowlog를 묶어 정착시키고, 정착되면 그 자리에서 분석까지 돈다.
 
-    분석 워커가 StartIncident를 소비하며, 큐와 활성 작업 수는 프로세스 내 상태다.
+    정착과 분석은 하나의 순차 루프다 — 한 Incident의 분석이 끝나야 다음
+    트리거의 정착 판단을 시작한다. 그 사이 새로 들어오는 트리거는 큐에
+    쌓일 뿐이다(겹치는 Incident는 순차로 처리한다).
     """
 
     def __init__(
@@ -52,39 +56,22 @@ class SlowlogIntake:
         *,
         analyze_incident: AnalyzeIncident,
         cluster: str = "elasticsearch",
-        micro_batch_seconds: float = 10.0,
-        quiet_period_seconds: float = 15.0,
+        quiet_period_seconds: float = QUIET_PERIOD_SECONDS,
         max_settling_wait_seconds: float = MAX_TOTAL_WAIT_SECONDS,
         max_pending: int = 0,
-        max_incidents: int = 100,
-        worker_count: int = 1,
     ) -> None:
-        if max_incidents < 1 or worker_count < 1:
-            raise ValueError("max_incidents and worker_count must be positive")
         self._analyze = analyze_incident
         self._cluster = cluster
-        self._micro_batch_seconds = micro_batch_seconds
         self._quiet_period_seconds = quiet_period_seconds
         self._max_settling_wait_seconds = max_settling_wait_seconds
         self._pending: queue.Queue[_Arrival] = queue.Queue(maxsize=max_pending)
         self._task: asyncio.Task | None = None
-        self._incidents: asyncio.Queue[StartIncident | None] = asyncio.Queue(max_incidents)
-        self._worker_count = worker_count
-        self._workers: list[asyncio.Task[None]] = []
-        self._active = 0
+        # 분석이 도는 동안 close()가 이 태스크를 취소하지 않게 하는 플래그.
+        # 정착 대기(sleep) 중에는 취소해도 되지만, 분석 중에 취소하면
+        # 진행 중인 Incident를 중간에 끊는 셈이 된다.
+        self._in_flight_analysis = False
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
-
-    @property
-    def is_idle(self) -> bool:
-        return (
-            self._task is None and self._pending.empty()
-            and self._incidents.empty() and self._active == 0
-        )
-
-    @property
-    def pending_count(self) -> int:
-        return self._pending.qsize()
 
     async def handle(self, trigger: SlowlogTrigger | datetime) -> None:
         if self._closed:
@@ -97,21 +84,15 @@ class SlowlogIntake:
         except queue.Full:
             _logger.warning("pending slowlog queue is full; dropping one trigger")
             return
-        if not self._workers:
-            self._workers = [
-                asyncio.create_task(self._analysis_worker())
-                for _ in range(self._worker_count)
-            ]
         if self._task is not None:
             return
-        self._task = asyncio.create_task(self._publish_settled())
+        self._task = asyncio.create_task(self._process_pending())
 
-    async def _publish_settled(self) -> None:
+    async def _process_pending(self) -> None:
         current = asyncio.current_task()
         try:
-            while not self._pending.empty():
+            while not self._closed and not self._pending.empty():
                 first = self._pending.get_nowait()
-                await asyncio.sleep(self._micro_batch_seconds)
                 tracker = await self._settle(first)
                 incident = Incident(
                     incident_id=uuid.uuid4().hex[:12],
@@ -120,42 +101,33 @@ class SlowlogIntake:
                     kafka_receive_time=first.received_at,
                     trigger_type=TriggerType.SLOWLOG,
                 )
-                await self._incidents.put(
-                    StartIncident(
-                        incident,
-                        tracker.first_seen,
-                        tracker.last_seen,
-                        tracker.total_wait_seconds,
-                    )
+                if self._closed:
+                    return
+                command = StartIncident(
+                    incident,
+                    tracker.first_seen,
+                    tracker.last_seen,
+                    tracker.total_wait_seconds,
                 )
+                self._in_flight_analysis = True
+                try:
+                    await self._analyze.handle(command)
+                except Exception:
+                    _logger.exception(
+                        "incident analysis failed; settling loop will continue"
+                    )
+                finally:
+                    self._in_flight_analysis = False
         except Exception:
             _logger.exception("slowlog intake failed while settling triggers")
         finally:
             if self._task is current:
                 self._task = None
                 if not self._closed and not self._pending.empty():
-                    self._task = asyncio.create_task(self._publish_settled())
-
-    async def _analysis_worker(self) -> None:
-        while True:
-            command = await self._incidents.get()
-            if command is None:
-                self._incidents.task_done()
-                return
-            if self._closed:
-                self._incidents.task_done()
-                continue
-            self._active += 1
-            try:
-                await self._analyze.handle(command)
-            except Exception:
-                _logger.exception("incident analysis failed; worker will continue")
-            finally:
-                self._active -= 1
-                self._incidents.task_done()
+                    self._task = asyncio.create_task(self._process_pending())
 
     async def close(self) -> None:
-        """Discard buffered work and wait for active analyses before closing."""
+        """Discard buffered work; wait for an active analysis to finish before closing."""
         self._closed = True
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._close())
@@ -163,17 +135,11 @@ class SlowlogIntake:
 
     async def _close(self) -> None:
         if self._task is not None:
-            self._task.cancel()
+            if not self._in_flight_analysis:
+                self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
         self._task = None
         self._drain_pending()
-        while not self._incidents.empty():
-            self._incidents.get_nowait()
-            self._incidents.task_done()
-        for _ in self._workers:
-            await self._incidents.put(None)
-        await asyncio.gather(*self._workers, return_exceptions=True)
-        self._workers.clear()
 
     async def _settle(self, first: _Arrival) -> InflowTracker:
         tracker = InflowTracker.from_trigger(first.trigger.timestamp, first.received_at)
@@ -181,7 +147,7 @@ class SlowlogIntake:
             remaining = self._max_settling_wait_seconds - tracker.total_wait_seconds
             if remaining <= 0:
                 break
-            wait = min(self._quiet_period_seconds, MAX_SINGLE_WAIT_SECONDS, remaining)
+            wait = min(self._quiet_period_seconds, remaining)
             await asyncio.sleep(wait)
             tracker.total_wait_seconds += wait
             tracker.observe(

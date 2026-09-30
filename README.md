@@ -18,18 +18,17 @@ ES slowlog → Filebeat → Elasticsearch data stream → Kafka source connector
 ```text
 KafkaConsumerAdapter
   → SlowlogHandler port
-  → SlowlogIntake: micro-batch, quiet-period settling
+  → SlowlogIntake: quiet-period settling
   → StartIncident
-  → bounded Incident Queue → Analysis Worker (기본 1개)
   → AnalyzeIncident: state, timeout/cancellation, delivery, cleanup
   → IncidentAnalyzer port: DeepAgents composite adapter
   → application report finalization and HTML publication
 ```
 
-`SlowlogIntake`는 `MICRO_BATCH_SECONDS` 동안 도착분을 묶고, 15초 간격으로 유입을
-확인해 연속 두 번 신규 항목이 없을 때 Incident를 만들어 큐에 넣는다. 한 번의 대기는 최대
-60초, 누적 대기는 최대 5분이다. 기본 큐 용량은 100개이며 단일 worker가 순서대로 진단한다.
-기존 Incident 분석 중 들어온 새 이벤트도 별도로 settling되어 다음 Incident로 큐에 들어간다.
+`SlowlogIntake`는 도착분을 큐 하나에 쌓아 두고, 30초 간격으로 유입을 확인해 연속
+두 번 신규 항목이 없을 때 Incident를 만들어 그 자리에서 바로 분석까지 순차로 돈다
+(누적 대기는 최대 5분). 정착과 분석은 하나의 루프라서, 한 Incident의 분석이 끝나야
+다음 트리거의 정착 판단을 시작한다 — 그 사이 들어온 새 이벤트는 큐에 쌓일 뿐이다.
 새 이벤트를 분석 중인 Incident에 자동 합치거나 기존 Incident를 다시 실행하지 않는다.
 
 코드는 "실행 주체 → 목적 → 구현 기술" 순으로 배치되어 있다. 어떤 계층에 있는지가
@@ -39,7 +38,7 @@ KafkaConsumerAdapter
 src/cluster_doctor/
 ├── main.py
 ├── bootstrap/              # Composition Root: configuration/dependency/lifecycle
-├── kafka_consumer/         # Kafka 수신 + micro-batch/정착
+├── kafka_consumer/         # Kafka 수신 + 정착(settling)
 ├── incident_orchestrator_agent/   # Main Agent: 분석 범위·수명 관리, 리포트 전달
 └── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증
 ```
@@ -139,7 +138,7 @@ slowlog까지 기다리지 않고 기동 시점에 실패하며, 오류는 secre
 | `ES_USER`, `ES_PASSWORD` | empty | 비면 basic auth를 사용하지 않음 |
 | `SSH_USER`, `SSH_PASSWORD`, `SSH_PORT` | empty, empty, `22` | data-node log용 SSH |
 | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `KAFKA_GROUP_ID` | `localhost:9092`, `slowlog`, `clusterdoctor` | consumer 설정 |
-| `MICRO_BATCH_SECONDS`, `CLUSTER_NAME` | `10`, `elasticsearch` | batch interval과 표시 이름 |
+| `CLUSTER_NAME` | `elasticsearch` | 표시 이름 |
 | `NODE_HEAP_WARN_PERCENT`, `NODE_QUEUE_WARN` | `85`, `100` | metric evidence threshold |
 | `REPORT_DIR` | `reports` | Incident HTML output directory |
 | `LITELLM_LOCAL_MODEL_COST_MAP` | `True` | litellm의 GitHub cost-map fetch를 막음 |
@@ -156,12 +155,11 @@ Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed
 | analysis window | 10분 | `incident_analysis_agent/model/basemodel/time_range.py` |
 | incident analysis budget | 60분, 12회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | main agent cycle / rejected decision | 16회 / 3회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
-| settling wait | 60초 each, 300초 total | `kafka_consumer/trigger_settling/service/intake.py` |
+| settling wait | 30초 quiet period, 300초 total | `kafka_consumer/trigger_settling/service/intake.py` |
 | incident timeout | 30분 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | evidence | source당 25, 전체 80 | `incident_analysis_agent/service/evidence_collection/limits.py` |
 | raw prompt text | 60,000자 | `incident_analysis_agent/service/evidence_collection/limits.py` |
 | node investigation | 2 nodes | `incident_analysis_agent/service/node_investigation/node_investigation.py` |
-| Incident Queue / analysis worker | 100개 / 1개 | `bootstrap/dependency/wiring.py` |
 | source query rows | source·minute당 10,000 | `incident_analysis_agent/datasource/clickhouse/client.py` |
 | master log | window당 300, report당 120 | `incident_analysis_agent/model/state/analysis_session.py` |
 | ClickHouse node-log | default 300, hard cap 2,000 | `incident_analysis_agent/datasource/clickhouse/client.py` |
@@ -266,11 +264,9 @@ flowchart TD
     B --> C[KafkaConsumerAdapter.run]
     C --> D[Kafka message JSON 파싱<br/>SlowlogTrigger]
     D --> E[SlowlogIntake.handle]
-    E --> F[micro-batch 대기<br/>유입 정착 settle]
+    E --> F[유입 정착 settle]
     F --> G[Incident 생성<br/>StartIncident]
-    G --> GQ[bounded Incident Queue]
-    GQ --> GW[Analysis Worker<br/>기본 1개]
-    GW --> H[AnalyzeIncident.handle]
+    G --> H[AnalyzeIncident.handle]
     H --> I[IncidentState 생성<br/>초기 분석 구간 생성]
     I --> J[_DeepAgentIncidentAnalyzer.analyze]
     J --> K[Main Agent]
@@ -295,7 +291,7 @@ flowchart TD
 | 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
 | 의존성 조립 | 서비스와 ClickHouse·ES·SSH·LLM·report 구현 연결 | `src/cluster_doctor/bootstrap/dependency/wiring.py` |
 | Kafka 수신 | JSON에서 event time을 읽어 `SlowlogTrigger`로 변환 | `src/cluster_doctor/kafka_consumer/consumer/kafka/consumer.py` |
-| Incident 묶기·대기 | micro-batch, quiet period, bounded queue와 analysis worker | `src/cluster_doctor/kafka_consumer/trigger_settling/service/intake.py` |
+| Incident 묶기·대기 | quiet period 정착과 순차 분석 루프 | `src/cluster_doctor/kafka_consumer/trigger_settling/service/intake.py` |
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달 | `src/cluster_doctor/incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py` |
 | Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py` |
@@ -305,7 +301,7 @@ flowchart TD
 | HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/html_file_notifier.py` |
 
 Kafka를 거치지 않는 수동 실행은 `scripts/run_analysis.py`에서
-`RunManualAnalysis`를 호출한다. 이 경로는 Kafka 수신·micro-batch·정착만 생략하고,
+`RunManualAnalysis`를 호출한다. 이 경로는 Kafka 수신·정착만 생략하고,
 그 뒤의 `AnalyzeIncident`와 Agent workflow는 같은 구현을 사용한다.
 
 ## 데이터 소스와 metric 해석
@@ -348,8 +344,8 @@ asset만 제거하고, `litellm/proxy/` 전체는 실제 `completion()` 경로�
   막아도 busy window가 quota를 넘는다.
 - 모델 narrative field는 실행마다 비어 있을 수 있다. 구조는 빈 narrative에도 observation과
   gap을 전달하지만, 모델 판단의 근본 해결은 아니다.
-- Incident queue는 메모리 기반이다. 프로세스 종료 시 대기 중인 Incident를 영속 복구하지 않으며,
-  실패한 Incident를 자동 재실행하지 않는다. 큐가 가득 차면 settling producer가 공간을 기다린다.
+- 대기 큐는 메모리 기반이다. 프로세스 종료 시 대기 중인 트리거를 영속 복구하지 않으며,
+  실패한 Incident를 자동 재실행하지 않는다. 큐가 가득 차면 새 트리거를 기다리지 않고 버린다.
 - master log 0건과 아직 ingest되지 않음을 구별하지 못한다. SSH fallback은 ClickHouse query가
   실패한 경우에만 동작한다.
 - data-node log는 SSH credential과 network reachability에 의존한다. Elasticsearch `_nodes`가
