@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from cluster_doctor.incident_analysis_agent.model.basemodel.health_point import HealthPoint
 from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
@@ -391,6 +392,75 @@ def candidate_details(candidate: SlowCandidate, reason: str = "") -> list[str]:
     if candidate.query:
         details.append(f"query: {candidate.query}")
     return details
+
+
+# 가해자 집계에서 몇 곳까지 보여줄지. 넘으면 "… 외 N곳"으로 자른다.
+_OFFENDER_RENDER_MAX = 10
+# 회사 하나 안에서 user를 몇 명까지 나열할지.
+_OFFENDER_USERS_PER_COMPANY_MAX = 5
+
+
+def _format_seconds(value: Decimal) -> str:
+    return f"{value.normalize()}s"
+
+
+def offender_lines(candidates: tuple[SlowCandidate, ...]) -> list[str]:
+    """느린 요청을 회사별로 집계한다. es_query_log 후보만 본다.
+
+    slowlog 후보는 company/user 필드 자체가 없다
+    (``observation/compute.py:slow_candidates`` 참고) — 없는 값을 지어내지
+    않으므로 그 후보들은 이 집계에서 빠진다.
+
+    정렬 기준은 건수가 아니라 runtime 합계다. "몇 번 걸렸나"보다 "얼마나
+    부하를 줬나"가 가해자 순위로 더 의미 있다고 판단했다.
+    """
+    query_candidates = [c for c in candidates if c.source == "es_query_log"]
+    if not query_candidates:
+        return []
+
+    companies: dict[str, list[SlowCandidate]] = {}
+    for candidate in query_candidates:
+        companies.setdefault(candidate.company or "미상", []).append(candidate)
+
+    def total_runtime(items: list[SlowCandidate]) -> Decimal:
+        return sum(
+            (c.run_time for c in items if c.run_time is not None), Decimal(0)
+        )
+
+    def max_runtime(items: list[SlowCandidate]) -> Decimal | None:
+        values = [c.run_time for c in items if c.run_time is not None]
+        return max(values) if values else None
+
+    ordered = sorted(
+        companies.items(),
+        key=lambda kv: (total_runtime(kv[1]), len(kv[1])),
+        reverse=True,
+    )
+
+    lines = [f"가해자 집계 (회사 {len(ordered)}곳, es_query_log 기준)", ""]
+    shown = ordered[:_OFFENDER_RENDER_MAX]
+    for index, (company, items) in enumerate(shown, start=1):
+        total = total_runtime(items)
+        peak = max_runtime(items)
+        peak_text = _format_seconds(peak) if peak is not None else "-"
+        lines.append(
+            f"[{index}] {company} — {len(items)}건, "
+            f"합계 {_format_seconds(total)}, 최고 {peak_text}"
+        )
+        users: dict[str, int] = {}
+        for candidate in items:
+            key = candidate.user or "미상"
+            users[key] = users.get(key, 0) + 1
+        ranked_users = sorted(users.items(), key=lambda kv: kv[1], reverse=True)
+        shown_users = ranked_users[:_OFFENDER_USERS_PER_COMPANY_MAX]
+        for user, count in shown_users:
+            lines.append(f"      user: {user} ({count}건)")
+        if len(ranked_users) > len(shown_users):
+            lines.append(f"      … 외 {len(ranked_users) - len(shown_users)}명")
+
+    if len(ordered) > len(shown):
+        lines.append(f"… 외 {len(ordered) - len(shown)}곳")
+    return lines
 
 
 def overview_lines(obs: Observations) -> list[str]:
