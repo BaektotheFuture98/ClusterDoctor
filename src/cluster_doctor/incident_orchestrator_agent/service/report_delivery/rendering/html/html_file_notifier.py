@@ -392,6 +392,14 @@ def _render_timeline(cards: tuple[TimelineCard, ...], rows: tuple) -> str:
                 '<p class="timeline-observations-label">분 단위 관측값</p>'
                 f'<pre class="raw">{_e(raw)}</pre></div>'
             )
+        citations = ""
+        if card.citations:
+            citation_text = "\n".join(card.citations)
+            citations = (
+                '<details class="timeline-observations">'
+                "<summary>근거 원문 (출처별)</summary>"
+                f'<pre class="raw">{_e(citation_text)}</pre></details>'
+            )
         articles.append(
             f'<article class="timeline-card timeline-card-{level}">'
             '<div class="timeline-card-head">'
@@ -399,7 +407,7 @@ def _render_timeline(cards: tuple[TimelineCard, ...], rows: tuple) -> str:
             f'<span class="sev sev-{level}">{_e(card.severity)}</span>'
             "</div>"
             f"<h3>{_e(card.representative_event)}</h3>"
-            f"<dl>{groups}</dl>{observations}</article>"
+            f"<dl>{groups}</dl>{observations}{citations}</article>"
         )
 
     raw_all = "\n".join(timeline_line(row) for row in rows)

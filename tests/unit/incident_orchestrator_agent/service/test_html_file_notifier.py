@@ -1,4 +1,9 @@
-from cluster_doctor.incident_analysis_agent.model.basemodel.observations import Observations, SlowCandidate
+from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
+    Observations,
+    SlowCandidate,
+    TimelineRow,
+)
 from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
     IncidentAnalysisReport,
 )
@@ -29,3 +34,27 @@ def test_render_report_includes_offender_section():
 
     sections = _sections_from_report(report)
     assert any(section.title == "가해자 집계 (관측값)" for section in sections)
+
+
+def test_render_report_includes_timeline_citation_details():
+    minute = datetime(2026, 9, 30, 15, 22, tzinfo=_UTC)
+    row = TimelineRow(minute=minute, counts={"slowlog": 1}, search_rejected_max=1)
+    evidence = (
+        Evidence(
+            evidence_id="E-1",
+            event_time=minute,
+            source=EvidenceSource.SLOWLOG,
+            message="slowlog took=12s",
+        ),
+        Evidence(
+            evidence_id="E-2",
+            event_time=minute,
+            source=EvidenceSource.NODE_METRIC,
+            event_type="node_metric_rejected",
+            message="search rejected 1",
+        ),
+    )
+    report = IncidentAnalysisReport(observations=Observations(timeline=(row,)), evidence=evidence)
+    html = render_report(report)
+    assert "근거 원문 (출처별)" in html
+    assert "<details class=\"timeline-observations\">" in html
