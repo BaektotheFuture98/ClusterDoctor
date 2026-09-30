@@ -15,6 +15,7 @@ import logging
 from datetime import timedelta
 
 from cluster_doctor.incident_analysis_agent.model.basemodel.time_range import (
+    MAX_TIME_RANGE_DURATION,
     TimeRange,
     merge_spans,
     split_span,
@@ -66,27 +67,21 @@ def plan_new_windows(
     return fresh[:limit]
 
 
-def initial_windows(
-    first_seen, last_seen, *, lookback_minutes: int = 5
-) -> list[TimeRange]:
-    """관측된 유입을 감싸는 첫 분석 구간들.
+def initial_windows(first_seen, last_seen) -> list[TimeRange]:
+    """관측된 유입의 시작점 근처로 딱 하나짜리 첫 후보를 만든다.
 
-    앞쪽으로 ``lookback_minutes``만큼 더 본다. 원인은 사고 구간이 아니라 그
-    앞에서 만들어지는 경우가 많다 — heap이 서서히 오르거나 샤드 재배치가 앞서
-    시작된 경우, 유입 구간만 보면 시작점을 통째로 놓친다.
-
-    확장 비용은 유계다. 조회가 분 단위로 쪼개져 분·소스마다 LIMIT이 걸리므로
-    5분은 분 세그먼트 5개가 늘어나는 것에 지나지 않는다. 조용한 구간의
-    slowlog는 그 상한에 한참 못 미친다 — slowlog는 임계 초과 쿼리만 기록되므로,
-    그 구간이 조용했다는 것이 사고가 아니었다는 뜻이다.
+    원인은 관측 구간 전체가 아니라 최초 발생 시점 근처에 있는 경우가
+    많다 — 그래서 여기서는 시작점 하나만 내놓는다. 더 이전을 볼지, 이
+    후보 이후를 더 볼지는 코드가 미리 정하지 않는다. 그 판단은
+    ``list_candidate_windows``가 보여주는 정보(유입이 멎은 시각 포함)를
+    보고 모델이 한다.
 
     구간은 분 경계로 내림·올림한다. 운영자와 모델이 모두 분 단위로 읽고,
     조회도 분 단위로 쪼개진다.
     """
-    start = (first_seen - timedelta(minutes=lookback_minutes)).replace(
-        second=0, microsecond=0
-    )
+    start = first_seen.replace(second=0, microsecond=0)
     end = (last_seen + timedelta(minutes=1)).replace(second=0, microsecond=0)
     if end <= start:
         end = start + timedelta(minutes=1)
-    return split_span(start, end)
+    end = min(end, start + MAX_TIME_RANGE_DURATION)
+    return [TimeRange(start=start, end=end)]

@@ -22,6 +22,8 @@ Tool과 Analysis SubAgent에 **같은 참조**로 공유된다. 별도 저장소
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence
@@ -58,6 +60,9 @@ class IncidentState(BaseModel):
     """
 
     incident_id: str
+    # 유입이 멎은 시각. 정보 전달용이다 — list_candidate_windows가 보여줄
+    # 때만 읽고, 후보로 큐에 들어가지는 않는다.
+    observed_end: datetime | None = None
 
     analyzed_windows: list[TimeRange] = Field(default_factory=list)
     pending_windows: list[TimeRange] = Field(default_factory=list)

@@ -227,6 +227,8 @@ def make_list_candidate_windows_tool(*, state: IncidentState) -> BaseTool:
             lines.append(
                 "후보 구간이 없다. 제안된 구간과 미해결 구간이 모두 분석됐다는 뜻이다."
             )
+        if state.observed_end is not None:
+            lines.append(f"유입이 멎은 시각: {format_kst(state.observed_end)}")
         lines.append(_budget_line(state))
         lines.append(
             "이미 분석한 구간: "
