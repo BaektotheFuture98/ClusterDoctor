@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from cluster_doctor.incident_analysis_agent.model.basemodel.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.basemodel.observations import (
     Observations,
     SlowCandidate,
+    TimelineRow,
 )
 from cluster_doctor.incident_orchestrator_agent.model.basemodel.incident_analysis_report import (
     IncidentAnalysisReport,
@@ -91,3 +93,29 @@ def test_render_text_includes_offender_section_after_candidates():
     text = render_text(report)
     assert "가해자 집계 (관측값)" in text
     assert text.index("느린 요청 후보") < text.index("가해자 집계 (관측값)")
+
+
+def test_timeline_card_lines_include_source_grouped_citations():
+    minute = datetime(2026, 9, 30, 15, 22, tzinfo=_UTC)
+    row = TimelineRow(minute=minute, counts={"slowlog": 1}, search_rejected_max=1)
+    obs = Observations(timeline=(row,))
+    evidence = (
+        Evidence(
+            evidence_id="E-1",
+            event_time=minute,
+            source=EvidenceSource.SLOWLOG,
+            message="slowlog took=12s",
+        ),
+        Evidence(
+            evidence_id="E-2",
+            event_time=minute,
+            source=EvidenceSource.NODE_METRIC,
+            event_type="node_metric_rejected",
+            message="search rejected 1",
+        ),
+    )
+    report = IncidentAnalysisReport(observations=obs, evidence=evidence)
+    text = render_text(report)
+    assert "근거 원문 (출처별)" in text
+    assert "[E-1]" in text
+    assert "[E-2]" in text

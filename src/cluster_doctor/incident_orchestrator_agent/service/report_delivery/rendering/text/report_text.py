@@ -134,6 +134,14 @@ def _card_item_line(item: TimelineItem) -> str:
     return f"    - {item.text}{refs}"
 
 
+def _card_citation_lines(card: TimelineCard) -> list[str]:
+    if not card.citations:
+        return []
+    lines = ["  근거 원문 (출처별)"]
+    lines.extend(f"    {line}" for line in card.citations)
+    return lines
+
+
 def timeline_card_lines(report: IncidentAnalysisReport) -> list[str]:
     """통합 카드와 전체 원시 분 관측을 평문 한 블록으로 그린다."""
     cards = projected_timeline(report)
@@ -151,6 +159,7 @@ def timeline_card_lines(report: IncidentAnalysisReport) -> list[str]:
                 continue
             lines.append(f"  {label}")
             lines.extend(_card_item_line(item) for item in items)
+        lines.extend(_card_citation_lines(card))
         lines.append("")
 
     raw = [timeline_line(row) for row in report.observations.timeline]
