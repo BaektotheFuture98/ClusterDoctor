@@ -59,6 +59,9 @@ def test_render_report_includes_timeline_citation_details():
         observations=Observations(timeline=(row,)), evidence=evidence
     )
     html = render_report(report)
-    assert "근거 원문 (출처별)" in html
+    section = html.split('id="evidence"', 1)[1].split('id="metadata"', 1)[0]
+    assert section.count('class="evidence-item"') == 2
+    assert "slowlog took=12s" in section and "search rejected 1" in section
+    assert "<dt>Event Type</dt><dd>node_metric_rejected</dd>" in section
     assert 'class="timeline-event' in html
     assert "timeline-observations" not in html
