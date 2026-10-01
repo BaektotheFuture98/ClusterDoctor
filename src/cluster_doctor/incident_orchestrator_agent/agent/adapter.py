@@ -54,6 +54,7 @@ from cluster_doctor.incident_orchestrator_agent.agent.runtime.chat_model import 
 from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     restrict_harness,
 )
+from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import pseudonym_scope
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (
     require_supported_provider,
 )
@@ -166,6 +167,7 @@ class _DeepAgentIncidentAnalyzer:
         self._seams = seams
         self._recursion_limit = recursion_limit
 
+    @pseudonym_scope(fresh=True)
     def analyze(self, request: IncidentAnalysisRequest) -> IncidentAnalysisResult:
         """Incident 하나의 분석을 끝까지 진행한다. 예외를 올리지 않는다.
 

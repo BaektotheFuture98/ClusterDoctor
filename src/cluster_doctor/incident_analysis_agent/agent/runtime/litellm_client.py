@@ -33,6 +33,7 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import ( 
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (  # noqa: E402
     PSEUDONYMS,
     mask_messages,
+    pseudonym_scope,
 )
 
 litellm.suppress_debug_info = True
@@ -226,6 +227,7 @@ def _retry_wait(exc: Exception, status, attempt: int) -> float | None:
     return delay + _RETRY_DELAY_MARGIN_SECONDS
 
 
+@pseudonym_scope()
 def complete(
     messages: list[dict],
     provider: str,

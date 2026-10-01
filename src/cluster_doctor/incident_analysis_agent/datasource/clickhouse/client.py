@@ -8,6 +8,7 @@
 import logging
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import UTC, datetime, timedelta
 
 from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceProvenance
@@ -215,10 +216,14 @@ class ClickHouseLogAdapter(LogRepository):
             ("node_metric", node_metric.fetch, self._node_metric_table),
         )
         # 분마다 세 소스를 동시에 조회하되 전체 기간의 쿼리를 한꺼번에 제출하지 않는다.
+        # 제출마다 context를 복사해 Incident의 가명 대응표와 로그 ID를 전달한다.
         with ThreadPoolExecutor(max_workers=3) as executor:
             for seg in split_by_minute(time_range):
                 pending = [
-                    (source, executor.submit(fetch, self._client, table, seg))
+                    (
+                        source,
+                        executor.submit(copy_context().run, fetch, self._client, table, seg),
+                    )
                     for source, fetch, table in sources
                 ]
                 for source, future in pending:

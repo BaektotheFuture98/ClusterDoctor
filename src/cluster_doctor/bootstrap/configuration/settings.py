@@ -1,17 +1,14 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["gemini", "nvidia_nim"]
 
 
-class Settings(BaseSettings):
-    """환경 변수와 .env에서 읽는 프로세스 기동 설정.
-
-    조립 코드가 어댑터별 설정으로 나누며, 도메인 상태나 분석 결과는 담지 않는다.
-    """
+class LoggingSettings(BaseSettings):
+    """Read log configuration before external-service settings are validated."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -19,6 +16,20 @@ class Settings(BaseSettings):
         extra="ignore",
         validate_default=True,
     )
+
+    log_dir: str = "logs"
+
+    @field_validator("log_dir")
+    @classmethod
+    def _default_empty_log_dir(cls, v: str) -> str:
+        return v if v.strip() else "logs"
+
+
+class Settings(LoggingSettings):
+    """환경 변수와 .env에서 읽는 프로세스 기동 설정.
+
+    조립 코드가 어댑터별 설정으로 나누며, 도메인 상태나 분석 결과는 담지 않는다.
+    """
 
     llm_provider: LlmProvider = "nvidia_nim"
 
@@ -53,8 +64,14 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_topic: str = "slowlog"
     kafka_group_id: str = "clusterdoctor"
+    kafka_failure_timeout_seconds: float = Field(default=300.0, gt=0)
 
     report_dir: str = "reports"
+
+    @field_validator("report_dir")
+    @classmethod
+    def _default_empty_report_dir(cls, v: str) -> str:
+        return v if v.strip() else "reports"
 
     @field_validator("gemini_api_key")
     @classmethod

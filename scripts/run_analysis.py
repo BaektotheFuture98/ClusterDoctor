@@ -32,7 +32,7 @@ from pathlib import Path
 import _timeargs
 from _timeargs import KST
 
-# import 시점에 configure_logging()이 돌아 stderr와 logs/app.log에 로그가 붙는다.
+# import 시점에 configure_logging()이 돌아 stderr와 LOG_DIR/app.log에 로그가 붙는다.
 import cluster_doctor.main  # noqa: F401
 
 from cluster_doctor.bootstrap.configuration.settings import get_settings

@@ -6,6 +6,8 @@
 호출 경로가 둘이라 가명 규칙은 하나로 모은다. 같은 값은 어느 호출에서나 같은
 가명(``ip-0001``, ``user-0001`` 등)을 받는다 — 모델이 "같은 노드·같은 사용자"를 구분할 수 있어야 하고,
 tool loop에서 이전 대화가 다시 전송될 때도 가명이 어긋나면 안 되기 때문이다.
+대응표는 Incident마다 새로 만들고 종료 시 해제한다. Main/SubAgent와 병렬
+조회·분 단위 분석은 contextvars로 같은 대응표를 공유한다.
 
 - ``litellm_client.complete()``: 메시지를 직접 마스킹하고 응답 텍스트를 복원한다.
 - DeepAgent(Main/Sub): ``PseudonymizeMiddleware``가 모델 호출 직전과 직후에 같은 일을 한다.
@@ -17,7 +19,9 @@ from __future__ import annotations
 
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -107,7 +111,54 @@ def map_value(value: Any, fn: Callable[[str], str]) -> Any:
     return value
 
 
-PSEUDONYMS = Pseudonymizer()
+_current: ContextVar[Pseudonymizer | None] = ContextVar("pseudonymizer", default=None)
+
+
+@contextmanager
+def pseudonym_scope(*, fresh: bool = False) -> Iterator[Pseudonymizer]:
+    """Share one mapping within an incident; release it on success or failure.
+
+    Main starts a fresh scope. Nested analysis and standalone LLM calls reuse
+    an active scope, or create a temporary one when called independently.
+    Context copies share the same thread-safe mapping, not separate counters.
+    """
+    current = _current.get()
+    if current is not None and not fresh:
+        yield current
+        return
+    mapping = Pseudonymizer()
+    token = _current.set(mapping)
+    try:
+        yield mapping
+    finally:
+        _current.reset(token)
+
+
+class _ScopedPseudonyms:
+    """Stateless access to the current mapping; never retain identifiers globally."""
+
+    def register(self, kind: str, value: object) -> None:
+        # Datasources can also be queried without an LLM analysis. Such reads
+        # must not create a mapping that outlives the query.
+        current = _current.get()
+        if current is not None:
+            current.register(kind, value)
+
+    @staticmethod
+    def _mapping() -> Pseudonymizer:
+        current = _current.get()
+        if current is None:
+            raise RuntimeError("LLM pseudonymization requires an active scope")
+        return current
+
+    def mask(self, text: str) -> str:
+        return self._mapping().mask(text)
+
+    def restore(self, text: str) -> str:
+        return self._mapping().restore(text)
+
+
+PSEUDONYMS = _ScopedPseudonyms()
 
 
 def mask_messages(messages: list[dict]) -> list[dict]:
@@ -130,12 +181,14 @@ class PseudonymizeMiddleware(AgentMiddleware):
     """모델 호출 직전에 IP를 가명으로, 직후에 응답의 가명을 원래 IP로."""
 
     def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
-        return self._restore(handler(self._masked(request)))
+        with pseudonym_scope():
+            return self._restore(handler(self._masked(request)))
 
     async def awrap_model_call(
         self, request: Any, handler: Callable[[Any], Any]
     ) -> Any:
-        return self._restore(await handler(self._masked(request)))
+        with pseudonym_scope():
+            return self._restore(await handler(self._masked(request)))
 
     @staticmethod
     def _masked(request: Any) -> Any:

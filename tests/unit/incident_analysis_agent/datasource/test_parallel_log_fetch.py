@@ -13,6 +13,10 @@ from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import 
     ClickHouseLogAdapter,
 )
 from cluster_doctor.incident_analysis_agent.model.log_entries import SlowlogEntry
+from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
+    PSEUDONYMS,
+    pseudonym_scope,
+)
 from cluster_doctor.incident_analysis_agent.model.log_fetch import (
     LogFetchResult,
     LogSourceFailure,
@@ -27,6 +31,31 @@ from cluster_doctor.incident_analysis_agent.service.observation.builder import (
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 WINDOW = TimeRange(T0, T0 + timedelta(minutes=1))
+
+
+def test_parallel_query_registers_identifiers_in_incident_scope():
+    row = {
+        "reg_date": T0, "host": "host", "run_time": 12.0, "success": "N",
+        "s_date": 20260901, "e_date": 20260930, "date_range": 30,
+        "keyword": ["search"], "url": "/search", "cmd": "agg",
+        "service": "web", "env": "prod", "project": "project",
+        "company": "incident-company", "user": "incident-user",
+        "search_count": 1, "etc": "", "cluster": "es",
+    }
+
+    def query(sql, parameters):
+        if "FROM query_table " in sql:
+            return SimpleNamespace(column_names=tuple(row), result_rows=[tuple(row.values())])
+        return SimpleNamespace(result_rows=[])
+
+    adapter = ClickHouseLogAdapter(
+        SimpleNamespace(query=query), "slow", "query_table", "metric", "node"
+    )
+    with pseudonym_scope(fresh=True):
+        result = adapter.fetch_logs(WINDOW)
+        assert not result.failures and len(result.entries) == 1
+        assert PSEUDONYMS.mask("incident-company incident-user") == "company-0001 user-0001"
+        assert PSEUDONYMS.restore("company-0001 user-0001") == "incident-company incident-user"
 
 
 def test_sources_enter_query_concurrently_and_partial_results_survive(monkeypatch):

@@ -161,4 +161,5 @@ def build_kafka_consumer(
         bootstrap_servers=s.kafka_bootstrap_servers,
         topic=s.kafka_topic,
         group_id=s.kafka_group_id,
+        failure_timeout_seconds=s.kafka_failure_timeout_seconds,
     )

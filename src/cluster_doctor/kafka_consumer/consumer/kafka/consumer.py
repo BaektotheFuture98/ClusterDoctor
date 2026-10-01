@@ -4,16 +4,38 @@ Kafka 메시지를 SlowlogTrigger로 변환해 SlowlogIntake에 전달한다.
 메시지 파싱에 실패해도 consumer를 죽이지 않고 경고만 남긴다.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 
-from aiokafka import AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer, ConsumerRebalanceListener, TopicPartition
+from aiokafka.errors import KafkaError
 
+from cluster_doctor.exceptions import KafkaUnavailableError
 from cluster_doctor.kafka_consumer.trigger_settling.service.inflow import SlowlogTrigger
 from cluster_doctor.kafka_consumer.trigger_settling.service.intake import SlowlogIntake
 
 _logger = logging.getLogger(__name__)
+_HEALTH_CHECK_INTERVAL_SECONDS = 10.0
+_HEALTH_CHECK_TIMEOUT_SECONDS = 10.0
+_CONSUMER_STOP_TIMEOUT_SECONDS = 10.0
+
+
+class _AssignmentState(ConsumerRebalanceListener):
+    """Distinguish a completed empty assignment from an unfinished rebalance."""
+
+    def __init__(self) -> None:
+        self.rebalancing = True
+        self.revision = 0
+
+    def on_partitions_revoked(self, revoked) -> None:
+        self.rebalancing = True
+        self.revision += 1
+
+    def on_partitions_assigned(self, assigned) -> None:
+        self.rebalancing = False
+        self.revision += 1
 
 
 class KafkaConsumerAdapter:
@@ -23,49 +45,142 @@ class KafkaConsumerAdapter:
         bootstrap_servers: str,
         topic: str,
         group_id: str,
+        failure_timeout_seconds: float = 300.0,
     ) -> None:
+        if failure_timeout_seconds <= 0:
+            raise ValueError("failure_timeout_seconds must be positive")
+        self._failure_timeout_seconds = failure_timeout_seconds
         self._intake = intake
+        self._topic = topic
+        self._assignment = _AssignmentState()
         self._consumer = AIOKafkaConsumer(
-            topic,
             bootstrap_servers=bootstrap_servers,
             group_id=group_id,
             auto_offset_reset="latest",
             enable_auto_commit=True,
         )
+        self._consumer.subscribe(topics=[topic], listener=self._assignment)
 
     async def run(self) -> None:
+        tasks: list[asyncio.Task[None]] = []
         try:
-            await self._consumer.start()
+            try:
+                await asyncio.wait_for(
+                    self._consumer.start(), timeout=self._failure_timeout_seconds
+                )
+            except (KafkaError, TimeoutError) as exc:
+                raise KafkaUnavailableError(
+                    f"Kafka consumer could not start ({type(exc).__name__})"
+                ) from None
             _logger.info("Kafka consumer started")
-            async for msg in self._consumer:
-                try:
-                    data = json.loads(msg.value.decode("utf-8"))
-                    if isinstance(data, str):
-                        data = json.loads(data)
-                except Exception as exc:
-                    _logger.warning(
-                        "partition=%d offset=%d JSON 디코딩 실패: %s",
-                        msg.partition,
-                        msg.offset,
-                        exc,
-                    )
-                    data = {}
-
-                try:
-                    log_entry = _parse_message(data)
-                except Exception as exc:
-                    _logger.warning(
-                        "partition=%d offset=%d 파싱 실패, 수신 시각으로 폴백: %s",
-                        msg.partition,
-                        msg.offset,
-                        exc,
-                    )
-                    log_entry = SlowlogTrigger(timestamp=datetime.now(timezone.utc))
-
-                await self._intake.handle(log_entry)
+            tasks = [
+                asyncio.create_task(self._consume_messages()),
+                asyncio.create_task(self._watch_connection()),
+            ]
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
         finally:
-            await self._consumer.stop()
-            _logger.info("Kafka consumer stopped")
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    self._consumer.stop(), timeout=_CONSUMER_STOP_TIMEOUT_SECONDS
+                )
+            except (KafkaError, TimeoutError) as exc:
+                _logger.warning(
+                    "Kafka consumer cleanup incomplete (%s)", type(exc).__name__
+                )
+            _logger.info("Kafka consumer loop stopped")
+
+    async def _watch_connection(self) -> None:
+        loop = asyncio.get_running_loop()
+        failed_since: float | None = None
+        while True:
+            started = loop.time()
+            remaining = self._failure_timeout_seconds
+            if failed_since is not None:
+                remaining -= started - failed_since
+            if remaining <= 0:
+                raise KafkaUnavailableError(
+                    f"Kafka connection failed continuously for {self._failure_timeout_seconds:g}s"
+                )
+            try:
+                await asyncio.wait_for(
+                    self._probe_connection(),
+                    timeout=min(_HEALTH_CHECK_TIMEOUT_SECONDS, remaining),
+                )
+            except (KafkaError, TimeoutError) as exc:
+                if failed_since is None:
+                    failed_since = started
+                    _logger.warning(
+                        "Kafka connection check failed (%s); exit after %gs of continuous failure",
+                        type(exc).__name__,
+                        self._failure_timeout_seconds,
+                    )
+            else:
+                if failed_since is not None:
+                    _logger.info("Kafka connection recovered; failure deadline reset")
+                failed_since = None
+            delay = _HEALTH_CHECK_INTERVAL_SECONDS
+            if failed_since is not None:
+                remaining = self._failure_timeout_seconds - (loop.time() - failed_since)
+                delay = min(delay, max(0, remaining))
+            await asyncio.sleep(delay)
+
+    async def _probe_connection(self) -> None:
+        revision = self._assignment.revision
+        partitions = self._consumer.assignment()
+        # This is a fresh request, but does not update the consumer's own
+        # metadata cache. end_offsets() handles stale leaders independently.
+        if self._topic not in await self._consumer.topics():
+            raise KafkaError("Subscribed topic is absent from broker metadata")
+
+        if partitions and not self._assignment.rebalancing:
+            offsets = await self._consumer.end_offsets(partitions)
+            if any(tp not in offsets or offsets[tp] < 0 for tp in partitions):
+                raise KafkaError("Incomplete offsets from assigned partition leaders")
+            coordinator_partition = min(partitions)
+        else:
+            # A stable standby consumer must not probe leaders owned by peers.
+            known = self._consumer.partitions_for_topic(self._topic)
+            if not known:
+                raise KafkaError("Subscribed topic has no known partitions")
+            coordinator_partition = TopicPartition(self._topic, min(known))
+
+        # Uncached OffsetFetch verifies the group coordinator as well. None
+        # means no offset was committed yet and is a healthy response.
+        await self._consumer.committed(coordinator_partition)
+        if (
+            self._assignment.rebalancing
+            or self._assignment.revision != revision
+            or self._consumer.assignment() != partitions
+        ):
+            raise KafkaError("Partition assignment changed or rebalance is incomplete")
+
+    async def _consume_messages(self) -> None:
+        async for msg in self._consumer:
+            try:
+                data = json.loads(msg.value.decode("utf-8"))
+                if isinstance(data, str):
+                    data = json.loads(data)
+            except Exception as exc:
+                _logger.warning(
+                    "partition=%d offset=%d JSON 디코딩 실패: %s",
+                    msg.partition, msg.offset, exc,
+                )
+                data = {}
+
+            try:
+                log_entry = _parse_message(data)
+            except Exception as exc:
+                _logger.warning(
+                    "partition=%d offset=%d 파싱 실패, 수신 시각으로 폴백: %s",
+                    msg.partition, msg.offset, exc,
+                )
+                log_entry = SlowlogTrigger(timestamp=datetime.now(timezone.utc))
+            await self._intake.handle(log_entry)
 
 
 def _parse_message(data: dict) -> SlowlogTrigger:
