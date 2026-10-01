@@ -160,3 +160,11 @@ def test_all_fields_and_counter_evidence_are_in_claim_contract():
     assert next(c for c in claims if c['claim_id']=='cause:0')['counter_evidence_refs'] == ['counter']
     validator, _ = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
     assert any(i.issue_type == VerificationIssueType.UNVERIFIABLE for i in validator.validate(report, [_evidence()]))
+
+
+def test_cross_claim_verdict_reference_is_unverifiable():
+    issues=GroundingValidator._parse_response(json.dumps([
+        {'claim_id':'a','status':'PASSED','affected_evidence_refs':['B']},
+        {'claim_id':'b','status':'PASSED','affected_evidence_refs':['B']}]),
+        expected_claim_ids={'a','b'},known_evidence_refs={'A','B'},claim_evidence_refs={'a':{'A'},'b':{'B'}})
+    assert any(i.issue_type == VerificationIssueType.UNVERIFIABLE for i in issues)

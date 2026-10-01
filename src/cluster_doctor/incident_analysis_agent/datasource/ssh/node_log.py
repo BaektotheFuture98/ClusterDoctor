@@ -270,17 +270,21 @@ class SshNodeLogFetcher(NodeLogFetcher):
             _assert_safe_path(cluster_name, "cluster_name"),
         )
 
-        # 서버사이드 grep: severity 키워드 + 날짜 prefix로 볼륨을 크게 줄인다.
-        # 구간이 자정을 넘으면 두 날짜를 모두 포함한다.
-        start_date = start_dt.astimezone(_KST).strftime("%Y-%m-%d")
-        end_date = end_dt.astimezone(_KST).strftime("%Y-%m-%d")
-        if start_date == end_date:
-            date_filter = f"grep '\\[{start_date}'"
-        else:
-            date_filter = f"grep -E '\\[{start_date}|\\[{end_date}'"
+        # Offset-bearing records may use a different calendar day. Cover every
+        # valid UTC offset; the local parser applies the precise time window.
+        first_day = (start_dt.astimezone(timezone.utc) - timedelta(days=1)).date()
+        last_day = (end_dt.astimezone(timezone.utc) + timedelta(days=1)).date()
+        dates = []
+        day = first_day
+        while day <= last_day:
+            dates.append(day.isoformat())
+            day += timedelta(days=1)
+        pattern = "|".join("\\[" + day for day in dates)
+        # Keep bounded exception continuations through BOTH filters. Their time
+        # comes from the preceding parsed record, never a fabricated timestamp.
         cmd = _assert_allowed(
-            f"grep -aE '{_SEVERITY_PATTERN}' '{log_file}'"
-            f" | {date_filter}"
+            f"grep -aE -A 40 '{_SEVERITY_PATTERN}' '{log_file}'"
+            f" | grep -aE -A 40 '{pattern}'"
             f" | tail -n 2000"
         )
 
@@ -312,6 +316,8 @@ class SshNodeLogFetcher(NodeLogFetcher):
         filtered: list[str] = []
         in_window = False
         for line in lines:
+            if line == "--":
+                continue
             m = ES_LOG_LINE_RE.match(line)
             if m:
                 try:

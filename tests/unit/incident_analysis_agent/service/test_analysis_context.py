@@ -47,3 +47,18 @@ def test_draft_context_bounds_raw_without_losing_verification_original():
     data=json.loads(data_text)
     assert data['evidence'][0]['context_raw_truncated'] is True
     assert evidence[0].raw=='x'*60000 and evidence[0].raw_truncated is False
+
+
+def test_complete_context_bounds_metadata_and_marks_omissions():
+    from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow
+    from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceProvenance
+    from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
+    obs=Observations(query_requests=(query(),),nodes=tuple(NodeMetricRow(node=f'node-{i}',samples=1) for i in range(107)))
+    provenance=EvidenceProvenance(method='ssh',host='example-host',file_path='/var/log/elasticsearch/production.log',collected_at=T0)
+    evidence=[Evidence(evidence_id=f'E{i}',event_time=T0,source=EvidenceSource.NODE_LOG,message='m'*400,raw='x',provenance=provenance) for i in range(80)]
+    text=build_analysis_context(obs,evidence)
+    assert len(text)<=60000
+    data=json.loads(text)
+    assert data['query_execution_count']==1 and data['maximum_execution_seconds']=='1.96'
+    assert data['context_omissions'] and len(data['evidence'])<=80
+    assert len(obs.nodes)==107 and all(e.message=='m'*400 for e in evidence)

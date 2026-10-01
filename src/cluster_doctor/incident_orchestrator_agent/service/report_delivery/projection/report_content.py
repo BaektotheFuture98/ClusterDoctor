@@ -35,3 +35,21 @@ def report_timeline(report):
     selected=sorted(cards,key=lambda c:(-rank.get(c.severity,0),c.start))[:7 if required else 8]
     if required:selected.append(required)
     return tuple(sorted(selected,key=lambda c:c.start))
+
+
+def system_maxima(nodes):
+    measured=tuple(node for node in nodes if node.samples > 0)
+    result=[]
+    for label,field,unit in (('CPU','cpu_max','%'),('JVM heap','jvm_heap_max','%'),
+            ('Search 큐','search_queue_max',''),('Write 큐','write_queue_max','')):
+        if not measured:break
+        maximum=max(getattr(node,field) for node in measured)
+        names=', '.join(node.node for node in measured if getattr(node,field)==maximum)
+        result.append(f'{label} 최대 {maximum}{unit} · {names}')
+    return tuple(result)
+
+
+def timeline_sources(card, shown_evidence=()):
+    """Sources omitted from standalone tables remain visible for displayed cards."""
+    shown={e.evidence_id for e in shown_evidence}
+    return tuple(c for c in card.evidence_citations if c.evidence_id not in shown)
