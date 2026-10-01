@@ -36,3 +36,14 @@ def test_top_bulk_survives_selection_and_total_cap():
     assert sum(e.source == EvidenceSource.NODE_METRIC for e in result) <= 25
     assert any('bulk' in e.raw and '1.94' in e.raw for e in result)
     assert all(e.raw_kind == 'record' and e.node_name is None for e in required)
+
+
+def test_draft_context_bounds_raw_without_losing_verification_original():
+    from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
+    evidence=[Evidence(evidence_id=f'E{i}',event_time=T0,source=EvidenceSource.NODE_LOG,
+        message='long log',raw='x'*60000) for i in range(80)]
+    data_text=build_analysis_context(Observations(query_requests=(query(),)),evidence)
+    assert len(data_text)<=60000
+    data=json.loads(data_text)
+    assert data['evidence'][0]['context_raw_truncated'] is True
+    assert evidence[0].raw=='x'*60000 and evidence[0].raw_truncated is False
