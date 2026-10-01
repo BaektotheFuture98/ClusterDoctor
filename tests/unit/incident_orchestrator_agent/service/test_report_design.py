@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 
@@ -15,6 +16,9 @@ from cluster_doctor.incident_analysis_agent.model.report import (
     RootCause,
     TimelineEvent,
     VerificationStatus,
+)
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
+    IncidentAnalysisReport,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
@@ -96,6 +100,7 @@ class Links(HTMLParser):
             self.in_nav = True
         if "id" in a:
             self.ids.append(a["id"])
+        # Nav targets (#actions, #evidence) are built in later report sections.
         if tag == "a" and not self.in_nav and a.get("href", "").startswith("#"):
             self.links.append(a["href"][1:])
         if tag == "details":
@@ -155,13 +160,37 @@ def test_missing_raw_and_unverified_report_are_explicit():
     assert "SSH 수집 실패" in html
 
 
-def test_timeline_shows_short_original_then_interpretation_and_collapsed_metadata():
-    html = render_report(example())
-    timeline = html.split('id="timeline"', 1)[1].split('id="causes"', 1)[0]
-    assert 'class="event-evidence"' in timeline
-    assert 'class="event-interpretation"' in timeline
-    assert timeline.index('class="event-evidence"') < timeline.index(
-        'class="event-interpretation"'
+def timeline_html(report):
+    html = render_report(report)
+    return html.split('id="timeline"', 1)[1].split('id="query-ranking"', 1)[0]
+
+
+def test_timeline_event_is_compact_without_raw_or_evidence_blocks():
+    timeline = timeline_html(example())
+    assert 'class="timeline-event' in timeline
+    assert 'class="raw"' not in timeline and "<pre" not in timeline
+    assert "evidence-block" not in timeline and "timeline-observations" not in timeline
+    assert "raw-0" not in timeline and "/es/prod.log" not in timeline
+    assert "●" not in timeline
+
+
+def test_timeline_refs_are_links_to_rendered_evidence():
+    report = example()
+    html = render_report(report)
+    timeline = timeline_html(report)
+    hrefs = re.findall(r'<a href="#(evidence-[0-9a-f]+)">E-&lt;1&gt;</a>', timeline)
+    assert hrefs and f'id="{hrefs[0]}"' in html
+    assert html.count(f'id="{hrefs[0]}"') == 1
+
+
+def test_analysis_note_only_when_interpretations_exist():
+    assert 'class="analysis-note"' in timeline_html(example())
+    e = Evidence(
+        evidence_id="E-1", event_time=T0, source=EvidenceSource.SLOWLOG, message="m"
     )
-    assert 'class="source-details"' in timeline
-    assert "전체 원문 · 수집 정보" in timeline
+    obs = Observations(
+        timeline=(TimelineRow(minute=T0, counts={"slowlog": 1}, search_rejected_max=1),)
+    )
+    plain = IncidentAnalysisReport(observations=obs, evidence=(e,))
+    timeline = timeline_html(plain)
+    assert "timeline-event" in timeline and "analysis-note" not in timeline

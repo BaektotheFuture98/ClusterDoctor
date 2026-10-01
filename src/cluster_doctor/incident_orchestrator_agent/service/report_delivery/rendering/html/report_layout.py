@@ -293,6 +293,17 @@ def render_layout(
         "</div></section>"
     )
 
+    evidence_ids = {e.evidence_id for e in report.evidence}
+
+    def timeline_refs(refs: tuple[str, ...]) -> str:
+        # A ref without collected evidence has no anchor, so it is marked instead of linked.
+        return " ".join(
+            f'<a href="#{anchor(ref)}">{esc(ref)}</a>'
+            if ref in evidence_ids
+            else f'<span class="hint">{esc(ref)} 근거 없음(dangling)</span>'
+            for ref in dict.fromkeys(refs)
+        )
+
     cards = []
     for card in projected_timeline(report):
         nodes = tuple(
@@ -304,63 +315,17 @@ def render_layout(
         )
         observations = tuple(
             dict.fromkeys(item.text for item in (*card.impacts, *card.causes))
-        )
-        local_evidence = tuple(
-            c.evidence
-            for c in card.evidence_citations
-            if c.evidence
-            and card.start
-            <= c.evidence.event_time.replace(second=0, microsecond=0)
-            <= card.end
-        )
-        if not observations:
-            observations = tuple(dict.fromkeys(e.message for e in local_evidence))
-        observed = bullet_list(list(observations)) if observations else ""
-        interpretations = list(card.interpretations)
-        linked_causes = []
-        if narrative and report.verification_status == "PASSED":
-            refs = {e.evidence_id for e in local_evidence}
-            linked_causes = [
-                c
-                for c in narrative.causes
-                if refs.intersection(item.evidence_id for item in c.supporting)
-            ]
-        interpretation = (
-            bullet_list([item.text for item in interpretations])
-            if interpretations
-            else '<p class="hint">이 시점의 원인 해석은 추가 확인이 필요합니다.</p>'
-        )
-        if linked_causes:
-            interpretation += (
-                '<p class="hypothesis-label">연결된 원인 후보</p>'
-                + bullet_list(
-                    [
-                        f"{c.statement} · 확신도 {confidence(c.confidence)}"
-                        for c in linked_causes
-                    ]
-                )
+        ) or tuple(
+            dict.fromkeys(
+                c.evidence.message for c in card.evidence_citations if c.evidence
             )
-        raw_observations = (
-            '<details class="timeline-observations"><summary>해당 구간 분 단위 관측값</summary>'
-            + pre("\n".join(timeline_line(row) for row in card.raw_rows))
-            + "</details>"
-            if card.raw_rows
-            else ""
         )
-        # All references remain addressable, including those outside the three previews.
-        originals = renderer.render(
-            card.evidence_citations[:3], compact=True, event_start=card.start
+        interpretations = card.interpretations
+        analysis = (
+            interpretations
+            if narrative and report.verification_status == "PASSED"
+            else ()
         )
-        if len(card.evidence_citations) > 3:
-            originals += (
-                '<details class="source-details"><summary>반복·추가 근거 '
-                + str(len(card.evidence_citations) - 3)
-                + "건</summary>"
-                + renderer.render(
-                    card.evidence_citations[3:], compact=True, event_start=card.start
-                )
-                + "</details>"
-            )
         title = card.representative_event.split(" · 회복 관측:")[0].split(
             " · 구간 종료"
         )[0]
@@ -369,27 +334,40 @@ def render_layout(
         title = title.split(" — ")[0]
         if len(title) > 100:
             title = title[:100] + "…"
+        severity_class = card.severity.lower()
         cards.append(
-            f'<article class="timeline-card timeline-card-{card.severity.lower()}">'
-            f'<div class="event-time"><time>{esc(kst_stamp(card.start))}</time>'
+            f'<article class="timeline-event timeline-event-{severity_class}">'
+            f'<div class="event-time"><time datetime="{card.start.isoformat()}">{esc(kst_stamp(card.start))}</time>'
             + (
-                f'<span class="event-end">~ {esc(kst_stamp(card.end))}</span>'
+                f'<time datetime="{card.end.isoformat()}">~ {esc(kst_stamp(card.end))}</time>'
                 if card.end != card.start
                 else ""
             )
-            + '</div><div class="event-body"><div class="event-heading">'
-            + f'<h3>{esc(title)}</h3><span class="sev sev-{card.severity.lower()}">{esc(card.severity)}</span>'
-            + "".join(f'<span class="node-badge">{esc(node)}</span>' for node in nodes)
-            + '</div><div class="event-observation"><p class="section-label">관측</p>'
-            + observed
-            + "</div>"
-            + '<div class="event-evidence">'
-            + originals
-            + "</div>"
-            + '<div class="event-interpretation"><p class="section-label">해석 · 의심</p>'
-            + interpretation
-            + "</div>"
-            + raw_observations
+            + '</div><div class="event-body"><p class="event-meta">'
+            + (
+                f'<span class="sev sev-{severity_class}">{esc(card.severity.upper())}</span>'
+                if card.severity
+                else ""
+            )
+            + (f'<span class="event-node">{esc(", ".join(nodes))}</span>' if nodes else "")
+            + f"</p><h3>{esc(title)}</h3>"
+            + (
+                f'<p class="event-observation">{esc(observations[0])}</p>'
+                if observations
+                else ""
+            )
+            + (
+                '<p class="analysis-note"><span class="model-tag">분석</span> '
+                + esc(" · ".join(item.text for item in analysis))
+                + "</p>"
+                if analysis
+                else ""
+            )
+            + (
+                f'<p class="event-refs">{timeline_refs(card.evidence_refs)}</p>'
+                if card.evidence_refs
+                else ""
+            )
             + "</div></article>"
         )
     timeline = (
@@ -475,6 +453,7 @@ def render_layout(
         for label, lines in detail_blocks
         if lines
     )
+    # Renders every evidence item not shown under a cause, so each timeline link resolves.
     remaining = citations(
         tuple(
             e.evidence_id for e in report.evidence if e.evidence_id not in renderer.seen

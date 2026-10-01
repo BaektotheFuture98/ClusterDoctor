@@ -81,28 +81,25 @@ border-radius:50%;background:currentColor}
 .incident-timeline{position:relative;padding:0}
 .incident-timeline::before{content:"";position:absolute;left:175px;top:24px;bottom:24px;
 width:2px;background:var(--line-strong)}
-.timeline-card{position:relative;display:grid;grid-template-columns:150px minmax(0,1fr);
+.timeline-event{position:relative;display:grid;grid-template-columns:150px minmax(0,1fr);
 gap:48px;padding:24px 0}
-.timeline-card::before{content:"";position:absolute;left:170px;top:32px;width:10px;
+.timeline-event::before{content:"";position:absolute;left:170px;top:32px;width:10px;
 height:10px;border-radius:50%;background:var(--page);border:3px solid var(--line-strong)}
-.timeline-card-critical::before{border-color:var(--crit)}
-.timeline-card-warning::before{border-color:var(--warn)}
+.timeline-event-critical::before{border-color:var(--crit)}
+.timeline-event-warning::before{border-color:var(--warn)}
 .event-time{padding-top:3px;font-family:var(--mono);font-size:12px;line-height:1.8;
 color:var(--ink-2)}
-.event-time time{display:block;font-weight:600;color:var(--ink)}
-.event-end{display:block}
+.event-time time{display:block}
+.event-time time:first-child{font-weight:600;color:var(--ink)}
 .event-body{min-width:0;padding-bottom:24px;border-bottom:1px solid var(--line)}
-.event-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
-.event-heading h3{flex-basis:100%;margin:0 0 4px;font-size:18px;line-height:1.4}
-.node-badge{font-size:12px;color:var(--ink-2);background:var(--surface);
-padding:2px 8px;border:1px solid var(--line);border-radius:4px}
-.event-observation{margin-top:16px}
-.event-observation ul,.event-interpretation ul{margin:8px 0;padding-left:20px}
-.event-observation li,.event-interpretation li{font-size:14px;line-height:1.7}
-.event-evidence{margin:16px 0}
-.event-interpretation{margin-top:16px;padding:2px 0 2px 16px;
-border-left:2px solid var(--accent)}
-.hypothesis-label{margin:12px 0 0;font-size:12px;color:var(--ink-2)}
+.event-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin:0 0 4px}
+.event-node{font-size:12px;color:var(--ink-2)}
+.event-body h3{margin:0 0 8px;font-size:16px;line-height:1.5}
+.event-observation{margin:0 0 8px}
+.analysis-note{margin:0 0 8px;padding:2px 0 2px 16px;border-left:2px solid var(--accent);
+font-size:13px}
+.event-refs{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;font-family:var(--mono);
+font-size:12px}
 .evidence-block{margin:16px 0 24px;scroll-margin-top:56px}
 .compact-evidence{margin:8px 0;padding:12px 16px;background:var(--surface);
 border:1px solid var(--line);border-radius:6px}
@@ -119,7 +116,7 @@ pre.raw code{font:inherit}
 .compact-evidence pre.raw{margin:8px 0}
 .log-remainder{margin-top:-4px}
 .log-remainder summary,.detail-group summary,.source-details summary,
-.timeline-observations summary,details.source summary{cursor:pointer;font-size:12px;
+details.source summary{cursor:pointer;font-size:12px;
 color:var(--ink-2);padding:8px 0}
 .source-details .evidence-meta{padding:8px 0}
 .detail-group{border-bottom:1px solid var(--line)}
@@ -131,21 +128,21 @@ details.source{margin-top:48px;border-top:1px solid var(--line);padding-top:16px
 summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (max-width:700px){
 .incident-timeline{padding-left:20px}.incident-timeline::before{left:4px}
-.timeline-card{display:block;padding:20px 0}.timeline-card::before{left:-20px;top:28px}
-.event-time{margin-bottom:8px}.event-end{display:inline}
-.event-heading h3{font-size:16px}.compact-evidence{padding:8px 12px}
+.timeline-event{display:block;padding:20px 0}.timeline-event::before{left:-20px;top:28px}
+.event-time{margin-bottom:8px}.event-time time{display:inline}
+.compact-evidence{padding:8px 12px}
 .key-observations{grid-template-columns:minmax(0,1fr)}.incident-summary{padding:16px}
 .report-nav{gap:8px 16px}}
 @media print{
 body{background:#fff;color:#111}
 .wrap{max-width:none;padding:0}
 .report-nav,details.source{display:none}
-.incident-summary,.cause-assessment,.timeline-card,.evidence-block,.alert-card{break-inside:avoid}
+.incident-summary,.cause-assessment,.timeline-event,.evidence-block,.alert-card{break-inside:avoid}
 .evidence-title{break-after:avoid}
 details::details-content{content-visibility:visible;display:block}
 details>summary{display:none}
-.incident-timeline::before,.timeline-card::before{display:none}
-.timeline-card{display:block;padding:16px 0}
+.incident-timeline::before,.timeline-event::before{display:none}
+.timeline-event{display:block;padding:16px 0}
 .event-time{margin-bottom:8px}
 pre.raw{background:#f4f4f4;color:#111}}
 """
