@@ -24,7 +24,7 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 
 
-def select_all(messages, tokens, response_format):
+def select_all(messages, response_format):
     if response_format is MapOutput:
         return json.dumps({"selected": [{"record_id": 1}, {"record_id": 2}]})
     return json.dumps({"keep": [{"record_id": 1}, {"record_id": 2}]})

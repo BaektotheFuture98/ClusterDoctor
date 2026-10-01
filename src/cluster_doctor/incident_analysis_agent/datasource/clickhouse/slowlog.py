@@ -22,6 +22,7 @@ from cluster_doctor.incident_analysis_agent.model.log_entries import (
     SlowlogEntry,
     record_json,
 )
+from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import PSEUDONYMS
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     RawRecord,
@@ -79,7 +80,7 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
         query_from=tr.start,
         query_to=tr.end,
     )
-    return [
+    entries = [
         SlowlogEntry(
             timestamp=row[0],
             provenance=provenance,
@@ -93,6 +94,9 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
         )
         for row in query_segment(client, sql, tr, "slowlog")
     ]
+    for entry in entries:
+        PSEUDONYMS.register("req", entry.opaque_id)
+    return entries
 
 
 def to_records(entries: list[SlowlogEntry]) -> list[RawRecord]:

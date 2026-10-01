@@ -70,7 +70,6 @@ def _record_llm_call(kwargs, response, start_time, end_time) -> None:
                 # 도구 정의가 실린 호출이 오케스트레이터다. 분 단위 분석과
                 # 종합은 도구 없이 프롬프트만 보낸다.
                 "has_tools": bool(kwargs.get("tools")),
-                "max_tokens": kwargs.get("max_tokens"),
                 # 실제로 보낸 것. 토큰 수는 "얼마나 쌓였나"만 말하고 "무엇이
                 # 쌓였나"는 말하지 않는다.
                 "messages": kwargs.get("messages") if _capture_messages else None,
@@ -104,7 +103,6 @@ def _dump_context(path: pathlib.Path) -> None:
             # 분석과 종합이다. 둘을 함께 남겨야 한 진단의 전모가 보인다.
             "kind": "orchestrator" if c["has_tools"] else "pipeline",
             "completion_tokens": c["completion"],
-            "max_tokens": c["max_tokens"],
             "prompt_tokens": c["prompt"],
             "tool_count": len(c["tools"] or []),
             # tool 스키마도 남긴다. 매 턴 재전송되므로 이것도 컨텍스트이고,
@@ -126,7 +124,7 @@ def _dump_context(path: pathlib.Path) -> None:
     ]
     print(f"  tool 정의 {len(tool_names)}개: {', '.join(tool_names)}")
     print()
-    print("  호출  구분            입력토큰  출력상한  메시지  역할별 글자 수")
+    print("  호출  구분            입력토큰  메시지  역할별 글자 수")
     for i, call in enumerate(calls, 1):
         per_role: dict[str, int] = {}
         for message in call["messages"] or []:
@@ -139,7 +137,6 @@ def _dump_context(path: pathlib.Path) -> None:
         kind = "오케스트레이터" if call["has_tools"] else "파이프라인"
         print(
             f"  {i:4d}  {kind:12}  {_fmt_int(call['prompt']):>8}  "
-            f"{_fmt_int(call['max_tokens']):>8}  "
             f"{len(call['messages'] or []):5d}   {shape}"
         )
 

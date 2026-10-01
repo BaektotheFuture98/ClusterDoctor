@@ -46,6 +46,12 @@ _ANALYSIS_RULES = """
   description에는 그 시점의 관측과 의심되는 상황을 짧게 구분해 설명한다.
   서로 다른 시각의 사건을 한 항목으로 몰지 않는다. 시간 순서만으로 인과관계를 단정하지 않는다.
 - 노드 이름은 근거에 실제로 등장한 것만 쓴다.
+- heap 사용률 수치만으로 GC를 원인으로 단정하지 않는다. GC는 GC 로그나 GC 수치 근거가 있을
+  때만 언급하고, 없으면 "heap 사용률이 높다"는 관측까지만 쓴다. GC 여부를 확인하지
+  못했다면 unresolved_questions에 남긴다.
+- 서술하는 모든 문자열(summary, 각 description과 statement, unresolved_questions,
+  recommendations 등)은 **한국어**로 쓴다. 노드 이름, IP, 로그 원문 인용, 필드 이름,
+  식별자는 원문 그대로 둔다.
 - 근거가 부족한 원인을 확정적으로 쓰지 않는다.
   "~이다"가 아니라 "~로 보인다", confidence는 Low로 둔다.
   확정할 수 없다는 것을 쓰는 것이 틀린 확신보다 낫다.

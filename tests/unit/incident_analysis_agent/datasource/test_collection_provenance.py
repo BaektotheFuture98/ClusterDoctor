@@ -130,7 +130,7 @@ def test_clickhouse_master_keeps_original_file_and_line():
     assert record.provenance.table == "actual_db.node_logs"
 
 
-def select_first(messages, tokens, response_format):
+def select_first(messages, response_format):
     return json.dumps(
         {"selected": [{"record_id": 1}]}
         if response_format is MapOutput

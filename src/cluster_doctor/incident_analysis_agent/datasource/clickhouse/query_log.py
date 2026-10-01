@@ -22,6 +22,7 @@ from cluster_doctor.incident_analysis_agent.model.log_entries import (
     QueryLogEntry,
     record_json,
 )
+from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import PSEUDONYMS
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     RawRecord,
@@ -79,6 +80,8 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
         keywords = tuple(values["keyword"])
         values["keyword"] = keywords[:MAX_STORED_KEYWORDS]
         values["keyword_omitted"] = max(0, len(keywords) - MAX_STORED_KEYWORDS)
+        PSEUDONYMS.register("company", values.get("company"))
+        PSEUDONYMS.register("user", values.get("user"))
         entries.append(
             QueryLogEntry(
                 **values,

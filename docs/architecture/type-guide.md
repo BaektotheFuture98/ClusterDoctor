@@ -115,8 +115,9 @@ HTML은 핵심 요약, 주요 타임라인, 원인 판단, 접힌 상세 자료,
 느린 요청 후보 및 LLM 선별과 독립적이며 Analysis state → Subagent 결과 → Main 병합을
 거쳐 전달된다. 겹치는 조회는 메타데이터를 제외한 전체 기록 값별 최대 건수로 병합한다.
 검색 요청 분석은 키워드 조합·회사·사용자·cmd·검색 기간별 평균 실행 시간 순위와
-reg_date 시각을 표시한다. `QueryLogEntry`는 `log`의 19개 컬럼을 원래 이름으로 저장하고,
-추가 컬럼도 보존한다. `reg_date`가 저장 필드이고 `timestamp`는 공통 파이프라인용
+reg_date 시각을 표시하며 평균 실행 시간이 느린 상위 5개 조합만 보여 준다.
+`QueryLogEntry`는 `log`의 18개 컬럼을 원래 이름으로 저장하고, 추가 컬럼도 보존한다.
+단 `keyword`는 앞 5개만 저장하고 버린 개수를 계산 필드 `keyword_omitted`에 둔다. `reg_date`가 저장 필드이고 `timestamp`는 공통 파이프라인용
 읽기 전용 접근자다. `success`는 Y/N 원문으로 보존하며 `is_success`로 판정한다.
 검색 기간은 s_date/e_date(YYYYMMDD), 검색 일수는 date_range 원본 값이다. slowlog와의
 공통 요청 ID가 없으므로 사용자별 slowlog 연결을 임의로 추정하지 않는다.

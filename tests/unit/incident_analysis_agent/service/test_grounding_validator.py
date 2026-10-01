@@ -86,13 +86,12 @@ def test_code_fenced_json_is_parsed():
     assert issues[0].issue_type == VerificationIssueType.REPORT_MISMATCH
 
 
-def test_llm_is_called_with_messages_and_max_tokens():
+def test_llm_is_called_with_messages_only():
     validator, call_llm = _make_validator("[]")
     validator.validate(_make_report(), [_evidence()])
-    messages, max_tokens = call_llm.call_args.args
+    (messages,) = call_llm.call_args.args
     assert messages[0]["role"] == "user"
     assert "cpu_usage=10%" in messages[0]["content"]
-    assert isinstance(max_tokens, int)
 
 
 def test_no_claims_skips_llm():
@@ -121,7 +120,7 @@ def test_missing_raw_shows_placeholder_in_prompt():
 
     validator.validate(_make_report(), [_evidence(raw=None)])
 
-    messages, _ = call_llm.call_args.args
+    (messages,) = call_llm.call_args.args
     assert "(raw 없음)" in messages[0]["content"]
 
 
@@ -131,7 +130,7 @@ def test_raw_text_is_truncated_to_max_chars():
 
     validator.validate(_make_report(), [_evidence(raw="x" * 3000)])
 
-    messages, _ = call_llm.call_args.args
+    (messages,) = call_llm.call_args.args
     content = messages[0]["content"]
     assert "x" * 2000 in content
     assert "x" * 2001 not in content
