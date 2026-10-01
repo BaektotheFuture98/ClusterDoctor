@@ -24,6 +24,7 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     Finding,
     IncidentAnalysisReport,
     Narrative,
+    Recommendation,
     TimelineAnnotation,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
@@ -69,6 +70,7 @@ def to_incident_analysis_report(
         analyzed_to=report.analyzed_to,
         narrative=Narrative(
             headline=report.summary,
+            headline_citations=citations(report.summary_evidence_refs, tuple(evidence)),
             context=tuple(
                 f"{event.at.astimezone(KST):%H:%M:%S} KST {event.description}"
                 for event in report.timeline
@@ -104,7 +106,8 @@ def to_incident_analysis_report(
             ),
             unverified=report.unresolved_questions,
             suspect_picks=report.suspect_picks,
-            recommendations=report.recommendations,
+            recommendations=tuple(Recommendation(text=item.text, citations=citations(item.evidence_refs, tuple(evidence)))
+                for item in report.recommendations),
             causes=tuple(
                 CauseAssessment(
                     statement=cause.statement,

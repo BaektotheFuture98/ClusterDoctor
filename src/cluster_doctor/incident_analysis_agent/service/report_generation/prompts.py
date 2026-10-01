@@ -143,6 +143,7 @@ def build_revision_prompt(
     editable = report.model_dump_json(
         include={
             "summary",
+            "summary_evidence_refs",
             "timeline",
             "findings",
             "root_causes",

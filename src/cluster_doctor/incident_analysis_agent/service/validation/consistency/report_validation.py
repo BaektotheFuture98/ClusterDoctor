@@ -137,6 +137,9 @@ def _check_unsupported_claims(
     report: LogAnalysisReport, result: ValidationResult
 ) -> None:
     """근거 참조가 하나도 없는 주장이 있는가."""
+    for action in report.recommendations:
+        if action.text and not action.evidence_refs:
+            result.issues.append(f"권고 '{_excerpt(action.text)}'에 근거 참조가 없다.")
     for item in report.findings:
         if not item.evidence_refs:
             result.issues.append(
