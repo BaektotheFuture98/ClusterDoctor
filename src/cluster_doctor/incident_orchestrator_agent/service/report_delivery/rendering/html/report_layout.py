@@ -1,7 +1,5 @@
 """Operator-first layout: conclusion, chronological events, and original evidence."""
 
-import hashlib
-import html
 from datetime import datetime
 
 from cluster_doctor.incident_analysis_agent.model.observations import observed_severity
@@ -15,8 +13,17 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
     kst_stamp,
     raw_label,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.assessment_view import (
+    render_actions,
+    render_causes,
+    render_findings,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import (
+    anchor,
+    esc,
+    evidence_ref,
+)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import (
-    QUERY_CSS,
     render_query_ranking,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import (
@@ -42,23 +49,6 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 )
 
 
-def esc(value: str) -> str:
-    return html.escape(scrub(value), quote=True)
-
-
-def anchor(ref: str) -> str:
-    return (
-        "evidence-"
-        + hashlib.sha256(ref.encode("utf-8", errors="surrogatepass")).hexdigest()
-    )
-
-
-def ref_links(refs: tuple[str, ...]) -> str:
-    return " ".join(
-        f'<a href="#{anchor(ref)}">{esc(ref)}</a>' for ref in dict.fromkeys(refs)
-    )
-
-
 def pre(text: str) -> str:
     return f'<pre class="raw"><code>{esc(text)}</code></pre>'
 
@@ -66,11 +56,6 @@ def pre(text: str) -> str:
 class CitationRenderer:
     def __init__(self):
         self.seen: set[str] = set()
-
-    def render_unseen(self, items: tuple[EvidenceCitation, ...]) -> str:
-        return self.render(
-            tuple(item for item in items if item.evidence_id not in self.seen)
-        )
 
     def render(
         self,
@@ -151,12 +136,6 @@ class CitationRenderer:
 
 def bullet_list(items: tuple[str, ...] | list[str]) -> str:
     return "<ul>" + "".join(f"<li>{esc(item)}</li>" for item in items) + "</ul>"
-
-
-def confidence(value: str) -> str:
-    return {"high": "높음", "medium": "중간", "low": "낮음"}.get(
-        value.lower(), value or "확인되지 않음"
-    )
 
 
 def verification(status: str) -> str:
@@ -295,17 +274,9 @@ def render_layout(
 
     evidence_ids = {e.evidence_id for e in report.evidence}
 
-    def timeline_refs(refs: tuple[str, ...]) -> str:
-        # A ref without collected evidence has no anchor, so it is marked instead of linked.
-        return " ".join(
-            f'<a href="#{anchor(ref)}">{esc(ref)}</a>'
-            if ref in evidence_ids
-            else f'<span class="hint">{esc(ref)} 근거 없음(dangling)</span>'
-            for ref in dict.fromkeys(refs)
-        )
-
     cards = []
-    for card in projected_timeline(report):
+    timeline_cards = projected_timeline(report)
+    for card in timeline_cards:
         nodes = tuple(
             dict.fromkeys(
                 c.evidence.node_name or c.evidence.node_id
@@ -364,7 +335,7 @@ def render_layout(
                 else ""
             )
             + (
-                f'<p class="event-refs">{timeline_refs(card.evidence_refs)}</p>'
+                f'<p class="event-refs">{" ".join(evidence_ref(ref, evidence_ids) for ref in dict.fromkeys(card.evidence_refs))}</p>'
                 if card.evidence_refs
                 else ""
             )
@@ -378,52 +349,13 @@ def render_layout(
         + "</div></section>"
     )
 
-    cause_blocks = []
-    if narrative:
-        for c in narrative.causes:
-            cause_blocks.append(
-                f'<article class="cause-assessment"><h3>{esc(c.statement or "원인 미확인")}</h3><p>확신도 {esc(confidence(c.confidence))}</p>'
-                "<p><b>지지 근거</b> "
-                + (
-                    ref_links(tuple(item.evidence_id for item in c.supporting))
-                    or "확인되지 않음"
-                )
-                + "</p>"
-                + renderer.render_unseen(c.supporting)
-                + "<p><b>반박 근거</b> "
-                + (
-                    ref_links(tuple(item.evidence_id for item in c.contradicting))
-                    or "제시된 반박 근거 없음"
-                )
-                + "</p>"
-                + renderer.render_unseen(c.contradicting)
-                + "</article>"
-            )
-        if not narrative.causes and narrative.root_cause:
-            cause_blocks.append(
-                f"<p>{esc(narrative.root_cause)}</p>"
-                + bullet_list([*narrative.supporting, *narrative.contradicting])
-            )
-        if narrative.unverified:
-            cause_blocks.append(
-                "<h3>확인하지 못한 것</h3>" + bullet_list(narrative.unverified)
-            )
-        for f in narrative.findings:
-            cause_blocks.append(
-                f'<article class="cause-assessment"><h3>{esc(f.title)}</h3><p>{esc(f.detail)}</p>'
-                + renderer.render_unseen(f.citations)
-                + (bullet_list(f.evidence) if not f.citations else "")
-                + "</article>"
-            )
-        if narrative.recommendations:
-            cause_blocks.append(
-                "<h3>전체 권장 조치</h3>" + bullet_list(narrative.recommendations)
-            )
-    causes = (
-        '<section id="causes"><h2>원인 판단</h2>'
-        + ("".join(cause_blocks) or '<p class="hint">원인 판단이 확인되지 않음</p>')
-        + "</section>"
+    causes = render_causes(narrative, evidence_ids)
+    findings = render_findings(
+        narrative,
+        {ref for card in timeline_cards for ref in card.evidence_refs},
+        evidence_ids,
     )
+    actions = render_actions(narrative)
 
     picks = (
         {p.candidate_id: p.reason for p in narrative.suspect_picks} if narrative else {}
@@ -453,12 +385,9 @@ def render_layout(
         for label, lines in detail_blocks
         if lines
     )
-    # Renders every evidence item not shown under a cause, so each timeline link resolves.
+    # Renders every evidence item so each link in the sections above resolves.
     remaining = citations(
-        tuple(
-            e.evidence_id for e in report.evidence if e.evidence_id not in renderer.seen
-        ),
-        report.evidence,
+        tuple(e.evidence_id for e in report.evidence), report.evidence
     )
     if remaining:
         details += (
@@ -493,7 +422,7 @@ def render_layout(
     return (
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>ClusterDoctor 진단 리포트 {esc(kst_stamp(now))}</title><style>{css}\n{QUERY_CSS}</style></head>"
+        f"<title>ClusterDoctor 진단 리포트 {esc(kst_stamp(now))}</title><style>{css}</style></head>"
         '<body><main class="wrap"><header>'
         '<div class="header-top"><p class="eyebrow">ClusterDoctor · Incident Report</p>'
         + ('<span class="demo-badge">DEMO DATA</span>' if demo else "")
@@ -505,9 +434,11 @@ def render_layout(
         '<nav class="report-nav" aria-label="리포트 목차"><a href="#summary">요약</a><a href="#timeline">사건 흐름</a><a href="#causes">원인 판단</a><a href="#query-ranking">의심 요청</a><a href="#actions">조치</a><a href="#evidence">근거</a></nav>'
         + summary
         + alert
+        + findings
         + timeline
-        + render_query_ranking(obs.query_requests)
         + causes
+        + render_query_ranking(obs.query_requests, obs.candidates, picks)
+        + actions
         + details
         + limits
         + '<details class="source"><summary>리포트 평문 (관측값 + 모델 판단)</summary>'

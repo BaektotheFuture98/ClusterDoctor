@@ -121,9 +121,41 @@ color:var(--ink-2);padding:8px 0}
 .source-details .evidence-meta{padding:8px 0}
 .detail-group{border-bottom:1px solid var(--line)}
 .detail-group summary{font-size:13px}
-.cause-assessment{padding:16px 0;border-bottom:1px solid var(--line)}
-.cause-assessment h3{margin:0 0 8px;font-size:16px}
-.cause-assessment p{overflow-wrap:anywhere}
+.mono{font-family:var(--mono)}
+.cause-assessment{margin-top:16px;padding:24px;background:var(--surface);
+border:1px solid var(--line);border-radius:8px}
+.cause-assessment h3{margin:0 0 8px;font-size:16px;overflow-wrap:anywhere}
+.cause-confidence{display:flex;align-items:center;gap:4px 8px;margin:0 0 16px}
+.cause-confidence .field-label{margin:0}
+.cause-evidence{margin-top:16px}
+.cause-evidence h4{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.evidence-lines,.finding-lines{margin:0;padding:0;list-style:none}
+.evidence-line{display:grid;grid-template-columns:minmax(80px,max-content) minmax(0,1fr);
+gap:4px 16px;padding:4px 0;border-top:1px solid var(--line);font-size:13px}
+.evidence-line:first-child{border-top:0}
+.evidence-line a{font-family:var(--mono);font-size:12px}
+.evidence-line>span:only-child{grid-column:1 / -1}
+.evidence-line span{overflow-wrap:anywhere}
+.unverified{margin-top:32px}
+.unverified h3{margin:0 0 8px;font-size:16px}
+.marked-list{margin:0;padding:0;list-style:none}
+.marked-list li{display:flex;gap:16px;padding:12px 0;border-bottom:1px solid var(--line)}
+.marked-list li>span:last-child{min-width:0;overflow-wrap:anywhere}
+.marker{flex:none;min-width:24px;font-family:var(--mono);font-weight:700;color:var(--accent-ink)}
+.finding-line{padding:12px 0;border-bottom:1px solid var(--line)}
+.finding-line p{margin:0}
+.finding-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px}
+.finding-title{font-weight:600;overflow-wrap:anywhere}
+.finding-line .hint{margin-top:4px}
+.query-table-scroll{overflow-x:auto;max-width:100%}
+.query-ranking-table{min-width:640px;width:100%;border-collapse:collapse;font-size:13px}
+.query-ranking-table th,.query-ranking-table td{padding:12px 10px;text-align:left;
+border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+.query-ranking-table th{white-space:nowrap;background:var(--surface-2);font-size:12px}
+.query-ranking-table tbody.picked{background:var(--accent-soft)}
+.query-ranking-table tbody.picked tr:first-child td{border-bottom:0}
+.pick-reason td{padding-top:0}
+.query-warning{color:var(--warn);background:var(--warn-soft);padding:8px 16px;border-radius:4px}
 details.source{margin-top:48px;border-top:1px solid var(--line);padding-top:16px}
 summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (max-width:700px){
@@ -131,18 +163,21 @@ summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-of
 .timeline-event{display:block;padding:20px 0}.timeline-event::before{left:-20px;top:28px}
 .event-time{margin-bottom:8px}.event-time time{display:inline}
 .compact-evidence{padding:8px 12px}
+.cause-assessment{padding:16px}.evidence-line{display:block}
 .key-observations{grid-template-columns:minmax(0,1fr)}.incident-summary{padding:16px}
 .report-nav{gap:8px 16px}}
 @media print{
 body{background:#fff;color:#111}
 .wrap{max-width:none;padding:0}
 .report-nav,details.source{display:none}
-.incident-summary,.cause-assessment,.timeline-event,.evidence-block,.alert-card{break-inside:avoid}
+.incident-summary,.cause-assessment,.finding-line,.marked-list li,.timeline-event,.evidence-block,.alert-card{break-inside:avoid}
 .evidence-title{break-after:avoid}
 details::details-content{content-visibility:visible;display:block}
 details>summary{display:none}
 .incident-timeline::before,.timeline-event::before{display:none}
 .timeline-event{display:block;padding:16px 0}
 .event-time{margin-bottom:8px}
-pre.raw{background:#f4f4f4;color:#111}}
+pre.raw{background:#f4f4f4;color:#111}
+.query-ranking-table{min-width:0}.query-table-scroll{overflow:visible}
+.query-ranking-table th,.query-ranking-table td{padding:4px 8px;font-size:11px}}
 """

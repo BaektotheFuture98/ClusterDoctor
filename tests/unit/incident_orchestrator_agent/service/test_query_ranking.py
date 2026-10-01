@@ -33,7 +33,6 @@ def request(i=0, *, duration="2", cmd="search", keywords=("<keyword>",)):
         s_date=20260901,
         e_date=20260930,
         date_range=30,
-        keyword_count=len(keywords),
         search_count=42,
         url="/search",
         etc="",
@@ -115,7 +114,7 @@ def test_report_ranking_keeps_cmd_reg_date_identity_and_source():
     assert "company" in html and "user" in html and "agg" in html
     assert "reg_date" in html and "2026-10-01 09:00:00 KST" in html
     assert "db.log" in html and "부분 집계" in html
-    assert "검색 대상 기간" in html and "30일" in html
+    assert ">30d<" in html and "2026-09-01 ~ 2026-09-30" in html
     assert "keyword=['<keyword>']" in render_text(report)
 
 
@@ -182,8 +181,7 @@ def test_search_period_is_visible_and_different_periods_are_ranked_separately():
     report = IncidentAnalysisReport(observations=Observations(query_requests=rows))
     html = render_report(report)
     assert "2026-09-01" in html and "2026-09-30" in html
-    assert "30일" in html and "7일" in html
-    assert "keyword_count" in html and "search_count" in html and "/search" in html
+    assert ">30d<" in html and ">7d<" in html
+    assert "개별 요청" not in html and "/search" not in html
     assert "시작일·종료일 정보가 없습니다" not in html
-    assert "실패 1건" in html
     assert "date_range=30일" in render_text(report)
