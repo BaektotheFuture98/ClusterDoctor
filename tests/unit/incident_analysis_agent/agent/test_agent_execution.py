@@ -92,7 +92,7 @@ def request():
 )
 def test_analysis_graph_executes_only_first_mutating_tool(name, args):
     seams = MagicMock()
-    seams.report_writer.draft_report.return_value = DraftReport(summary="draft")
+    seams.report_writer.draft_report.side_effect = lambda request, evidence, state: DraftReport(summary="draft", summary_evidence_refs=[e.evidence_id for e in evidence])
     req = request()
     evidence = Evidence(
         evidence_id="E-i-1",
@@ -216,7 +216,7 @@ def test_main_graph_reserves_one_call_before_execution(batch):
 def test_deepagent_restores_goal_and_runs_validation_in_same_graph():
     req = request()
     seams = MagicMock()
-    seams.report_writer.draft_report.return_value = DraftReport(summary="draft")
+    seams.report_writer.draft_report.side_effect = lambda request, evidence, state: DraftReport(summary="draft", summary_evidence_refs=[e.evidence_id for e in evidence])
     evidence = Evidence(
         evidence_id="E-i-1",
         event_time=req.analysis_window.start,
@@ -257,7 +257,7 @@ def test_deepagent_restores_goal_and_runs_validation_in_same_graph():
 def test_deepagent_error_after_draft_preserves_artifacts_but_is_failed():
     req = request()
     seams = MagicMock()
-    seams.report_writer.draft_report.return_value = DraftReport(summary="draft")
+    seams.report_writer.draft_report.side_effect = lambda request, evidence, state: DraftReport(summary="draft", summary_evidence_refs=[e.evidence_id for e in evidence])
     evidence = Evidence(
         evidence_id="E-i-1",
         event_time=req.analysis_window.start,
@@ -405,7 +405,7 @@ def test_composite_deepagents_use_fresh_child_state_and_unique_incident_ids():
         ]
     )
     seams = MagicMock()
-    seams.report_writer.draft_report.return_value = DraftReport(summary="draft")
+    seams.report_writer.draft_report.side_effect = lambda request, evidence, state: DraftReport(summary="draft", summary_evidence_refs=[e.evidence_id for e in evidence])
     analyzer = object.__new__(_DeepAgentIncidentAnalyzer)
     analyzer._model, analyzer._seams, analyzer._recursion_limit = model, seams, 60
     incident = Incident(

@@ -49,7 +49,7 @@ def _make_report(description: str = "cpu normal") -> LogAnalysisReport:
 
 
 def test_grounding_passed_returns_empty():
-    validator, _ = _make_validator(json.dumps([]))
+    validator, _ = _make_validator(json.dumps([{"claim_id":"timeline:0","status":"PASSED"}]))
     assert validator.validate(_make_report(), [_evidence()]) == []
 
 
@@ -57,7 +57,7 @@ def test_grounding_mismatch_returns_issue():
     mismatch = json.dumps(
         [
             {
-                "claim": "cpu spike detected",
+                "claim_id": "timeline:0",
                 "status": "MISMATCH",
                 "reason": "raw shows cpu=10%, no spike",
                 "kind": "analysis_mismatch",
@@ -80,7 +80,7 @@ def test_unknown_kind_becomes_unverifiable():
 
 
 def test_code_fenced_json_is_parsed():
-    body = json.dumps([{"status": "MISMATCH", "reason": "x", "kind": "report_mismatch"}])
+    body = json.dumps([{"claim_id":"timeline:0", "status": "MISMATCH", "reason": "x", "kind": "report_mismatch"}])
     validator, _ = _make_validator("```json\n" + body + "\n```")
     issues = validator.validate(_make_report(), [_evidence()])
     assert issues[0].issue_type == VerificationIssueType.REPORT_MISMATCH
@@ -97,7 +97,7 @@ def test_llm_is_called_with_messages_only():
 def test_no_claims_skips_llm():
     validator, call_llm = _make_validator("[]")
     empty = LogAnalysisReport(incident_id="INC-1", analyzed_from=_T0, analyzed_to=_T0)
-    assert validator.validate(empty, [_evidence()]) == []
+    assert validator.validate(empty, [_evidence()])[0].issue_type == VerificationIssueType.UNVERIFIABLE
     call_llm.assert_not_called()
 
 
@@ -114,23 +114,49 @@ def test_llm_failure_is_unverifiable_not_passed():
     assert [i.issue_type for i in issues] == [VerificationIssueType.UNVERIFIABLE]
 
 
-def test_missing_raw_shows_placeholder_in_prompt():
-    call_llm = MagicMock(return_value="[]")
-    validator = GroundingValidator(call_llm=call_llm)
-
-    validator.validate(_make_report(), [_evidence(raw=None)])
-
-    (messages,) = call_llm.call_args.args
-    assert "(raw 없음)" in messages[0]["content"]
+def test_missing_raw_is_unverifiable_without_model_call():
+    validator, call = _make_validator('[]')
+    assert validator.validate(_make_report(), [_evidence(raw=None)])[0].issue_type == VerificationIssueType.UNVERIFIABLE
+    call.assert_not_called()
 
 
-def test_raw_text_is_truncated_to_max_chars():
-    call_llm = MagicMock(return_value="[]")
-    validator = GroundingValidator(call_llm=call_llm)
+def test_raw_beyond_2000_is_preserved_and_truncated_raw_cannot_pass():
+    validator, call = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
+    assert validator.validate(_make_report(), [_evidence(raw='x'*3000)]) == []
+    assert 'x'*3000 in call.call_args.args[0][0]['content']
+    assert validator.validate(_make_report(), [_evidence().model_copy(update={'raw_truncated':True})])[0].issue_type == VerificationIssueType.UNVERIFIABLE
 
-    validator.validate(_make_report(), [_evidence(raw="x" * 3000)])
 
-    (messages,) = call_llm.call_args.args
-    content = messages[0]["content"]
-    assert "x" * 2000 in content
-    assert "x" * 2001 not in content
+def test_empty_verdict_is_unverifiable():
+    validator, _ = _make_validator('[]')
+    assert validator.validate(_make_report(), [_evidence()])[0].issue_type == VerificationIssueType.UNVERIFIABLE
+
+
+def test_summary_only_is_checked_with_stable_claim_id():
+    report = _make_report().model_copy(update={'timeline': (), 'summary': 'cpu spike', 'summary_evidence_refs': ('E-INC-1-1',)})
+    validator, call = _make_validator(json.dumps([{'claim_id':'summary','status':'PASSED'}]))
+    assert validator.validate(report, [_evidence()]) == []
+    assert '"claim_id": "summary"' in call.call_args.args[0][0]['content']
+
+
+def test_partial_duplicate_unknown_verdicts_fail_closed():
+    import pytest
+    for payload in ([{}], [{'claim_id':'timeline:0','status':'UNKNOWN'}],
+        [{'claim_id':'unknown','status':'PASSED'}], [{'claim_id':'timeline:0','status':'PASSED'}]*2):
+        validator, _ = _make_validator(json.dumps(payload))
+        assert validator.validate(_make_report(), [_evidence()])[0].issue_type == VerificationIssueType.UNVERIFIABLE
+
+
+def test_all_fields_and_counter_evidence_are_in_claim_contract():
+    from cluster_doctor.incident_analysis_agent.model.report import ReportFinding, RootCause, ReportRecommendation, SuspectPick
+    report = _make_report().model_copy(update={
+        'summary':'summary', 'summary_evidence_refs':('E-INC-1-1',),
+        'findings':(ReportFinding(title='wrong title', detail='correct detail', evidence_refs=('E-INC-1-1',)),),
+        'root_causes':(RootCause(statement='other node GC caused delay', supporting_evidence_refs=('E-INC-1-1',), counter_evidence_refs=('counter',)),),
+        'recommendations':(ReportRecommendation(text='restart', evidence_refs=('E-INC-1-1',)),),
+        'suspect_picks':(SuspectPick(candidate_id='C1', reason='slow'),)})
+    claims = GroundingValidator._extract_claims(report)
+    assert {c['claim_id'] for c in claims} == {'summary','timeline:0','finding:0:title','finding:0:detail','cause:0','recommendation:0','suspect:0'}
+    assert next(c for c in claims if c['claim_id']=='cause:0')['counter_evidence_refs'] == ['counter']
+    validator, _ = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
+    assert any(i.issue_type == VerificationIssueType.UNVERIFIABLE for i in validator.validate(report, [_evidence()]))
