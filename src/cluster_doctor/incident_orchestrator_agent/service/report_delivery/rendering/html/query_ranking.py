@@ -62,7 +62,8 @@ def render_query_ranking(
     picks = picks or {}
     all_groups = query_ranking(requests)
     shown = all_groups[:TOP_N]
-    ids = candidate_ids(shown, candidates)
+    # Matched against every group so a twin outside the top N still blocks attribution.
+    ids = candidate_ids(all_groups, candidates)
     bodies = []
     for i, group in enumerate(shown):
         row_ids = ids.get(i, [])

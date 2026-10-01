@@ -431,7 +431,9 @@ def render_layout(
         + f'<p class="hint">Generated {esc(kst_stamp(now))} · Time basis: {esc(obs.time_basis or "미확인")}</p>'
         + (f'<p class="hint">{esc(DEMO_NOTE)}</p>' if demo else "")
         + "</header>"
-        '<nav class="report-nav" aria-label="리포트 목차"><a href="#summary">요약</a><a href="#timeline">사건 흐름</a><a href="#causes">원인 판단</a><a href="#query-ranking">의심 요청</a><a href="#actions">조치</a><a href="#evidence">근거</a></nav>'
+        '<nav class="report-nav" aria-label="리포트 목차"><a href="#summary">요약</a><a href="#timeline">사건 흐름</a><a href="#causes">원인 판단</a><a href="#query-ranking">의심 요청</a>'
+        + ('<a href="#actions">조치</a>' if actions else "")
+        + '<a href="#evidence">근거</a></nav>'
         + summary
         + alert
         + findings

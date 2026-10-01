@@ -240,3 +240,40 @@ def test_query_css_is_folded_into_report_style():
 
     assert not hasattr(query_ranking, "QUERY_CSS")
     assert "query-ranking-table" in report_style.REPORT_CSS
+
+
+def test_hidden_twin_group_blocks_candidate_attribution():
+    a = entry(0, run_time="100", keyword=("a",))
+    twin = replace(a, keyword=("b",))
+    twin_fast = entry(20, run_time="0.1", keyword=("b",))
+    fast = tuple(
+        entry(i + 1, run_time=str(60 + i), keyword=(f"k{i}",)) for i in range(6)
+    )
+    html = ranking_html(
+        (a, twin, twin_fast, *fast), [candidate("C1", a)], [SuspectPick("C1", "r")]
+    )
+    assert "<b class=\"mono\">a</b>" in html and "<b class=\"mono\">b</b>" not in html
+    assert "C1" not in html and 'class="picked"' not in html
+
+
+def nav_of(html):
+    return html.split('<nav', 1)[1].split("</nav>", 1)[0]
+
+
+def test_nav_action_item_only_when_actions_section_exists():
+    empty = render_report(report_with(Narrative()))
+    assert 'id="actions"' not in empty and "#actions" not in nav_of(empty)
+    full = render_report(report_with(Narrative(recommendations=("a",))))
+    assert 'href="#actions"' in nav_of(full)
+
+
+def test_finding_free_text_evidence_and_duplicate_refs():
+    f = replace(
+        finding("T", ["E-x", "E-x"], severity=""),
+        evidence=("raw <b> text",),
+    )
+    html = render_report(report_with(Narrative(findings=(f,))))
+    findings = html.split('id="findings"', 1)[1].split('id="causes"', 1)[0]
+    assert "raw &lt;b&gt; text" in findings
+    assert findings.count("E-x 근거 없음") == 1
+    assert "분류 없음" not in findings and "<span class=\"hint\">—</span>" in findings
