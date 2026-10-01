@@ -543,123 +543,55 @@ def scrub(text: str) -> str:
 
 
 def render_text(report: IncidentAnalysisReport) -> str:
-    """리포트 전체를 평문 한 장으로.
-
-    로그 폴백과 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
-    함수들로 따로 조립하지만 내용은 같다.
-
-    평문 섹션 번호는 코드가 순서대로 매긴다. HTML은 이름 있는 앵커와
-    접힌 상세 자료를 사용하므로 번호를 공유하지 않는다.
-    """
-    obs = report.observations
-    out: list[str] = []
-    numbered = [0]
-
-    def add(title: str, lines: list[str]) -> None:
-        if not lines:
-            return
-        numbered[0] += 1
-        out.extend([f"{numbered[0]}. {title}", _SEPARATOR, *lines, ""])
-
-    narrative = report.narrative
-    summary = (
-        [narrative.headline or "결론이 확인되지 않음"]
-        if narrative
-        else ["결론이 확인되지 않음"]
-    )
-    summary.append(f"근거 검증 상태: {report.verification_status}")
-    summary.append(severity_line(obs))
+    """Plain fallback with the same execution facts and verification gate as HTML."""
+    from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
+    obs=report.observations
+    rows=rank_query_requests(obs.query_requests)
+    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '핵심 요약',
+        f'수집 쿼리 실행 로그 {len(rows)}건',
+        f'최대 실행시간 {str(rows[0].execution_seconds)+"s" if rows and rows[0].execution_seconds is not None else "미확인"}',
+        f'분석 해석 검증: {report.verification_status}']
+    narrative=report.narrative if report.verification_status=='PASSED' else None
     if narrative:
-        if narrative.causes:
-            first = narrative.causes[0]
-            summary.append(
-                f"유력 원인: {first.statement} (확신도 {first.confidence or '확인되지 않음'})"
-            )
-        elif narrative.root_cause:
-            summary.append(f"유력 원인: {narrative.root_cause}")
-        summary.extend(f"우선 확인: {item}" for item in narrative.recommendations[:3])
-    add("핵심 요약", summary)
-    add("인시던트 개요", overview_lines(obs))
-    add("시간별 사건 흐름 (타임라인)", timeline_card_lines(report))
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_ranking import ranking_lines
-    add("검색 요청 분석", ranking_lines(obs.query_requests))
-    add("노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
-    add(
-        "마스터 노드 로그 (관측값)",
-        master_log_lines(obs.master_events, obs.master_log_total),
-    )
-
-    picks = {
-        pick.candidate_id: pick.reason
-        for pick in (report.narrative.suspect_picks if report.narrative else ())
-    }
-    candidate_lines: list[str] = []
-    for candidate in obs.candidates:
-        candidate_lines.append(candidate_line(candidate))
-        candidate_lines += [
-            f"      {detail}"
-            for detail in candidate_details(
-                candidate, picks.get(candidate.candidate_id, "")
-            )
-        ]
-    add("느린 요청 후보 (관측값 + 모델 선정)", candidate_lines)
-    add("가해자 집계 (관측값)", offender_lines(obs.candidates))
-
-    narrative = report.narrative
-    if narrative is not None:
-        add(
-            "결론",
-            [narrative.headline, *narrative.context] if narrative.headline else [],
-        )
-        findings = []
-        for finding in narrative.findings:
-            # severity가 비면 모델이 분류하지 않은 것이다. ": 제목"으로
-            # 그리면 빈 앞머리가 오타처럼 보이므로 표식을 붙인다. 코드가
-            # 대신 채우지 않는 이유는 Finding docstring에 있다.
-            label = finding.severity or "(모델이 분류하지 않음)"
-            findings.append(f"{label}: {finding.title}")
-            findings += [f"    - {item}" for item in finding.evidence]
-        add("발견된 문제점", findings)
-        cause = []
-        if narrative.causes:
-            for c in narrative.causes:
-                cause.append(
-                    f"원인 후보: {c.statement} (확신도 {c.confidence or '확인되지 않음'})"
-                )
-                cause += [f"지지 근거: {item.evidence_id}" for item in c.supporting]
-                cause += [f"반박 근거: {item.evidence_id}" for item in c.contradicting]
-        elif narrative.root_cause:
-            cause.append(narrative.root_cause)
-        cause += [f"근거: {item}" for item in narrative.supporting]
-        cause += [f"반박 근거: {item}" for item in narrative.contradicting]
-        cause += [f"확인하지 못한 것: {item}" for item in narrative.unverified]
-        add("근본 원인", cause)
-        add("권장 조치", [str(action) for action in narrative.recommendations])
-    elif report.narrative_text:
-        add("모델 리포트 (평문)", report.narrative_text.splitlines())
-
-    referenced = [e.evidence_id for e in report.evidence]
+        out.append(narrative.headline)
+        out.extend(visible_citations(narrative.headline_citations))
+    out.append('쿼리 실행 추이')
+    for p in project_query_trend(obs):
+        out.append(f'{stamp(p.start)} ~ {stamp(p.end)} · {p.count if p.count is not None else "미확인"}건 · 최대 {str(p.maximum_seconds)+"s" if p.maximum_seconds is not None else "미확인"} · {p.status}')
+    out.append('주요 타임라인')
+    for card in report_timeline(report):
+        out.append(f'{stamp(card.start)} · {card.representative_event}')
+        out.extend(item.text for item in (*card.impacts,*card.causes))
+        if narrative:out.extend(item.text for item in card.interpretations)
+    out.append('느린 개별 실행 로그')
+    for row in rows[:10]:
+        e=row.record
+        out.append(f'{stamp(e.timestamp)} · {e.cmd} · {str(row.execution_seconds)+"s" if row.execution_seconds is not None else "미확인"} · 키워드: {" · ".join(e.keyword) or "없음"} · 대상: {row.target_host or "미확인"} · 요청 호스트: {e.host}')
+        out.extend(row.conditions)
+    ssh=ssh_evidence(report.evidence)
+    if ssh:
+        out.append('SSH 노드 로그')
+        out.extend(evidence_text(e) for e in ssh)
+    out.append('시스템 지표 · 관측 최대값')
+    for n in sorted((n for n in obs.nodes if n.samples > 0),key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:
+        out.append(f'{n.node} · CPU={n.cpu_max}% JVM heap={n.jvm_heap_max}% search_queue={n.search_queue_max} write_queue={n.write_queue_max} search_rejected 누적={n.search_rejected_max} write_rejected 누적={n.write_rejected_max}')
+    out.append('원인 판단·조치')
     if narrative:
-        referenced += [
-            c.evidence_id
-            for cause in narrative.causes
-            for c in (*cause.supporting, *cause.contradicting)
-        ]
-        referenced += [
-            c.evidence_id for finding in narrative.findings for c in finding.citations
-        ]
-    add(
-        "근거 출처와 원문",
-        [citation_text(c) for c in citations(tuple(referenced), report.evidence)],
-    )
-    add("검증 문제", list(report.verification_issues))
+        for c in narrative.causes:
+            out.append(f'{c.statement} · 확신도 {c.confidence}')
+            out.extend('판단 근거: '+s for s in visible_citations(c.supporting))
+            out.extend('반증: '+s for s in visible_citations(c.contradicting))
+        for f in narrative.findings:
+            out.extend((f.title,f.detail,*visible_citations(f.citations)))
+        for a in narrative.recommendations:
+            out.append(str(a))
+            out.extend(visible_citations(getattr(a,'citations',())))
+    else:out.append('검증을 완료한 원인 판단 없음')
+    out.extend(evidence_text(e) for e in report.evidence if e.source in ('slowlog','master_log'))
+    for s in obs.source_statuses:
+        if s.status=='failed':out.append(f'{s.source} {s.host} 수집 실패 · {stamp(s.start)}')
+    return scrub('\n'.join(out).rstrip()+'\n')
 
-    # 번호 붙은 본문에서 뺀다. 사고 원인 분석과 직접 관련 없는 참고 정보라,
-    # 나란히 세면 "분석 결과 중 하나"로 읽힌다(health_lines 독스트링 참고).
-    health = health_lines(obs.health, obs.requested)
-    if health:
-        out.extend(
-            ["참고: 클러스터 현재 상태 (사고 시각 상태 아님)", _SEPARATOR, *health, ""]
-        )
-
-    return "\n".join(out).rstrip() + "\n"

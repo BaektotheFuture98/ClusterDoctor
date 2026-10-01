@@ -1,275 +1,82 @@
-"""Operator-first layout: conclusion, chronological events, and original evidence."""
-
+"""Actual standalone report using code facts and verified interpretations."""
 from datetime import datetime
+from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import render_ssh_logs
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import DEMO_GAP
 
-from cluster_doctor.incident_analysis_agent.model.observations import observed_severity
-from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
-    IncidentAnalysisReport,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
-    kst_stamp,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.assessment_view import (
-    SEVERITY_CLASSES,
-    render_actions,
-    render_causes,
-    render_findings,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import (
-    esc,
-    evidence_ref,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import (
-    render_query_ranking,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import (
-    DEMO_GAP,
-    DEMO_NOTE,
-    confidence_label,
-    format_window,
-    is_demo,
-    key_observations,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_view import (
-    render_evidence,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.observation_view import (
-    render_metadata,
-    render_observation_detail,
-)
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
-    projected_timeline,
-)
+_EXTRA_CSS='''
+body{background:#f2f5fa;color:#192b43;font-family:system-ui,sans-serif}.wrap{max-width:1180px;margin:auto;padding:28px}
+section{background:white;border:1px solid #dde4ef;border-radius:12px;padding:24px;margin:20px 0}
+h1{font-size:28px}h2{font-size:21px}.metrics{display:flex;gap:32px;flex-wrap:wrap}.metric strong{display:block;font-size:28px;color:#1555aa}
+table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}th,td{padding:10px;border-bottom:1px solid #dde4ef;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}th{background:#eef3fb}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,monospace;margin:0}svg{width:100%;height:auto}svg text{font-size:12px;fill:#35506b}.hint{color:#52657b}
+.timeline-event{display:grid;grid-template-columns:240px 1fr;gap:20px;border-bottom:1px solid #e1e7ef;padding:14px 0}.timeline-event h3{margin:0 0 8px}.quote{background:#f5f7fb;padding:12px;border-left:3px solid #adc8ee;margin:10px 0}
+@media(max-width:700px){.wrap{padding:12px}section{padding:14px}.timeline-event{display:block}table{font-size:11px}}
+@media print{body{background:white}.wrap{max-width:none;padding:0}section{border-radius:0;box-shadow:none}svg{display:block!important}thead{display:table-header-group}tr,.timeline-event,.quote{break-inside:avoid}pre{overflow:visible}a{text-decoration:none}}
+'''
 
 
-def bullet_list(items: tuple[str, ...] | list[str]) -> str:
-    return "<ul>" + "".join(f"<li>{esc(item)}</li>" for item in items) + "</ul>"
+def quotes(items):
+    return ''.join(f'<pre class="quote">{esc(text)}</pre>' for text in visible_citations(items))
 
 
-def render_alert(report: IncidentAnalysisReport, notices: list[str]) -> str:
-    out = ['<section class="alert-card" role="note">']
-    if report.verification_status != "PASSED":
-        issues = report.verification_issues
-        out.append(
-            "<h2>Evidence verification issue</h2>"
-            f"<p>{esc(VERIFICATION_NOTE.get(report.verification_status, VERIFICATION_NOTE['NOT_VERIFIED']))}</p>"
-        )
-        if issues:
-            out.append(
-                f'<details><summary>{len(issues)} issues found</summary>'
-                + bullet_list(issues)
-                + "</details>"
-            )
-    if notices:
-        title = "h3" if len(out) > 1 else "h2"
-        out.append(f"<{title}>분석 주의 사항</{title}>" + bullet_list(notices))
-    out.append("</section>")
-    return "".join(out)
-
-
-VERIFICATION_NOTE = {
-    "MISMATCH": "모델이 인용한 근거가 수집된 원문과 일치하지 않습니다. 모델 해석과 원인을 확정된 사실로 읽지 않습니다.",
-    "NOT_VERIFIED": "근거 검증이 완료되지 않았습니다. 모델 해석과 원인을 확정된 사실로 읽지 않습니다.",
-}
-
-
-def render_layout(
-    report: IncidentAnalysisReport,
-    now: datetime,
-    *,
-    gaps: tuple[str, ...],
-    analysis_failed: bool,
-    css: str,
-) -> str:
-    obs = report.observations
-    narrative = report.narrative
-    level, reasons = observed_severity(obs)
-    demo = is_demo(gaps)
-    notices = []
-    if analysis_failed:
-        notices.append(
-            "이 진단은 분석에 실패했다. 결론을 신뢰할 수 없다. 확보된 관측값과 근거를 아래에 표시한다."
-        )
-    if any(row.failed for row in obs.timeline):
-        notices.append("이 리포트에는 분석하지 못한 구간이 있다.")
-    notices.extend(gap for gap in gaps if gap != DEMO_GAP)
-    notices = list(dict.fromkeys(notices))
-    unverified = report.verification_status != "PASSED"
-    alert = render_alert(report, notices) if unverified or notices else ""
-
-    windows = obs.requested or (
-        ((report.analyzed_from, report.analyzed_to),)
-        if report.analyzed_from and report.analyzed_to
-        else ()
-    )
-    span = (
-        " · ".join(
-            f'<time datetime="{start.isoformat()}">{esc(format_window(start, end))}</time>'
-            for start, end in windows
-        )
-        or "분석 구간 미확인"
-    )
-    first_cause = narrative.causes[0] if narrative and narrative.causes else None
-    cause = (
-        first_cause.statement
-        if first_cause
-        else (narrative.root_cause if narrative else "")
-    )
-    headline = (
-        narrative.headline
-        if narrative and narrative.headline
-        else "결론이 확인되지 않음"
-    )
-    key_items = key_observations(obs)
-    severity = (
-        f'<span class="sev sev-{level.lower()}">{esc(level.upper())}</span>'
-        if level
-        else '<span class="hint">이상 신호 없음</span>'
-    )
-    summary = (
-        '<section id="summary" class="incident-summary">'
-        '<p class="section-label">핵심 요약 <span class="model-tag">분석</span></p>'
-        f'<h2 class="headline">{esc(headline)}</h2>'
-        '<div class="summary-field"><p class="field-label">Observed severity</p>'
-        f"<p>{severity}</p>"
-        + (
-            f'<p class="hint">{esc(", ".join(reasons))}</p>'
-            if reasons
-            else ""
-        )
-        + "</div>"
-        + (
-            '<div class="summary-field"><h3 class="field-label">주요 관측</h3><dl class="key-observations">'
-            + "".join(
-                f"<div><dt>{esc(k)}</dt><dd>{esc(v)}</dd></div>" for k, v in key_items
-            )
-            + "</dl></div>"
-            if key_items
-            else ""
-        )
-        + '<div class="summary-field cause-summary">'
-        '<p class="field-label">유력 원인 <span class="model-tag">판단</span></p>'
-        f"<p>{esc(cause or '확인되지 않음')}</p></div>"
-        '<div class="summary-field"><p class="field-label">Root cause confidence <span class="model-tag">판단</span></p>'
-        f'<p class="confidence-value">{esc(confidence_label(first_cause.confidence if first_cause else ""))}</p>'
-        "</div></section>"
-    )
-
-    evidence_ids = {e.evidence_id for e in report.evidence}
-
-    cards = []
-    timeline_cards = projected_timeline(report)
-    for card in timeline_cards:
-        nodes = tuple(
-            dict.fromkeys(
-                c.evidence.node_name or c.evidence.node_id
-                for c in card.evidence_citations
-                if c.evidence and (c.evidence.node_name or c.evidence.node_id)
-            )
-        )
-        observations = tuple(
-            dict.fromkeys(item.text for item in (*card.impacts, *card.causes))
-        ) or tuple(
-            dict.fromkeys(
-                c.evidence.message for c in card.evidence_citations if c.evidence
-            )
-        )
-        interpretations = card.interpretations
-        analysis = (
-            interpretations
-            if report.verification_status == "PASSED"
-            else ()
-        )
-        title = card.representative_event.split(" · 회복 관측:")[0].split(
-            " · 구간 종료"
-        )[0]
-        title = title.split(" — ")[0]
-        if len(title) > 100:
-            title = title[:100] + "…"
-        severity = card.severity.lower()
-        severity_class = severity if severity in SEVERITY_CLASSES else "info"
-        cards.append(
-            f'<article class="timeline-event timeline-event-{severity_class}">'
-            f'<div class="event-time"><time datetime="{card.start.isoformat()}">{esc(kst_stamp(card.start))}</time>'
-            + (
-                f'<time datetime="{card.end.isoformat()}">~ {esc(kst_stamp(card.end))}</time>'
-                if card.end != card.start
-                else ""
-            )
-            + '</div><div class="event-body"><p class="event-meta">'
-            + (
-                f'<span class="sev sev-{severity_class}">{esc(card.severity.upper())}</span>'
-                if card.severity
-                else ""
-            )
-            + (f'<span class="event-node">{esc(", ".join(nodes))}</span>' if nodes else "")
-            + f"</p><h3>{esc(title)}</h3>"
-            + (
-                f'<p class="event-observation">{esc(observations[0])}</p>'
-                if observations
-                else ""
-            )
-            + (
-                '<p class="analysis-note"><span class="model-tag">분석</span> '
-                + esc(" · ".join(item.text for item in analysis))
-                + "</p>"
-                if analysis
-                else ""
-            )
-            + (
-                f'<p class="event-refs">{" ".join(evidence_ref(ref, evidence_ids) for ref in dict.fromkeys(card.evidence_refs))}</p>'
-                if card.evidence_refs
-                else ""
-            )
-            + "</div></article>"
-        )
-    timeline = (
-        '<section id="timeline"><h2>사건 흐름</h2>'
-        '<p class="hint">로그 시각 순서 · 반복 신호는 첫 시각과 마지막 시각을 표시합니다. 시간 순서만으로 인과관계를 확정하지 않습니다.</p>'
-        '<div class="incident-timeline">'
-        + ("".join(cards) or '<p class="hint">표시할 사건이 확인되지 않음</p>')
-        + "</div></section>"
-    )
-
-    causes = render_causes(narrative, evidence_ids)
-    findings = render_findings(
-        narrative,
-        {ref for card in timeline_cards for ref in card.evidence_refs},
-        evidence_ids,
-    )
-    actions = render_actions(narrative)
-
-    picks = (
-        {p.candidate_id: p.reason for p in narrative.suspect_picks} if narrative else {}
-    )
-    evidence_section = render_evidence(
-        report.evidence, render_observation_detail(report)
-    )
-    metadata = render_metadata(report, now)
-    return (
-        '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>ClusterDoctor 진단 리포트 {esc(kst_stamp(now))}</title><style>{css}</style></head>"
-        '<body><main class="wrap"><header>'
-        '<div class="header-top"><p class="eyebrow">ClusterDoctor · Incident Report</p>'
-        + ('<span class="demo-badge">DEMO DATA</span>' if demo else "")
-        + "</div>"
-        + f'<h1>{esc(report.cluster or "Elasticsearch")}</h1><p class="stamp">{span}</p>'
-        + f'<p class="hint">Generated {esc(kst_stamp(now))} · Time basis: {esc(obs.time_basis or "미확인")}</p>'
-        + (f'<p class="hint">{esc(DEMO_NOTE)}</p>' if demo else "")
-        + "</header>"
-        '<nav class="report-nav" aria-label="리포트 목차"><a href="#summary">요약</a><a href="#timeline">사건 흐름</a><a href="#causes">원인 판단</a><a href="#query-ranking">의심 요청</a>'
-        + ('<a href="#actions">조치</a>' if actions else "")
-        + '<a href="#evidence">근거</a></nav>'
-        + summary
-        + alert
-        + findings
-        + timeline
-        + causes
-        + render_query_ranking(obs.query_requests, obs.candidates, picks)
-        + actions
-        + evidence_section
-        + metadata
-        + "</main></body></html>"
-    )
-
+def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[str,...], analysis_failed: bool, css: str) -> str:
+    obs=report.observations
+    rows=rank_query_requests(obs.query_requests)
+    maximum=f'{rows[0].execution_seconds}s' if rows and rows[0].execution_seconds is not None else '미확인'
+    narrative=report.narrative if report.verification_status=='PASSED' and not analysis_failed else None
+    windows=obs.requested or (((report.analyzed_from,report.analyzed_to),) if report.analyzed_from and report.analyzed_to else ())
+    span=' · '.join(f'{stamp(start)} ~ {stamp(end)}' for start,end in windows) or '분석 구간 미확인'
+    header=f'<header><p>ClusterDoctor · {esc(report.cluster)}</p><h1>Elasticsearch 쿼리·노드 로그 분석</h1><p>{esc(span)}</p><p class="hint">생성 {esc(stamp(now))}</p>'
+    if DEMO_GAP in gaps:header+='<p class="hint">합성 데이터로 실제 보고서 생성 경로를 실행한 예시입니다.</p>'
+    header+='</header>'
+    summary='<section id="summary"><h2>핵심 요약</h2><div class="metrics">'+f'<div class="metric">수집 쿼리 실행 로그<strong>{len(rows)}건</strong></div><div class="metric">최대 실행시간<strong>{esc(maximum)}</strong></div></div>'
+    if rows and rows[0].execution_seconds is not None:summary+=f'<p>가장 느린 실행: {esc(stamp(rows[0].record.timestamp))} · {esc(rows[0].record.cmd)}</p>'
+    if narrative and narrative.headline:summary+=f'<p>{esc(narrative.headline)}</p>'+quotes(narrative.headline_citations)
+    if not narrative:summary+=f'<p class="hint">분석 해석 검증: {esc(report.verification_status)}'+(' · 분석 실패' if analysis_failed else '')+'</p>'
+    failures=[s for s in obs.source_statuses if s.status=='failed']
+    for status in failures:summary+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
+    # Existing exception-only callers still retain their collection failure notice.
+    for gap in dict.fromkeys(gaps):
+        if gap != DEMO_GAP:summary+=f'<p class="hint">{esc(gap)}</p>'
+    if any(row.failed for row in obs.timeline):summary+='<p class="hint">분석하지 못한 구간이 있습니다.</p>'
+    summary+='</section>'
+    timeline='<section id="timeline"><h2>주요 타임라인</h2>'
+    for card in report_timeline(report):
+        timeline+=f'<article class="timeline-event"><div>{esc(stamp(card.start))}'+(f'<br>마지막 관측 {esc(stamp(card.end))}' if card.end!=card.start else '')+'</div><div>'+f'<h3>{esc(card.representative_event)}</h3>'
+        for item in (*card.impacts,*card.causes):timeline+=f'<p>{esc(item.text)}</p>'
+        if narrative:
+            for item in card.interpretations:timeline+=f'<p class="analysis-note">{esc(item.text)}</p>'
+        timeline+='</div></article>'
+    timeline+='</section>'
+    metrics='<section id="system-metrics"><h2>시스템 지표 · 관측 최대값</h2>'
+    nodes=tuple(n for n in obs.nodes if n.samples > 0)
+    if nodes:
+        metrics+='<table><thead><tr><th>ES 노드</th><th>CPU(%)</th><th>JVM heap(%)</th><th>Search 큐</th><th>Write 큐</th><th>Search rejected 누적</th><th>Write rejected 누적</th></tr></thead><tbody>'
+        for row in sorted(nodes,key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:
+            metrics+='<tr>'+''.join(f'<td>{esc(str(v))}</td>' for v in (row.node,row.cpu_max,row.jvm_heap_max,row.search_queue_max,row.write_queue_max,row.search_rejected_max,row.write_rejected_max))+'</tr>'
+        metrics+='</tbody></table>'
+        metric_sources=tuple(e for e in report.evidence if e.source=='node_metric' and e.provenance)
+        if metric_sources:metrics+=f'<p class="hint">출처: {esc(metric_sources[0].provenance.table or metric_sources[0].provenance.endpoint or "node_metric")} · 관측 {esc(stamp(metric_sources[0].event_time))}</p>'
+    else:metrics+='<p>수집된 시스템 지표 없음</p>'
+    metrics+='</section>'
+    causes='<section id="causes"><h2>원인 판단·조치</h2>'
+    if narrative:
+        for cause in narrative.causes:
+            causes+=f'<h3>{esc(cause.statement)}</h3><p>확신도: {esc(cause.confidence or "미확인")}</p><p>판단 근거</p>'+quotes(cause.supporting)
+            if cause.contradicting:causes+='<p>반증</p>'+quotes(cause.contradicting)
+        for finding in narrative.findings:causes+=f'<h3>{esc(finding.title)}</h3><p>{esc(finding.detail)}</p>'+quotes(finding.citations)
+        for action in narrative.recommendations:causes+=f'<p>확인·조치: {esc(str(action))}</p>'+quotes(getattr(action,'citations',()))
+        if not narrative.causes:causes+='<p>확인된 원인 없음</p>'
+    else:causes+='<p>검증을 완료한 원인 판단 없음</p>'
+    causes+='</section>'
+    other=[e for e in report.evidence if e.source in ('slowlog','master_log')]
+    originals='<section id="evidence"><h2>주요 로그 원문</h2>'+''.join(f'<pre class="quote">{esc(evidence_text(e))}</pre>' for e in sorted(other,key=lambda e:e.event_time)[:10])+'</section>' if other else ''
+    footer=f'<footer id="metadata"><p>분석 해석 검증: {esc(report.verification_status)}</p></footer>'
+    return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title><style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+header+summary+render_query_trend(project_query_trend(obs))+timeline+render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {})+render_ssh_logs(report.evidence)+metrics+causes+originals+footer+'</main></body></html>'

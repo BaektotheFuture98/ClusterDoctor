@@ -85,14 +85,14 @@ def test_offender_lines_caps_users_per_company_and_notes_the_cut():
     assert any(line.strip() == "… 외 2명" for line in lines)
 
 
-def test_render_text_includes_offender_section_after_candidates():
+def test_render_text_excludes_offender_grouping():
     obs = Observations(
         candidates=(_query_candidate("C1", "마크로밀엠브레인", "mqtai02@embrain.com", "28.66"),)
     )
     report = IncidentAnalysisReport(observations=obs, evidence=())
     text = render_text(report)
-    assert "가해자 집계 (관측값)" in text
-    assert text.index("느린 요청 후보") < text.index("가해자 집계 (관측값)")
+    assert "가해자 집계" not in text
+    assert "느린 개별 실행 로그" in text
 
 
 def test_timeline_card_lines_include_source_grouped_citations():
@@ -116,6 +116,5 @@ def test_timeline_card_lines_include_source_grouped_citations():
     )
     report = IncidentAnalysisReport(observations=obs, evidence=evidence)
     text = render_text(report)
-    assert "근거 원문 (출처별)" in text
-    assert "[E-1]" in text
-    assert "[E-2]" in text
+    assert "slowlog took=12s" in text and "원문 없음" in text
+    assert "E-1" not in text and "E-2" not in text
