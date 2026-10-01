@@ -2,7 +2,7 @@
 
     fetch_logs (ClickHouse)          fetch_node_logs (ClickHouse)
         ├── slowlog   ─ 선별 ─┐        └── master log ─ 선별 ─┐
-        ├── query log ─ 선별 ─┤                (실패 시 SSH 폴백)│
+        ├── query log ─ 선별 ─┤                                  │
         └── node metric ─ 규칙 ─┤                                  │
                                 ↓                                  ↓
                           Evidence[] ←───────────────────── Node Investigation
@@ -10,11 +10,13 @@
 
 **어느 단계도 예외를 밖으로 내보내지 않는다.** 소스 하나가 실패해도 나머지
 소스의 근거는 유효하고, 그 사실은 ``gaps``로 남아 리포트의 배너가 된다.
-분석 자체가 성립하지 않은 경우(모든 소스 실패)만 ``degraded``를 세운다.
+분 단위 세 소스의 모든 구간 조회가 실패한 경우 ``degraded``를 세운다.
+클러스터 상태·마스터 로그·문제 노드 조사의 실패는 별도 gap으로 기록한다.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -36,25 +38,37 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_hea
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     NodeResolver,
 )
-from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
+    NodeLogFetcher,
+)
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    EvidenceProvenance,
+    EvidenceSource,
+)
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
-    LogEntry,
     NodeLogEntry,
     NodeMetricEntry,
     QueryLogEntry,
     SlowlogEntry,
 )
+from cluster_doctor.incident_analysis_agent.model.log_fetch import LogFetchResult
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
     MAX_EVIDENCE_TOTAL,
     clamp_evidence,
     truncate_raw,
 )
-from cluster_doctor.incident_analysis_agent.service.node_investigation import node_investigation
-from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import run_analysis
+from cluster_doctor.incident_analysis_agent.service.node_investigation import (
+    node_investigation,
+)
+from cluster_doctor.incident_analysis_agent.service.observation.builder import (
+    ObservationBuilder,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
+    run_analysis,
+)
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     AnalysisResult,
     MinuteBucket,
@@ -71,6 +85,7 @@ def _shift_ids(records: list, start: int) -> list:
     모든 분의 레코드를 하나의 dict로 합치므로 분 경계를 넘어 유일해야 한다.
     """
     from dataclasses import replace
+
     return [replace(r, record_id=start + i) for i, r in enumerate(records)]
 
 
@@ -94,7 +109,7 @@ class EvidenceCollector:
         self,
         *,
         new_evidence_id: Callable[[], str],
-        fetch_logs: Callable[[TimeRange], list[LogEntry]],
+        fetch_logs: Callable[[TimeRange], LogFetchResult],
         fetch_node_logs: Callable[..., list[NodeLogEntry]],
         cluster: ClusterRepository,
         node_resolver: NodeResolver,
@@ -115,7 +130,9 @@ class EvidenceCollector:
         self._failed_minutes: set = set()
 
     # ── 수집 ─────────────────────────────────────────────────────────
-    def collect(self, window: TimeRange, state: ObservationBuilder) -> CollectedEvidence:
+    def collect(
+        self, window: TimeRange, state: ObservationBuilder
+    ) -> CollectedEvidence:
         collected = CollectedEvidence()
         self._failed_minutes = set()
 
@@ -160,7 +177,10 @@ class EvidenceCollector:
     def _fetch_and_bucket(
         self, window: TimeRange, state: ObservationBuilder
     ) -> tuple[list[MinuteBucket], list[MinuteBucket], list[NodeMetricEntry]]:
-        """분마다 조회 → 즉시 datasource별 버킷으로 변환. LogEntry는 분 단위로 버린다.
+        """분마다 세 소스를 병렬 조회하고 성공 레코드를 datasource별로 변환한다.
+
+        실패는 소스·구간별 gap으로 기록한다. 쿼리 요청은 관측값에 보존하며,
+        선별 입력은 분 단위 버킷으로 변환한다.
 
         반환값: (slowlog_buckets, query_log_buckets, metric_entries)
         """
@@ -173,17 +193,28 @@ class EvidenceCollector:
         metric_entries: list[NodeMetricEntry] = []
         slow_next_id = 1
         query_next_id = 1
-        failed: list[str] = []
+        any_success = False
 
         for minute_range in split_by_minute(window):
             label = minute_range.start.strftime("%H:%M")
             try:
-                entries = self._fetch_logs(minute_range)
+                result = self._fetch_logs(minute_range)
             except Exception as exc:
                 _logger.warning("[collector] %s 로그 조회 실패: %s", label, exc)
-                failed.append(label)
+                state.mark_gap(
+                    f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({label}분): {exc}"
+                )
                 continue
 
+            # 정상 조회가 0건인 경우도 성공이다. 데이터 부재와 조회 실패를 구분한다.
+            any_success |= len(result.failures) < 3
+            for failure in result.failures:
+                state.mark_gap(
+                    f"{failure.source} 조회 실패 "
+                    f"({failure.window.start.astimezone(KST).isoformat()} ~ "
+                    f"{failure.window.end.astimezone(KST).isoformat()}): {failure.error}"
+                )
+            entries = list(result.entries)
             state.record_log_observations(entries)
             minute = minute_range.start.replace(second=0, microsecond=0)
 
@@ -201,12 +232,8 @@ class EvidenceCollector:
 
             metric_entries.extend(e for e in entries if isinstance(e, NodeMetricEntry))
 
-        if failed:
-            if not slowlog_buckets and not query_log_buckets and not metric_entries:
-                state.degraded = True
-            state.mark_gap(
-                f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({', '.join(failed)}분)"
-            )
+        if not any_success:
+            state.degraded = True
 
         return slowlog_buckets, query_log_buckets, metric_entries
 
@@ -284,6 +311,8 @@ class EvidenceCollector:
             f"active_shards={payload.get('active_shards', 0)} "
             f"nodes={payload.get('number_of_nodes', 0)}"
         )
+        raw_payload = {"health": payload}
+        endpoint = "/_cluster/health"
         try:
             explained = self._cluster.explain_allocation()
         except Exception as exc:
@@ -291,6 +320,10 @@ class EvidenceCollector:
             _logger.info("[collector] allocation explain 없음/실패: %s", exc)
         else:
             message += f" | allocation explain: {truncate_raw(str(explained), 2000)}"
+            raw_payload["allocation_explain"] = explained
+            endpoint += " + /_cluster/allocation/explain"
+
+        raw = json.dumps(raw_payload, ensure_ascii=False, default=str, indent=2)
 
         return [
             Evidence(
@@ -300,7 +333,12 @@ class EvidenceCollector:
                 event_type="cluster_not_green",
                 severity="Critical" if status == "red" else "Warning",
                 message=message,
-                raw=truncate_raw(message),
+                raw=truncate_raw(raw),
+                raw_kind="record",
+                raw_truncated=len(truncate_raw(raw)) != len(raw),
+                provenance=EvidenceProvenance(
+                    method="elasticsearch_api", collected_at=now, endpoint=endpoint
+                ),
                 selection_reason="코드가 조회한 클러스터 상태. 모델을 거치지 않았다.",
             )
         ]
@@ -308,17 +346,7 @@ class EvidenceCollector:
     def _collect_master(
         self, window: TimeRange, state: ObservationBuilder
     ) -> list[Evidence]:
-        """마스터 로그를 모아 분 단위 선별한다. ClickHouse를 먼저, 실패하면 SSH.
-
-        0건에서는 SSH로 내려가지 않는다. 로거를 좁혀 뒀으므로 건강한 창에서
-        0건은 정상이고, 그때마다 내려가면 분석 호출마다 ES 왕복 + 새 SSH 접속을
-        치른다. 대가는 적재 지연으로 0건인 경우를 메우지 못하는 것인데, 0건만
-        보고는 "사건 없음"과 "적재 안 됨"을 구별할 수 없으므로 접속 비용이 더
-        크다고 본다.
-        """
-        from cluster_doctor.incident_analysis_agent.datasource.ssh import node_log
-
-        records = []
+        """ClickHouse 마스터 로그를 선별한다. 조회 실패는 gap으로 남긴다."""
         try:
             entries = self._fetch_node_logs(
                 window.start,
@@ -329,17 +357,11 @@ class EvidenceCollector:
                 limit=master_log.MASTER_LOG_MAX_LINES,
             )
         except Exception as exc:
-            _logger.warning("[collector] 마스터 로그 조회 실패, SSH로 폴백: %s", exc)
-            text = self._master_via_ssh(window, state)
-            if not text:
-                return []
-            state.record_master_text(text)
-            records = node_log.to_records(
-                truncate_raw(text), fallback_time=window.start
-            )
-        else:
-            state.record_master_logs(entries)
-            records = master_log.to_records(entries)
+            state.mark_gap(f"마스터 로그 조회 실패 (ClickHouse): {exc}")
+            return []
+
+        state.record_master_logs(entries)
+        records = master_log.to_records(entries)
 
         if not records:
             return []
@@ -347,29 +369,11 @@ class EvidenceCollector:
             master_log.SPEC, group_into_buckets(records), state
         ).evidence
 
-    def _master_via_ssh(self, window: TimeRange, state: ObservationBuilder) -> str:
-        try:
-            resolved = self._node_resolver.resolve("_master")
-        except Exception as exc:
-            state.mark_gap(f"마스터 노드 조회 실패: {exc}")
-            return ""
-        if resolved is None or not resolved.is_reachable():
-            state.mark_gap("마스터 노드 접속 정보를 얻지 못해 마스터 로그를 보지 못했다")
-            return ""
-        try:
-            return self._node_log_fetcher.fetch(
-                resolved.host,
-                resolved.log_path or "",
-                resolved.cluster_name,
-                start_dt=window.start,
-                end_dt=window.end,
-            )
-        except Exception as exc:
-            state.mark_gap(f"마스터 로그 SSH 수집 실패: {exc}")
-            return ""
-
     def _investigate_nodes(
-        self, master_evidence: list[Evidence], window: TimeRange, state: ObservationBuilder
+        self,
+        master_evidence: list[Evidence],
+        window: TimeRange,
+        state: ObservationBuilder,
     ) -> node_investigation.NodeInvestigationResult:
         candidates = node_investigation.find_problem_nodes(
             master_evidence, self._call_llm

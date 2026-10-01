@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    EvidenceProvenance,
+)
 
 
 @dataclass(frozen=True)
@@ -16,6 +20,11 @@ class RawRecord:
     node_id: str | None = None
     node_name: str | None = None
     severity: str | None = None
+    raw: str | None = None
+    provenance: EvidenceProvenance | None = None
+    raw_kind: Literal["log", "record", "query"] = "log"
+    raw_truncated: bool = False
+    time_origin: Literal["parsed", "inherited", "fallback"] = "parsed"
 
     def as_prompt_line(self) -> str:
         return f"#{self.record_id} {self.line}"
@@ -52,7 +61,9 @@ class AnalysisResult:
 
     @property
     def fully_failed(self) -> bool:
-        return self.analyzed_minutes > 0 and self.failed_minutes == self.analyzed_minutes
+        return (
+            self.analyzed_minutes > 0 and self.failed_minutes == self.analyzed_minutes
+        )
 
 
 def group_into_buckets(records: list[RawRecord]) -> list[MinuteBucket]:

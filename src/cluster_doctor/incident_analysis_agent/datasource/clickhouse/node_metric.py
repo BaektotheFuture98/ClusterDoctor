@@ -16,15 +16,26 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
     MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     query_segment,
 )
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, NodeMetricEntry
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    EvidenceProvenance,
+    EvidenceSource,
+)
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
+    LogEntry,
+    NodeMetricEntry,
+    record_json,
+)
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import truncate_raw
+from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
+    truncate_raw,
+)
 
 # rejected는 **누적** 카운터다(``_nodes/stats``). 그래서 0이 아니라는 사실
 # 자체가 근거이고, 증가분을 따지지 않는다. 이 값만은 설정으로 열지 않는다 —
@@ -62,9 +73,17 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
         "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
         f"LIMIT {MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
     )
+    provenance = EvidenceProvenance(
+        method="clickhouse",
+        collected_at=datetime.now(UTC),
+        table=table,
+        query_from=tr.start,
+        query_to=tr.end,
+    )
     return [
         NodeMetricEntry(
             timestamp=row[0],
+            provenance=provenance,
             node_name=row[1],
             node_ip=row[2],
             os_cpu_percent=row[3],
@@ -142,7 +161,11 @@ def to_evidence(
                 event_type=f"node_metric_{rule}",
                 severity=severity,
                 message=message,
-                raw=truncate_raw(message),
+                raw=truncate_raw(record_json(entry)),
+                raw_kind="record",
+                provenance=entry.provenance,
+                raw_truncated=len(truncate_raw(record_json(entry)))
+                != len(record_json(entry)),
                 selection_reason="임계값을 넘은 구간 최고점. 코드가 측정값에서 직접 골랐다.",
             )
         )

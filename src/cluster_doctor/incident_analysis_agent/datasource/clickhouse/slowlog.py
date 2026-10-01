@@ -7,15 +7,28 @@ slowlog는 임계치를 넘은 쿼리만 기록된다. 그래서 "느린 쿼리�
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
     MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     query_segment,
 )
-from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, SlowlogEntry
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    EvidenceProvenance,
+    EvidenceSource,
+)
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
+    LogEntry,
+    SlowlogEntry,
+    record_json,
+)
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
+    RawRecord,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import (
+    AnalysisSpec,
+)
 
 SPEC = AnalysisSpec(
     source=EvidenceSource.SLOWLOG,
@@ -59,9 +72,17 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
     )
     # row 인덱스: 0=발생 시각, 1=인덱스명, 2=노드명, 3=took,
     #             4=total_hits, 5=total_shards, 6=x-opaque-id, 7=쿼리 원문
+    provenance = EvidenceProvenance(
+        method="clickhouse",
+        collected_at=datetime.now(UTC),
+        table=table,
+        query_from=tr.start,
+        query_to=tr.end,
+    )
     return [
         SlowlogEntry(
             timestamp=row[0],
+            provenance=provenance,
             index_name=row[1],
             node=row[2],
             took=row[3],
@@ -81,6 +102,9 @@ def to_records(entries: list[SlowlogEntry]) -> list[RawRecord]:
         RawRecord(
             record_id=index,
             event_time=entry.timestamp,
+            raw=record_json(entry),
+            raw_kind="record",
+            provenance=entry.provenance,
             line=(
                 f"took={entry.took or '?'} index={entry.index_name or '?'} "
                 f"node={entry.node or '?'} hits={entry.total_hits or '?'} "

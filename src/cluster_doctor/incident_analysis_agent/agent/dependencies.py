@@ -23,8 +23,11 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_hea
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     NodeResolver,
 )
-from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
-from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, NodeLogEntry
+from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
+    NodeLogFetcher,
+)
+from cluster_doctor.incident_analysis_agent.model.log_entries import NodeLogEntry
+from cluster_doctor.incident_analysis_agent.model.log_fetch import LogFetchResult
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
@@ -42,7 +45,7 @@ class AnalysisSeams:
     ``GroundingValidator``)는 여기서 자기가 필요한 필드만 꺼내 쓴다.
     """
 
-    fetch_logs: Callable[[TimeRange], list[LogEntry]]
+    fetch_logs: Callable[[TimeRange], LogFetchResult]
     fetch_node_logs: Callable[..., list[NodeLogEntry]]
     cluster: ClusterRepository
     node_resolver: NodeResolver

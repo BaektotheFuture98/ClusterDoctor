@@ -59,11 +59,13 @@ def _format_slowlog(entry: SlowlogEntry) -> str:
 @format_log_line.register
 def _format_query_log(entry: QueryLogEntry) -> str:
     line = (
-        f"  {entry.timestamp} [{'SUCCESS' if entry.success else 'FAIL'}] "
+        f"  {entry.timestamp} [{entry.success}] "
         f"node={entry.host or '-'} comp={entry.service or '-'} "
         f"[{entry.cmd}] project={entry.project} env={entry.env} "
         f"cluster={entry.cluster} runtime={entry.run_time}s "
-        f"{_format_keywords(entry.keywords)}"
+        f"{_format_keywords(entry.keyword)} "
+        f"s_date={entry.s_date} e_date={entry.e_date} date_range={entry.date_range} "
+        f"keyword_count={entry.keyword_count} search_count={entry.search_count}"
     )
     if entry.company or entry.user:
         line += f" company={entry.company or '-'} user={entry.user or '-'}"
@@ -115,7 +117,10 @@ def _format_node_metric(entry: NodeMetricEntry) -> str:
 
 def format_evidence_line(evidence: Evidence) -> str:
     """프롬프트에 실을 근거 한 줄. 모델이 id로 골라 쓰게 한다."""
-    parts = [f"[{evidence.evidence_id}]", evidence.event_time.strftime("%Y-%m-%d %H:%M:%S")]
+    parts = [
+        f"[{evidence.evidence_id}]",
+        evidence.event_time.strftime("%Y-%m-%d %H:%M:%S"),
+    ]
     parts.append(str(evidence.source))
     if evidence.severity:
         parts.append(evidence.severity)

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, NotRequired
 from datetime import datetime
+from typing import Annotated, Any, NotRequired
 
 from deepagents import DeepAgentState
 
@@ -12,6 +12,7 @@ from cluster_doctor.incident_analysis_agent.model.analysis_contract import (
 )
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
+from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import (
     MasterEvent,
     NodeMetricRow,
@@ -49,6 +50,7 @@ class AnalysisAgentState(DeepAgentState):
     master_events: NotRequired[Annotated[tuple[MasterEvent, ...], last_write_wins]]
     health: NotRequired[Annotated[tuple[HealthPoint, ...], last_write_wins]]
     candidates: NotRequired[Annotated[tuple[SlowCandidate, ...], last_write_wins]]
+    query_requests: NotRequired[Annotated[tuple[QueryLogEntry, ...], last_write_wins]]
     gaps: NotRequired[Annotated[tuple[str, ...], last_write_wins]]
     degraded: NotRequired[Annotated[bool, last_write_wins]]
     time_basis: NotRequired[Annotated[str, last_write_wins]]

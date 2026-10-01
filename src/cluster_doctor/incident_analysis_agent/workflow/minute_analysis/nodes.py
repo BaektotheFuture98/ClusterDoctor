@@ -16,20 +16,24 @@ from collections.abc import Callable
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import truncate_raw
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.prompt import (
-    build_map_prompt,
-    build_reduce_prompt,
+from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
+    truncate_raw,
 )
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     MinuteBucket,
     MinuteResult,
     SelectedRecord,
 )
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.prompt import (
+    build_map_prompt,
+    build_reduce_prompt,
+)
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.schema import (
     MapOutput,
     ReduceOutput,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import (
+    AnalysisSpec,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state import (
     MinuteAnalysisState,
@@ -67,7 +71,9 @@ def make_map_minute(spec: AnalysisSpec, call_llm: StructuredLlmCaller):
                 response_format=MapOutput,
             )
         except (LlmApiError, LlmResponseError) as exc:
-            _logger.warning("[minute_analysis] %s %s 선별 실패: %s", spec.label, label, exc)
+            _logger.warning(
+                "[minute_analysis] %s %s 선별 실패: %s", spec.label, label, exc
+            )
             return {
                 "minute_results": [
                     MinuteResult(
@@ -172,12 +178,16 @@ def make_reduce_to_evidence(
             ]
 
         evidence: list[Evidence] = []
-        seen_lines: set[str] = set()
+        seen_lines: set[tuple] = set()
         for record_id, selection_reason in chosen:
             record = records.get(record_id)
-            if record is None or record.line in seen_lines:
+            if record is None:
                 continue
-            seen_lines.add(record.line)
+            key = (record.line, record.node_id, record.node_name, record.provenance)
+            if key in seen_lines:
+                continue
+            seen_lines.add(key)
+            raw = record.raw if record.raw is not None else record.line
             picked = selections.get(record_id)
             evidence.append(
                 Evidence(
@@ -189,8 +199,14 @@ def make_reduce_to_evidence(
                     event_type=(picked.event_type if picked else "") or None,
                     severity=record.severity,
                     message=record.line,
-                    raw=truncate_raw(record.line),
-                    selection_reason=selection_reason or (picked.reason if picked else ""),
+                    raw=truncate_raw(raw),
+                    provenance=record.provenance,
+                    raw_kind=record.raw_kind,
+                    raw_truncated=record.raw_truncated
+                    or len(truncate_raw(raw)) != len(raw),
+                    time_origin=record.time_origin,
+                    selection_reason=selection_reason
+                    or (picked.reason if picked else ""),
                 )
             )
             if len(evidence) >= spec.max_evidence:

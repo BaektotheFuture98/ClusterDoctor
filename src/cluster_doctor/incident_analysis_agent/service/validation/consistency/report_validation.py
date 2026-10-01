@@ -6,8 +6,8 @@
 
 여기 있는 규칙은 전부 **구조화된 필드**에서 나온다. 모델이 쓴 산문을 파싱하지
 않는다 — 읽기 시작하면 그것이 모델 산문 파싱이고, 정확히 이 저장소가 두 번 당한
-실패다. 딱 한 군데 본문을 보는 곳이 있는데(노드 이름), 그것도 **이미 아는
-이름의 집합**과만 대조하므로 모르는 단어를 해석하지 않는다.
+실패다. 본문에서는 알려진 노드명과 확정적 표현·인과 표현을 검사한다.
+원문의 의미 대조는 별도의 GroundingValidator가 수행한다.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ _MIN_REFS_FOR_HIGH_CONFIDENCE = 2
 
 @dataclass
 class ValidationResult:
-    """``validate_report``가 8개 결정적 검사로 낸, 리포트 자체의 구조적 불일치.
+    """``validate_report``가 결정적 검사로 낸, 리포트 자체의 구조적 불일치.
 
     소비자는 검증 루프 하나뿐이며, 지적을 그대로 ``revise_report``의
     프롬프트에 나열하거나 ``LogAnalysisReport.verification_issues``에 문자열로
@@ -72,10 +72,7 @@ def validate_report(
     result = ValidationResult()
     known = {item.evidence_id: item for item in evidence}
     known_nodes = {
-        name
-        for item in evidence
-        for name in (item.node_name, item.node_id)
-        if name
+        name for item in evidence for name in (item.node_name, item.node_id) if name
     }
 
     _check_unknown_refs(report, known, result)
@@ -93,7 +90,9 @@ def validate_report(
     return result
 
 
-def _check_conflicting_refs(report: LogAnalysisReport, result: ValidationResult) -> None:
+def _check_conflicting_refs(
+    report: LogAnalysisReport, result: ValidationResult
+) -> None:
     """병합된 원인 후보 전체에서 지지와 반증 근거의 중복을 찾는다."""
     supporting = {
         ref for cause in report.root_causes for ref in cause.supporting_evidence_refs
@@ -133,9 +132,7 @@ def _check_candidate_ids(
     근거 참조와 같은 규칙이다. 코드가 id를 붙여 목록을 주고 모델은 그중에서만
     고르게 해야, 수치와 쿼리 원문을 코드가 조인해 붙일 수 있다.
     """
-    unknown = sorted(
-        {item.candidate_id for item in report.suspect_picks} - known
-    )
+    unknown = sorted({item.candidate_id for item in report.suspect_picks} - known)
     if unknown:
         result.issues.append(
             f"제시되지 않은 느린 요청 후보를 지목했다: {', '.join(unknown)}. "
@@ -143,7 +140,9 @@ def _check_candidate_ids(
         )
 
 
-def _check_unsupported_claims(report: LogAnalysisReport, result: ValidationResult) -> None:
+def _check_unsupported_claims(
+    report: LogAnalysisReport, result: ValidationResult
+) -> None:
     """근거 참조가 하나도 없는 주장이 있는가."""
     for item in report.findings:
         if not item.evidence_refs:
@@ -171,9 +170,12 @@ def _check_timestamps(
         if not cited:
             continue
         if not any(
-            abs(evidence.event_time - item.at) <= TIMESTAMP_TOLERANCE for evidence in cited
+            abs(evidence.event_time - item.at) <= TIMESTAMP_TOLERANCE
+            for evidence in cited
         ):
-            observed = ", ".join(f"{e.evidence_id}={e.event_time:%H:%M:%S}" for e in cited)
+            observed = ", ".join(
+                f"{e.evidence_id}={e.event_time:%H:%M:%S}" for e in cited
+            )
             result.issues.append(
                 f"타임라인이 {item.at:%H:%M:%S}라고 썼지만 인용한 근거의 시각은 "
                 f"{observed}이다. 근거의 시각을 그대로 써라."
@@ -231,7 +233,9 @@ def _check_overclaiming(report: LogAnalysisReport, result: ValidationResult) -> 
                 f"{refs}건뿐이다. 근거를 더 인용하거나 confidence를 낮춰라."
             )
         definitive = [word for word in _DEFINITIVE_MARKERS if word in item.statement]
-        if definitive and (item.confidence in ("", "Low") or refs < _MIN_REFS_FOR_HIGH_CONFIDENCE):
+        if definitive and (
+            item.confidence in ("", "Low") or refs < _MIN_REFS_FOR_HIGH_CONFIDENCE
+        ):
             result.issues.append(
                 f"원인 후보 '{_excerpt(item.statement)}'가 확정적으로 쓰였지만"
                 f"({', '.join(definitive)}) 근거는 {refs}건이고 confidence는 "

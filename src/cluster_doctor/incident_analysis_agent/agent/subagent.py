@@ -63,6 +63,7 @@ def _observations(state: dict) -> Observations:
         master_log_total=state.get("master_log_total", 0),
         health=tuple(state.get("health", ())),
         candidates=tuple(state.get("candidates", ())),
+        query_requests=tuple(state.get("query_requests", ())),
     )
 
 
@@ -149,7 +150,9 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
             fresh = {**fresh, **collect_update(seams, fresh)}
             fresh = {
                 **fresh,
-                **_execution_projection(report_update(seams, fresh, request.analysis_goal)),
+                **_execution_projection(
+                    report_update(seams, fresh, request.analysis_goal)
+                ),
             }
             if fresh.get("report") is None:
                 current = {
@@ -230,11 +233,11 @@ def project_result(state: dict) -> WindowAnalysisResult:
         status = LogAnalysisStatus.COMPLETED if report else LogAnalysisStatus.FAILED
     if report:
         # ReportWriter's formatting only reads gaps from its observation helper.
-        from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
-            ReportWriter,
-        )
         from cluster_doctor.incident_analysis_agent.service.observation.builder import (
             ObservationBuilder,
+        )
+        from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
+            ReportWriter,
         )
 
         summary = ReportWriter.summary_for_supervisor(

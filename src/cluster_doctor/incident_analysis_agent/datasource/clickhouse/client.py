@@ -1,17 +1,23 @@
 """ClickHouse 공통 client와 조회 오케스트레이션.
 
 목적별 쿼리와 row 매핑은 같은 디렉터리의 ``slowlog.py``/``query_log.py``/
-``node_metric.py``/``master_log.py``에 있다. 여기 남는 것은 connection 하나를
-여럿이 공유하기 위한 공통 코드와, 그 목적별 함수들을 호출하는 오케스트레이션이다.
+``node_metric.py``/``master_log.py``에 있다. 여기에는 HTTP client를 공유하는
+공통 코드와 분마다 세 소스를 병렬 조회해 결과·실패를 모으는 오케스트레이션이 있다.
 """
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 
+from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceProvenance
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     NodeLogEntry,
+)
+from cluster_doctor.incident_analysis_agent.model.log_fetch import (
+    LogFetchResult,
+    LogSourceFailure,
 )
 from cluster_doctor.incident_analysis_agent.model.time_range import (
     InvalidTimeRangeError,
@@ -52,12 +58,13 @@ def clamp_node_log_limit(limit: int) -> int:
 class LogRepository(ABC):
     """진단에 필요한 로그와 메트릭을 조회하는 외부 저장소 포트.
 
-    어댑터가 소스 데이터를 LogEntry 계열로 돌려주며 근거 선별은 호출자가 맡는다.
+    어댑터가 소스 데이터를 LogEntry 계열로 매핑하며 근거 선별은 호출자가 맡는다.
+    fetch_logs는 LogFetchResult에 성공 레코드와 소스별 실패를 함께 담는다.
     """
 
     @abstractmethod
-    def fetch_logs(self, time_range: TimeRange) -> list[LogEntry]:
-        """분 단위 분석에 쓰는 세 소스(slowlog·쿼리 로그·노드 메트릭)를 한 리스트로."""
+    def fetch_logs(self, time_range: TimeRange) -> LogFetchResult:
+        """세 소스의 로그와 소스별 조회 실패를 함께 반환한다."""
         ...
 
     @abstractmethod
@@ -101,7 +108,9 @@ class LogRepository(ABC):
         ...
 
 
-def query_segment(client, sql: str, tr: TimeRange, source: str) -> list:
+def query_segment(
+    client, sql: str, tr: TimeRange, source: str, *, named: bool = False
+) -> list:
     """한 세그먼트·소스 조회를 실행하고 무음 절단을 로그로 알린다.
 
     ``LIMIT``에 ``ORDER BY``가 없어 상한에 걸리면 ClickHouse가 임의의 부분집합을
@@ -120,6 +129,8 @@ def query_segment(client, sql: str, tr: TimeRange, source: str) -> list:
             tr.start.isoformat(),
             tr.end.isoformat(),
         )
+    if named:
+        return [dict(zip(result.column_names, row, strict=True)) for row in rows]
     return rows
 
 
@@ -189,7 +200,7 @@ class ClickHouseLogAdapter(LogRepository):
         self._node_metric_table = node_metric_table
         self._node_log_table = node_log_table
 
-    def fetch_logs(self, time_range: TimeRange) -> list[LogEntry]:
+    def fetch_logs(self, time_range: TimeRange) -> LogFetchResult:
         from cluster_doctor.incident_analysis_agent.datasource.clickhouse import (
             node_metric,
             query_log,
@@ -197,12 +208,26 @@ class ClickHouseLogAdapter(LogRepository):
         )
 
         all_logs: list[LogEntry] = []
-        for seg in split_by_minute(time_range):
-            all_logs.extend(slowlog.fetch(self._client, self._slowlog_table, seg))
-            all_logs.extend(query_log.fetch(self._client, self._log_table, seg))
-            all_logs.extend(node_metric.fetch(self._client, self._node_metric_table, seg))
+        failures: list[LogSourceFailure] = []
+        sources = (
+            ("slowlog", slowlog.fetch, self._slowlog_table),
+            ("es_query_log", query_log.fetch, self._log_table),
+            ("node_metric", node_metric.fetch, self._node_metric_table),
+        )
+        # 분마다 세 소스를 동시에 조회하되 전체 기간의 쿼리를 한꺼번에 제출하지 않는다.
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for seg in split_by_minute(time_range):
+                pending = [
+                    (source, executor.submit(fetch, self._client, table, seg))
+                    for source, fetch, table in sources
+                ]
+                for source, future in pending:
+                    try:
+                        all_logs.extend(future.result())
+                    except Exception as exc:  # noqa: BLE001 — 소스별 장애 격리
+                        failures.append(LogSourceFailure(source, seg, str(exc)))
         all_logs.sort(key=lambda x: x.timestamp, reverse=True)
-        return all_logs
+        return LogFetchResult(tuple(all_logs), tuple(failures))
 
     def fetch_node_logs(
         self,
@@ -266,6 +291,7 @@ class ClickHouseLogAdapter(LogRepository):
             f"WHERE {' AND '.join(clauses)} "
             "ORDER BY timestamp LIMIT %(limit)s"
         )
+        collected_at = datetime.now(UTC)
         rows = self._client.query(sql, parameters=params).result_rows
 
         if len(rows) >= limit:
@@ -294,6 +320,17 @@ class ClickHouseLogAdapter(LogRepository):
                 filename=row[6],
                 host=row[7],
                 line=row[8],
+                provenance=EvidenceProvenance(
+                    method="clickhouse",
+                    collected_at=collected_at,
+                    query_from=start,
+                    query_to=end,
+                    table=self._node_log_table,
+                    host=row[7] or None,
+                    file_path=row[6] or None,
+                    role=row[2] or None,
+                    excerpt=True,
+                ),
             )
             for row in rows
         ]

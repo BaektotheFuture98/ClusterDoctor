@@ -32,7 +32,10 @@ from cluster_doctor.incident_analysis_agent.model.report import (
     TimelineEvent,
     VerificationStatus,
 )
-from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange, split_span
+from cluster_doctor.incident_analysis_agent.model.time_range import (
+    TimeRange,
+    split_span,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -47,7 +50,9 @@ class DraftTimelineEntry(BaseModel):
     """
 
     at: str = Field(default="", description="ISO 8601 시각. 근거의 시각을 그대로 쓴다.")
-    description: str = Field(default="", description="그 시각에 무엇이 일어났는가. 한 문장.")
+    description: str = Field(
+        default="", description="그 시각에 무엇이 일어났는가. 한 문장."
+    )
     evidence_refs: list[str] = Field(
         default=[], description="이 줄의 근거가 된 Evidence id. 예: E-abc-3"
     )
@@ -61,7 +66,9 @@ class DraftFinding(BaseModel):
 
     severity: str = Field(default="", description="Critical / Warning / Info 중 하나.")
     title: str = Field(default="", description="무엇이 문제인가. 한 문장.")
-    detail: str = Field(default="", description="관찰된 사실만. 원인 추정은 root_causes에 쓴다.")
+    detail: str = Field(
+        default="", description="관찰된 사실만. 원인 추정은 root_causes에 쓴다."
+    )
     evidence_refs: list[str] = Field(default=[], description="근거 Evidence id.")
 
     @field_validator("severity", mode="before")
@@ -136,7 +143,10 @@ class DraftReport(BaseModel):
     LogAnalysisReport로 변환·검증하기 전 값이며 운영자용 IncidentAnalysisReport가 아니다.
     """
 
-    summary: str = Field(default="", description="이 구간에서 관찰된 것의 요약. 한 문단.")
+    summary: str = Field(
+        default="",
+        description="핵심 현상과 관측된 영향의 요약. 한두 문장. 확인되지 않은 영향은 지어내지 않는다.",
+    )
     timeline: list[DraftTimelineEntry] = Field(
         default=[], description="사고 전개를 시간순으로. 근거가 있는 시각만."
     )
@@ -146,7 +156,7 @@ class DraftReport(BaseModel):
     root_causes: list[DraftCause] = Field(
         default=[],
         description=(
-            "원인 후보. 근거가 부족하면 confidence를 Low로 두거나 비운다. "
+            "가능성이 높은 순서의 원인 후보. 근거가 부족하면 confidence를 Low로 두거나 비운다. "
             "확정적으로 쓰지 않는다."
         ),
     )
@@ -154,7 +164,8 @@ class DraftReport(BaseModel):
         default=[], description="이 구간의 근거만으로는 답할 수 없는 물음."
     )
     recommendations: list[str] = Field(
-        default=[], description="운영자가 취할 수 있는 조치. 근거 없는 일반론은 쓰지 않는다."
+        default=[],
+        description="우선순위 순서로 운영자가 취할 수 있는 확인 절차와 조치. 근거 없는 일반론은 쓰지 않는다.",
     )
     suspect_picks: list[DraftSuspectPick] = Field(
         default=[],
@@ -182,7 +193,7 @@ class DraftReport(BaseModel):
         evidence_refs: tuple[str, ...],
         revision_count: int = 0,
     ) -> LogAnalysisReport:
-        """도메인 타입으로 옮긴다. 여기가 pydantic이 끝나는 경계다.
+        """LLM 초안을 검증 대상인 LogAnalysisReport로 옮긴다.
 
         **잘못된 참조를 지우지 않는다.** 없는 id를 인용한 것은 Validator가
         잡아야 할 사실이고, 여기서 조용히 걸러 내면 검증이 늘 통과한다.
@@ -232,13 +243,14 @@ class DraftReport(BaseModel):
         """시각을 못 읽은 줄은 버린다.
 
         이것만은 버린다 — 시각 없는 타임라인 항목은 타임라인이 아니고, 임의의
-        값을 채우면 리포트가 거짓을 말한다. 내용 자체는 ``summary``와
-        ``findings``에 남아 있으므로 잃는 것이 크지 않다.
+        값을 채우면 리포트가 거짓을 말한다. 다른 필드는 그대로 유지하지만 해당 타임라인 설명은 자동으로 옮기지 않는다.
         """
         try:
             at = parse_kst(entry.at)
         except (ValueError, TypeError):
-            _logger.warning("타임라인 시각을 읽지 못했다: %r — 그 줄을 버린다", entry.at)
+            _logger.warning(
+                "타임라인 시각을 읽지 못했다: %r — 그 줄을 버린다", entry.at
+            )
             return None
         return TimelineEvent(
             at=at,
@@ -273,8 +285,8 @@ def parse_draft(text: str) -> DraftReport:
     """구조화 응답을 ``DraftReport``로. 실패하면 빈 초안.
 
     예외를 올리지 않는 이유: 이 경로의 실패는 형식 이탈이고, 그때도 Evidence는
-    온전하다. 빈 초안을 돌려주면 Validator가 "근거를 인용하지 않았다"로 잡고,
-    호출자가 그 사실을 gap으로 남긴다 — 리포트는 관측값과 함께 전달된다.
+    온전하다. 빈 초안을 반환하고 형식 오류를 로그에 남긴다. 근거와 관측값은
+    별도로 보존되며, 빈 초안 자체를 의미 있는 분석 결과로 간주해서는 안 된다.
     """
     try:
         return DraftReport.model_validate_json(text)

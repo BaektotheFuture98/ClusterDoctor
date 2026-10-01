@@ -129,7 +129,7 @@ def _response(runtime: ToolRuntime, update: dict, payload: dict) -> Command:
 def _build_tools(seams: AnalysisSeams) -> list:
     @tool
     def collect_evidence(runtime: ToolRuntime) -> Command:
-        """Collect approved-window evidence once; return counts and observations."""
+        """Collect approved-window evidence once; preserve successes and source/window failure gaps."""
         state = runtime.state
         update = collect_update(seams, state)
         projected = {**state, **update}

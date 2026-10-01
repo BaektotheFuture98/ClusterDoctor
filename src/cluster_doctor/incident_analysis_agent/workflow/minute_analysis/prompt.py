@@ -6,17 +6,19 @@
 datasource만 보고 내려진 것이 되며, 뒤 단계는 이미 내려진 결론을 확인하는
 절차로 퇴화한다.
 
-문자열 보간을 쓰지 않는다(f-string 아님). 본문에 JSON 예시의 중괄호가 있어
-서식으로 해석되면 프롬프트가 조용히 망가진다.
+프롬프트 상수와 동적 데이터는 별도 섹션으로 연결한다. 로그와 JSON의
+중괄호를 서식 템플릿으로 다시 해석하지 않는다.
 """
 
 from __future__ import annotations
 
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     MinuteBucket,
     MinuteResult,
     RawRecord,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import (
+    AnalysisSpec,
 )
 
 _MAP_HEADER = """너는 Elasticsearch 장애 분석 파이프라인의 로그 선별 단계다.
@@ -29,7 +31,7 @@ _MAP_RULES = """
 규칙:
 - 반드시 주어진 #번호 중에서만 고른다. 없는 번호를 만들어 내지 않는다.
 - 로그 내용을 옮겨 적지 않는다. 번호와 짧은 이유만 쓴다.
-- 의미 있는 줄이 없으면 빈 배열을 돌려준다. 억지로 채우지 않는다.
+- 의미 있는 줄이 없으면 selected를 빈 배열로 둔다. 억지로 채우지 않는다.
 - event_type은 소문자 스네이크로 짧게 쓴다. 예: gc_pause, shard_failed, node_left,
   slow_query, circuit_breaker, rejection.
 - reason은 "왜 이 줄이 후속 분석에 필요한가"를 한 문장으로 쓴다.
@@ -74,7 +76,8 @@ _REDUCE_RULES = """
 버릴 것:
 - 구간 내내 같은 주기로 반복되어 특정 시점을 지목하지 못하는 이벤트.
 - 평상시에도 나오는 정상 동작 기록.
-- 다른 후보와 같은 사건을 가리키는 중복. 대표 한 줄만 남긴다.
+- 같은 노드·출처에서 같은 사건을 가리키는 중복. 대표 한 줄만 남긴다.
+- 다른 노드·출처의 기록은 문장이 같아도 중복으로 버리지 않는다.
 
 남길 것:
 - 그 시각에만 나타난 것. 시작·전환·급변을 표시하는 것.

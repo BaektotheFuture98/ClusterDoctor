@@ -5,7 +5,7 @@
 로그는 적재되는 곳이 없어 호스트에 직접 붙어야 한다. 문제 노드 후보가
 나왔을 때만 접속한다(``service/node_investigation``).
 
-원문이 파일 그대로 오므로 레코드 변환이 파싱을 포함한다. 시각을 뽑지 못한 줄
+원문이 파일 그대로 오므로 레코드 변환이 파싱을 포함한다. 조회 결과 중 시각을 뽑지 못한 줄
 (스택 트레이스 연속 행)은 **버리지 않는다.** 직전 줄의 시각을 물려준다 —
 예외 본문이 사라지면 그 예외가 무엇이었는지 알 수 없고, 값이 없다는 것과
 줄이 없다는 것은 다르다.
@@ -20,10 +20,17 @@ from datetime import datetime, timedelta, timezone
 
 import paramiko
 
-from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    EvidenceProvenance,
+    EvidenceSource,
+)
 from cluster_doctor.incident_analysis_agent.model.kst import KST
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
+    RawRecord,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import (
+    AnalysisSpec,
+)
 
 _logger = logging.getLogger(__name__)
 _KST = timezone(timedelta(hours=9))
@@ -48,7 +55,7 @@ SSH_COMMAND_TIMEOUT_SECONDS = 30
 # "^\[(WARN|ERROR)\]"처럼 줄 시작에 앵커를 쓰면 타임스탬프로 시작하는
 # ES 로그 형식과 맞지 않아 아무것도 잡히지 않는다.
 _SEVERITY_PATTERN = (
-    r"\[WARN |\[ERROR"   # ES 레벨 필드: [WARN ] / [ERROR]
+    r"\[WARN |\[ERROR"  # ES 레벨 필드: [WARN ] / [ERROR]
     r"|GC overhead"
     r"|heap"
     r"|thread pool"
@@ -92,7 +99,13 @@ SPEC = AnalysisSpec(
 )
 
 
-def to_records(text: str, *, fallback_time: datetime) -> list[RawRecord]:
+def to_records(
+    text: str,
+    *,
+    fallback_time: datetime,
+    provenance: EvidenceProvenance | None = None,
+    raw_truncated: bool = False,
+) -> list[RawRecord]:
     """SSH로 읽은 로그 원문을 선별 레코드로.
 
     ``fallback_time``은 첫 줄부터 시각을 뽑지 못했을 때 쓸 값이다. 보통 분석
@@ -102,16 +115,22 @@ def to_records(text: str, *, fallback_time: datetime) -> list[RawRecord]:
     records: list[RawRecord] = []
     current_time = fallback_time
     current_level: str | None = None
+    has_timestamp = False
 
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
         if not line.strip():
             continue
         match = ES_LOG_LINE_RE.match(line)
+        time_origin = "inherited" if has_timestamp else "fallback"
         if match:
             current_level = match.group(2).strip() or None
             try:
-                current_time = datetime.fromisoformat(match.group(1)).replace(tzinfo=KST)
+                current_time = datetime.fromisoformat(match.group(1)).replace(
+                    tzinfo=KST
+                )
+                has_timestamp = True
+                time_origin = "parsed"
             except ValueError:
                 pass
         records.append(
@@ -120,9 +139,29 @@ def to_records(text: str, *, fallback_time: datetime) -> list[RawRecord]:
                 event_time=current_time,
                 line=line,
                 severity=current_level,
+                raw=raw_line,
+                provenance=provenance,
+                raw_truncated=raw_truncated,
+                time_origin=time_origin,
             )
         )
     return records
+
+
+def ssh_provenance(
+    resolved, start: datetime, end: datetime, *, role: str | None = None
+) -> EvidenceProvenance:
+    """Snapshot the resolved destination used for this particular fetch."""
+    return EvidenceProvenance(
+        method="ssh",
+        collected_at=datetime.now(KST),
+        query_from=start,
+        query_to=end,
+        host=resolved.host,
+        file_path=f"{resolved.log_path}/{resolved.cluster_name}.log",
+        role=role,
+        excerpt=True,
+    )
 
 
 class UnsafeSshCommandError(RuntimeError):
@@ -257,7 +296,9 @@ class SshNodeLogFetcher(NodeLogFetcher):
                 password=self._password,
                 timeout=SSH_CONNECT_TIMEOUT_SECONDS,
             )
-            _, stdout, stderr = client.exec_command(cmd, timeout=SSH_COMMAND_TIMEOUT_SECONDS)
+            _, stdout, stderr = client.exec_command(
+                cmd, timeout=SSH_COMMAND_TIMEOUT_SECONDS
+            )
             raw = stdout.read().decode(errors="replace")
             err = stderr.read().decode(errors="replace").strip()
         finally:
@@ -273,7 +314,7 @@ class SshNodeLogFetcher(NodeLogFetcher):
         filtered: list[str] = []
         in_window = False
         for line in lines:
-            m = re.match(r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', line)
+            m = re.match(r"^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", line)
             if m:
                 try:
                     ts = datetime.fromisoformat(m.group(1)).replace(tzinfo=_KST)

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 
 from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
+    QueryLogEntry,
+    record_json,
+)
 
 
 @dataclass(frozen=True)
@@ -132,6 +137,7 @@ class Observations:
     master_log_total: int = 0
     health: tuple[HealthPoint, ...] = ()
     candidates: tuple[SlowCandidate, ...] = ()
+    query_requests: tuple[QueryLogEntry, ...] = ()
 
 
 def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
@@ -170,9 +176,7 @@ def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
 
     rejected = sum(
         row.search_rejected_max + row.write_rejected_max for row in obs.nodes
-    ) or sum(
-        row.search_rejected_max + row.write_rejected_max for row in obs.timeline
-    )
+    ) or sum(row.search_rejected_max + row.write_rejected_max for row in obs.timeline)
     if rejected:
         level = "Critical"
         reasons.append(f"search/write rejected {rejected}건")
@@ -193,7 +197,9 @@ def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
 
     for point in obs.health:
         if point.status and point.status.lower() != "green" and _inside(point, obs):
-            level = "Critical" if point.status.lower() == "red" else (level or "Warning")
+            level = (
+                "Critical" if point.status.lower() == "red" else (level or "Warning")
+            )
             reasons.append(f"클러스터 상태 {point.status}")
             break
 
@@ -273,8 +279,11 @@ def merge_observations(current: Observations, new: Observations) -> Observations
         master_events=tuple(events.values()),
         master_log_total=current.master_log_total + new.master_log_total,
         health=current.health + new.health,
+        query_requests=merge_query_requests(current.query_requests, new.query_requests),
         candidates=tuple(
-            sorted(candidates.values(), key=lambda c: (len(c.candidate_id), c.candidate_id))
+            sorted(
+                candidates.values(), key=lambda c: (len(c.candidate_id), c.candidate_id)
+            )
         ),
     )
 
@@ -293,3 +302,22 @@ def _later(left: datetime | None, right: datetime | None) -> datetime | None:
     if right is None:
         return left
     return max(left, right)
+
+
+def merge_query_requests(
+    current: tuple[QueryLogEntry, ...], new: tuple[QueryLogEntry, ...]
+) -> tuple[QueryLogEntry, ...]:
+    """Keep batch multiplicity while avoiding double counting overlapping fetches.
+
+    There is no request ID in the fetched schema. Identical full records use the
+    maximum observed multiplicity; collection timestamps are not part of identity.
+    """
+    existing = Counter(record_json(item) for item in current)
+    incoming = Counter()
+    result = list(current)
+    for item in new:
+        key = record_json(item)
+        incoming[key] += 1
+        if incoming[key] > existing[key]:
+            result.append(item)
+    return tuple(sorted(result, key=lambda item: item.timestamp))

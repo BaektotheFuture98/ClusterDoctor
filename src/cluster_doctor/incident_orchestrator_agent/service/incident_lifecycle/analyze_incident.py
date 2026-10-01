@@ -5,15 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
+
 from cluster_doctor.incident_orchestrator_agent.model.incident import (
     IncidentStatus,
 )
 from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
-    StartIncident,
-    IncidentOutcome,
     IncidentAnalysisDetails,
     IncidentAnalysisRequest,
     IncidentAnalysisResult,
+    IncidentOutcome,
+    StartIncident,
 )
 from cluster_doctor.incident_orchestrator_agent.model.report_delivery import (
     ReportPublication,
@@ -83,7 +84,7 @@ class AnalyzeIncident:
             result = replace(result, status=forced[0], reason=forced[1], failed=True)
         gaps = result.gaps
         diagnostics = await self._deliver(
-            result, analysis_failed or result.failed, gaps
+            result, analysis_failed or result.failed, gaps, cluster=incident.cluster
         )
         return IncidentOutcome(
             incident_id=incident.incident_id,
@@ -142,6 +143,8 @@ class AnalyzeIncident:
         result: IncidentAnalysisResult,
         analysis_failed: bool,
         gaps: tuple[str, ...],
+        *,
+        cluster: str = "",
     ) -> IncidentAnalysisDetails:
         # window마다 검증된 리포트가 따로 있다. 합치지 않고 마지막 window의
         # 것을 대표로 전달하되, 어느 window의 검증 불일치든 운영자가 볼 수
@@ -156,7 +159,9 @@ class AnalyzeIncident:
             )
         if result.reason and result.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {result.reason}")
-        rendered_report = to_incident_analysis_report(report, observations, evidence)
+        rendered_report = to_incident_analysis_report(
+            report, observations, evidence, cluster=cluster
+        )
         publication = ReportPublication()
         try:
             publication = await self._report_publisher.publish(
