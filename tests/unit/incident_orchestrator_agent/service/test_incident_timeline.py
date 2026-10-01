@@ -97,7 +97,7 @@ def test_repeated_log_type_keeps_first_last_and_count():
     assert "3건" in cards[0].representative_event
 
 
-def test_recovery_has_its_own_time_marker():
+def test_lower_followup_is_observation_not_recovery():
     from datetime import timedelta
 
     observations = Observations(
@@ -107,6 +107,42 @@ def test_recovery_has_its_own_time_marker():
         )
     )
     cards = project_timeline(observations)
-    assert len(cards) == 2
-    assert cards[1].start == _MINUTE + timedelta(minutes=1)
-    assert "회복 관측" in cards[1].representative_event
+    assert "회복" not in texts(cards)
+    assert "slowlog" in texts(cards)
+
+
+def texts(cards):
+    return ' '.join(item.text for card in cards for item in (*card.impacts,*card.causes,*card.interpretations))
+
+
+def test_counter_reset_is_not_recovery():
+    from datetime import timedelta
+    obs=Observations(timeline=(TimelineRow(minute=_MINUTE,counts={'node_metric':1},search_rejected_max=900),
+        TimelineRow(minute=_MINUTE+timedelta(minutes=1),counts={'node_metric':1},search_rejected_max=0)))
+    cards=project_timeline(obs)
+    assert '회복' not in texts(cards)
+    assert all(c.severity!='Critical' for c in cards)
+
+
+def test_last_warning_is_not_ongoing_incident():
+    e=Evidence(evidence_id='warn',event_time=_MINUTE,source=EvidenceSource.NODE_LOG,severity='Warning',message='last warning')
+    cards=project_timeline(Observations(timeline=(TimelineRow(minute=_MINUTE),)),(e,))
+    assert '지속' not in texts(cards)
+
+
+def test_fallback_log_has_no_exact_timeline_time():
+    e=Evidence(evidence_id='unknown',event_time=_MINUTE,source=EvidenceSource.NODE_LOG,
+        severity='ERROR',time_origin='fallback',message='no timestamp')
+    assert project_timeline(Observations(),(e,))==()
+
+
+def test_parsed_log_keeps_exact_seconds():
+    from datetime import timedelta
+    at=_MINUTE+timedelta(seconds=7,milliseconds=123)
+    e=Evidence(evidence_id='exact',event_time=at,source=EvidenceSource.NODE_LOG,severity='ERROR',message='exact error')
+    assert project_timeline(Observations(),(e,))[0].start==at
+
+
+def test_warn_level_remains_warning_in_timeline():
+    e=Evidence(evidence_id='warn-level',event_time=_MINUTE,source=EvidenceSource.NODE_LOG,severity='WARN',message='warning')
+    assert project_timeline(Observations(),(e,))[0].severity=='Warning'

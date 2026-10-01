@@ -24,7 +24,7 @@ from cluster_doctor.incident_analysis_agent.model.evidence import (
     EvidenceProvenance,
     EvidenceSource,
 )
-from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.kst import KST, parse_kst
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     RawRecord,
 )
@@ -75,7 +75,7 @@ _SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9_./\-]+$")
 # ES 로그 한 줄의 머리: [시각][레벨][로거]. 로거 이름은 오른쪽이 공백으로
 # 채워져 있다(``[o.e.c.c.C          ]``).
 ES_LOG_LINE_RE = re.compile(
-    r"^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})[,.]\d+\]"
+    r"^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[,.]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\]"
     r"\[([A-Z ]+)\]"
     r"\[([^\]]+)\]"
 )
@@ -126,9 +126,7 @@ def to_records(
         if match:
             current_level = match.group(2).strip() or None
             try:
-                current_time = datetime.fromisoformat(match.group(1)).replace(
-                    tzinfo=KST
-                )
+                current_time = parse_kst(match.group(1).replace(",", "."))
                 has_timestamp = True
                 time_origin = "parsed"
             except ValueError:
@@ -314,11 +312,11 @@ class SshNodeLogFetcher(NodeLogFetcher):
         filtered: list[str] = []
         in_window = False
         for line in lines:
-            m = re.match(r"^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", line)
+            m = ES_LOG_LINE_RE.match(line)
             if m:
                 try:
-                    ts = datetime.fromisoformat(m.group(1)).replace(tzinfo=_KST)
-                    in_window = start_kst <= ts <= end_kst
+                    ts = parse_kst(m.group(1).replace(",", "."))
+                    in_window = start_kst <= ts < end_kst
                 except ValueError:
                     pass
             if in_window:

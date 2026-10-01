@@ -32,7 +32,6 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 )
 
 _ONE_MINUTE = timedelta(minutes=1)
-_TIMESTAMP_TOLERANCE = timedelta(seconds=60)
 _SEVERITY_RANK = {"": 0, "Info": 1, "Warning": 2, "Critical": 3}
 _ACTION_RE = re.compile(r"action \[(.+?)\],")
 _LOGGER_RE = re.compile(r"\blogger=([^\s]+)")
@@ -77,7 +76,7 @@ def project_timeline(
 ) -> tuple[TimelineCard, ...]:
     """특징적인 사건을 시작 시각별로 투영한다. 반복 신호의 구간은 유지한다."""
     rows = tuple(sorted(observations.timeline, key=lambda row: row.minute))
-    evidence = tuple(sorted(evidence, key=lambda item: item.event_time))
+    evidence = tuple(sorted((item for item in evidence if item.time_origin == "parsed"), key=lambda item: item.event_time))
 
     signals: list[_Signal] = []
     signals += _slowlog_signals(rows, evidence)
@@ -89,7 +88,7 @@ def project_timeline(
     signals += _annotation_signals(
         annotations, evidence, verification_status=verification_status
     )
-    signals = _with_recovery_events(signals, evidence)
+    signals = _with_followup_events(signals, evidence)
 
     if not signals:
         if not rows:
@@ -122,14 +121,14 @@ def _minute(moment: datetime) -> datetime:
     return moment.replace(second=0, microsecond=0)
 
 
-def _with_recovery_events(
+def _with_followup_events(
     signals: list[_Signal], evidence: tuple[Evidence, ...]
 ) -> list[_Signal]:
-    """이미 관측된 회복을 별도 시점으로 표시한다. 회복을 추론하지 않는다."""
+    """Show later observations separately, without labeling a recovery."""
     result = []
     by_id = {item.evidence_id: item for item in evidence}
     for signal in signals:
-        text, marker, recovery = signal.item.text.partition(" · 회복 관측:")
+        text, marker, recovery = signal.item.text.partition(" · 다음 관측:")
         if not marker or signal.end <= signal.start:
             result.append(signal)
             continue
@@ -159,7 +158,7 @@ def _with_recovery_events(
                 end=signal.end,
                 severity="Info",
                 category="impact",
-                item=TimelineItem("회복 관측: " + recovery, recovery_refs),
+                item=TimelineItem("다음 관측: " + recovery, recovery_refs),
             )
         )
     return result
@@ -191,7 +190,7 @@ def _refs_between(
             continue
         if event_type and (item.event_type or "") != event_type:
             continue
-        if start <= _minute(item.event_time) <= end:
+        if start <= item.event_time <= end:
             refs.append(item.evidence_id)
     return tuple(dict.fromkeys(refs))
 
@@ -234,9 +233,9 @@ def _slowlog_signals(
             and following.counts.get("slowlog", 0) == 0
         ):
             end = following.minute
-            text += " · 회복 관측: 다음 분 slowlog 0건"
+            text += " · 다음 관측: 다음 분 slowlog 0건"
         elif following is None or following.failed:
-            text += " · 구간 종료 시점까지 지속"
+            text += " · 마지막 관측"
 
         signals.append(
             _Signal(
@@ -300,19 +299,19 @@ def _rejected_signals(
             and following.write_rejected_max == 0
         ):
             end = following.minute
-            text += " · 회복 관측: 다음 분 누적 rejected 값 0"
+            text += " · 다음 관측: 다음 분 누적 rejected 값 0"
         elif (
             following is None
             or following.failed
             or following.counts.get("node_metric", 0) == 0
         ):
-            text += " · 구간 종료 시점까지 지속"
+            text += " · 마지막 관측"
 
         signals.append(
             _Signal(
                 start=group[0].minute,
                 end=end,
-                severity="Critical",
+                severity="Info",
                 category="impact",
                 item=TimelineItem(
                     text,
@@ -337,9 +336,9 @@ def _failed_signals(rows: tuple[TimelineRow, ...]) -> list[_Signal]:
         text = f"분석 실패 {len(group)}분"
         if following is not None and not following.failed:
             end = following.minute
-            text += " · 회복 관측: 다음 분 분석 성공"
+            text += " · 다음 관측: 다음 분 분석 성공"
         elif following is None:
-            text += " · 구간 종료 시점까지 지속"
+            text += " · 마지막 관측"
         signals.append(
             _Signal(
                 start=group[0].minute,
@@ -395,7 +394,7 @@ def _latency_peak_signals(
                 ):
                     end = following.minute
                     text += (
-                        " · 회복 관측: 다음 분 "
+                        " · 다음 관측: 다음 분 "
                         f"{following.took_max or _format_ms(following.took_max_ms)}"
                     )
                 elif (
@@ -403,7 +402,7 @@ def _latency_peak_signals(
                     or following.failed
                     or following.took_max_ms is None
                 ):
-                    text += " · 구간 종료 시점까지 지속"
+                    text += " · 마지막 관측"
                 signals.append(
                     _Signal(
                         start=start,
@@ -485,7 +484,7 @@ def _latency_peak_signals(
                 ):
                     end = following.minute
                     text += (
-                        " · 회복 관측: 다음 분 "
+                        " · 다음 관측: 다음 분 "
                         f"{_format_seconds(following.runtime_max)}"
                     )
                 elif (
@@ -493,7 +492,7 @@ def _latency_peak_signals(
                     or following.failed
                     or following.runtime_max is None
                 ):
-                    text += " · 구간 종료 시점까지 지속"
+                    text += " · 마지막 관측"
                 signals.append(
                     _Signal(
                         start=start,
@@ -588,9 +587,9 @@ def _volume_spike_signals(
                 and not is_spike(following)
             ):
                 end = following.minute
-                text += f" · 회복 관측: 다음 분 {following.counts.get(source, 0)}건"
+                text += f" · 다음 관측: 다음 분 {following.counts.get(source, 0)}건"
             elif following is None or following.failed:
-                text += " · 구간 종료 시점까지 지속"
+                text += " · 마지막 관측"
             source_enum = _source_enum(source)
             refs = (
                 _refs_between(
@@ -643,7 +642,7 @@ def _cause_signals(
         if item.source is EvidenceSource.NODE_METRIC:
             kind = item.event_type or ""
             if kind == "node_metric_rejected" or "rejected" in kind:
-                severity = "Critical"
+                severity = "Info"
             elif kind in ("node_metric_heap", "node_metric_queue") or any(
                 marker in kind for marker in ("heap", "queue")
             ):
@@ -653,10 +652,10 @@ def _cause_signals(
         else:
             continue
 
-        moment = _minute(item.event_time)
+        moment = item.event_time
         text = item.message
         if severity in ("Warning", "Critical") and last_minute == moment:
-            text += " · 구간 종료 시점까지 지속"
+            text += " · 마지막 관측"
         signals.append(
             _Signal(
                 start=moment,
@@ -676,7 +675,7 @@ def _generic_severity(value: str | None) -> str:
     normalized = (value or "").strip().upper()
     if normalized == "CRITICAL":
         return "Critical"
-    if normalized in ("ERROR", "WARNING"):
+    if normalized in ("ERROR", "WARN", "WARNING"):
         return "Warning"
     return "Info"
 
@@ -710,8 +709,8 @@ def _node_log_signals(
                 runs.append([item])
 
         for run in runs:
-            start = _minute(run[0].event_time)
-            end = _minute(run[-1].event_time)
+            start = run[0].event_time
+            end = run[-1].event_time
             if len(run) == 1:
                 text = run[0].message
             else:
@@ -721,7 +720,7 @@ def _node_log_signals(
                     f"대표: {_excerpt(run[0].message)}"
                 )
             if severity in ("Warning", "Critical") and last_minute == end:
-                text += " · 구간 종료 시점까지 지속"
+                text += " · 마지막 관측"
             signals.append(
                 _Signal(
                     start=start,
@@ -805,19 +804,19 @@ def _master_signals(
                 groups.append([event])
 
         for group in groups:
-            start = _minute(group[0].timestamp)
-            end = _minute(group[-1].timestamp)
+            start = group[0].timestamp
+            end = group[-1].timestamp
             levels = {event.level.strip().upper() for event in group}
             severity = "Warning" if "ERROR" in levels else "Info"
             representative = _excerpt(group[0].line or group[0].rendered)
             label = key.split(":", 1)[-1].split("/")[-1]
             text = f"{label} {len(group)}건 — 대표: {representative}"
             if severity == "Warning" and rows and end == rows[-1].minute:
-                text += " · 구간 종료 시점까지 지속"
+                text += " · 마지막 관측"
             evidence_refs = tuple(
                 item.evidence_id
                 for item in refs
-                if start <= _minute(item.event_time) <= end
+                if start <= item.event_time <= end
             ) or tuple(item.evidence_id for item in refs)
             signals.append(
                 _Signal(
@@ -864,10 +863,10 @@ def _health_signals(
             and window_start <= following_green.at <= window_end
         ):
             end = following_green.at
-            text += f" · 회복 관측: {_minute(following_green.at):%H:%M} GREEN"
+            text += f" · 다음 관측: {_minute(following_green.at):%H:%M} GREEN"
         else:
-            end = window_end
-            text += " · 구간 종료 시점까지 지속"
+            end = point.at
+            text += " · 마지막 관측"
         refs = _refs_between(
             evidence,
             _minute(point.at),
@@ -876,8 +875,8 @@ def _health_signals(
         )
         signals.append(
             _Signal(
-                start=_minute(point.at),
-                end=_minute(end),
+                start=point.at,
+                end=end,
                 severity=severity,
                 category="cause",
                 item=TimelineItem(text, refs),
@@ -901,11 +900,11 @@ def _annotation_signals(
         if not annotation.evidence_refs or not cited:
             continue
         if not any(
-            abs(item.event_time - annotation.at) <= _TIMESTAMP_TOLERANCE
+            item.time_origin == "parsed" and item.event_time == annotation.at
             for item in cited
         ):
             continue
-        moment = _minute(annotation.at)
+        moment = annotation.at
         signals.append(
             _Signal(
                 start=moment,
