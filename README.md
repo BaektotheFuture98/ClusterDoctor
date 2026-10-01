@@ -106,36 +106,24 @@ Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `IncidentAn
 evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신, 인과 역전과 모순을
 검사하고, 주장이 원문과 맞는지도 확인한다.
 
-리포트는 핵심 요약 → 주요 타임라인 → 원인 판단 → 상세 자료 → 분석 범위와 한계 순으로
-구성한다. 타임라인은 사건 시작 시각별로 관측 → 대표 원문 → 해석·의심을 표시한다.
-다른 시각의 사건은 분리하고 반복 로그는 첫·마지막 시각과 건수를 유지한다. 관측된 회복은
-별도 시점으로 표시한다. 대표 원문에는 근거 ID·시각(KST)·노드·출처를 표시하고,
-수집 시각과 조회 구간 등 메타데이터는 펼쳐 확인한다. SSH 근거에는 실제 접속한
-호스트와 로그 파일 경로를, ClickHouse 근거에는 실제 조회한 DB·테이블과 확보한 원본
-호스트·파일 정보를 표시한다. 마스터 로그에서 지목된 문제 노드는 Elasticsearch로
-접속 정보를 조회한 뒤 SSH로 추가 조사한다.
-위치를 확보하지 못한 기존 근거는 `수집 위치 미확인`, 원문이 없는 근거는 `원문 미확보`로
-표시한다. 파일 로그와 구조화된 수집 레코드를 구분하고, 발췌·길이 제한·시각 상속도 명시한다.
+실제 양식은 **Elasticsearch 쿼리·노드 로그 분석**이다. 핵심 요약 → 실행 로그 건수/최대 실행시간 SVG 추이 → 주요 타임라인 → 느린 개별 실행 로그 → SSH 노드 로그 → 시스템 지표 → 원인 판단·조치 순으로 표시한다. 개별 실행은 최대 10건, SSH 로그는 최대 10건, 타임라인은 최대 8개이며 최대 실행시간 로그는 타임라인에 반드시 포함한다. 원자료는 DTO에 보존한다.
 
-원인 확신도와 근거 검증 상태는 별도로 표시한다. 타임라인에서는 근거 최대 3건의 첫 3줄을 보여 주고,
-전체 원문·추가 근거·수집 정보는 펼쳐 확인한다. 전체 지표와 보조 로그 목록은 접힌 상세 자료에 있으며, 수집 실패와
-검증 문제는 상단에서도 확인할 수 있다. 웹폰트·CDN 없이 단일 HTML 파일로 열 수 있다.
+총건수는 전체 `Observations.query_requests` 길이이며 bulk/update도 포함한다. 유한하고 0 이상인 `run_time`으로 순위를 매긴다. 같은 최대 5개 키워드를 가진 실행을 합치거나 평균·키워드별 기여도를 산출하지 않는다. 요청 호스트와 URL의 Elasticsearch 대상을 구분하고, 조건은 해당 실행의 DSL에서만 가져온다. 내부 Evidence/Candidate ID와 근거 링크는 표시하지 않는다.
 
-검색 요청 분석은 ClickHouse `log` 조회 결과 전체를 키워드 조합·회사·사용자·cmd·검색 기간으로
-묶은 뒤 평균 실행 시간이 느린 상위 5개 조합(문제 유발 후보)만 표로 보여 준다. 표에는 `ID`
-(느린 요청 후보와 정확히 일치할 때만), 키워드 조합(회사·사용자는 보조 줄), cmd, 검색 일수,
-평균·최대 실행 시간이 있다. 순위 집계는 모든 수집 기록을 사용하며 `reg_date`는 검색 시각(KST)으로
-표시한다. 조회 상한에 도달한 구간은 부분 집계로 표시한다. 공통 요청 ID가 없어 동일한 전체 기록은
-중복 조회에서 관측된 최대 건수로 병합한다. 텍스트 리포트와 HTML의 `관측 상세`에는 모든 조합의
-집계가 실린다.
-`log`는 `SELECT *`로 조회하고 컬럼명으로 매핑한다. `QueryLogEntry`는 `reg_date`, `keyword`,
-`success` 등 원본 컬럼 이름과 값을 유지하고, 알려진 18개 컬럼 외의 추가 컬럼도 보존한다.
-다만 `keyword`는 앞 5개만 저장하며(수백 개가 실려 오는 쿼리가 있어 LLM 입력 한도를 넘긴다)
-버린 개수는 테이블 컬럼이 아닌 계산 필드 `keyword_omitted`에 둔다.
+SSH 로그에는 실제 파일 경로와 원문을 본문에 표시한다. `time_origin=parsed`만 정확한 타임라인 시각으로 사용하며 inherited/fallback은 시각 미확인 문맥이다. 수집 실패 분은 0건으로 그리지 않는다. `rejected`는 누적값이며 이번 구간의 실패나 회복으로 해석하지 않는다. 시스템 지표는 측정된 노드별 최대값을 표시한다. 조회 시점 cluster health는 과거 사고 상태로 보고서에 싣지 않는다.
 
-외부 시스템이나 LLM 없이 디자인을 확인하려면 `uv run python scripts/preview_report.py`를
-실행한다. `reports/preview-report.html`에 가상 데이터로 만든 미리보기를 저장하며 기존
-장애 리포트는 변경하지 않는다.
+요약·finding 제목/상세·원인/반증·권고·후보 선정 이유를 claim별 원문과 대조한다. 모든 claim_id에 완전한 판정이 있어야 통과하며 빈/누락/중복/알 수 없는 응답, 원문 미확보·절단은 검증 불가다. 가장 느린 실행 상위 5개는 코드가 분석 근거에 포함한다. 미검증 해석은 요약·원인으로 승격하지 않으며 관측값은 항상 출력한다. SVG와 원문은 인쇄 시에도 표시하고 외부 웹폰트·CDN을 사용하지 않는다.
+
+합성 DTO와 고정 분석문으로 실제 publisher 결과를 확인하려면:
+
+```bash
+uv run python scripts/preview_report.py --variant ssh --output reports/example.html
+uv run python scripts/preview_report.py --variant mismatch --output reports/mismatch.html
+uv run python scripts/evaluate_report_prompts.py --mode offline --output reports/offline-evaluation.json
+uv run python scripts/evaluate_report_prompts.py --mode live --output reports/live-evaluation.json
+```
+
+preview는 HTML과 같은 이름의 평문을 함께 저장한다. offline의 10개 고정 응답 사례는 계산과 검증 응답 계약을 확인하며 모델 진단 정확도를 증명하지 않는다. live는 기존 `.env`의 모델로 사례별 초안/근거 검증을 각각 한 번 호출하고 결과를 별도로 기록한다. live CLI는 기본 120초의 전체 실행 예산을 적용하며 `--budget-seconds`로 조절한다(Unix). 응답 지연·호출 실패는 미완료로 기록한다. 금지 표현 탐지는 사람의 검토를 위한 표시이며 의미 평가를 대체하지 않는다.
 
 모델이 빈 draft를 주거나 report 저장이 실패해도 observation은 전달한다. HTML 파일을 쓸 수
 없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 query 원문과

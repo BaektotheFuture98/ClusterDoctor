@@ -28,9 +28,22 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
         'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.isoformat(),
             source=e.source, time_origin=e.time_origin, raw_truncated=e.raw_truncated,
             provenance=e.provenance.model_dump(mode='json') if e.provenance else None,
-            message=e.message, raw=e.raw) for e in evidence],
+            message=e.message[:400], raw=None, context_raw_truncated=bool(e.raw)) for e in evidence],
     }
-    return json.dumps(data, ensure_ascii=False, default=str)
+    def encode():
+        return json.dumps(data, ensure_ascii=False, default=str)
+    # The stored Evidence original stays untouched; only the drafting view is excerpted.
+    for index, (view, original) in enumerate(zip(data['evidence'], evidence)):
+        if not original.raw:
+            continue
+        remaining = max(0, MAX_RAW_LOG_CHARS - len(encode()) - 100)
+        allowance = min(6000, remaining // max(1, len(evidence) - index))
+        excerpt = original.raw[:allowance]
+        while excerpt and len(json.dumps(excerpt, ensure_ascii=False)) > allowance:
+            excerpt = excerpt[:max(0,len(excerpt)//2)]
+        view['raw'] = excerpt or None
+        view['context_raw_truncated'] = len(excerpt) < len(original.raw)
+    return encode()
 
 
 def required_query_evidence(requests: tuple[QueryLogEntry, ...], *, new_evidence_id: Callable[[], str], limit: int = 5) -> list[Evidence]:
