@@ -185,3 +185,22 @@ def test_search_period_is_visible_and_different_periods_are_ranked_separately():
     assert "개별 요청" not in html and "/search" not in html
     assert "시작일·종료일 정보가 없습니다" not in html
     assert "date_range=30일" in render_text(report)
+
+
+def test_ranking_lines_list_all_groups_but_html_table_shows_top_five():
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_ranking import (
+        ranking_lines,
+    )
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import (
+        render_query_ranking,
+    )
+
+    rows = tuple(
+        request(i, duration=str(i + 1), keywords=(f"kw{i}",)) for i in range(7)
+    )
+    lines = ranking_lines(rows)
+    assert sum(line.startswith("[") for line in lines) == 7
+    assert "[7]" in "".join(lines)
+    html = render_query_ranking(rows)
+    assert html.count("<tbody") == 5
+    assert "전체 7개 중" in html

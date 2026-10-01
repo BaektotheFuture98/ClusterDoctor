@@ -358,3 +358,11 @@ def test_message_equal_to_raw_single_line_is_shown_once():
     assert "<dt>Message</dt>" not in html
     assert html.count(line) == 2  # summary line + raw block, no Message field
     assert "<pre" in html
+
+
+def test_single_instant_title_is_representative_event_not_model_text():
+    passed = timeline_html(_two_event_report(VerificationStatus.PASSED))
+    first = passed.split('<article class="timeline-event')[1]
+    h3 = first.split("<h3>")[1].split("</h3>")[0]
+    assert "해석된 이벤트" not in h3
+    assert "해석된 이벤트" in first.split("</h3>")[1]

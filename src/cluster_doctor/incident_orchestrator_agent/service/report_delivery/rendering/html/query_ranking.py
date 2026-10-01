@@ -5,7 +5,6 @@ from decimal import Decimal
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import SlowCandidate
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_ranking import (
-    TOP_N,
     QueryRanking,
     query_ranking,
     search_date,
@@ -14,6 +13,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
     esc,
 )
 
+TOP_N = 5
 COLUMNS = ("ID", "Query", "Cmd", "Range", "Avg", "Max")
 
 
