@@ -23,6 +23,7 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
     NodeMetricRow,
     Observations,
     SlowCandidate,
+    SourceWindowStatus,
     TimelineRow,
     merge_query_requests,
 )
@@ -99,6 +100,7 @@ class ObservationBuilder:
 
         # 수집하지 못한 보조 근거. 리포트는 유효하지만 일부가 빠졌다는 사실이
         # 운영자에게 반드시 도달해야 한다 — notifier가 배너로 그린다.
+        self.source_statuses: list[SourceWindowStatus] = []
         self.gaps: list[str] = []
         # 분석 자체가 성립하지 않았는가. 리포트를 버리지는 않지만 재트리거를
         # 막는 유일한 조건이다.
@@ -120,6 +122,7 @@ class ObservationBuilder:
             candidate_key(item): item for item in state.get("candidates", ())
         }
         builder.query_requests = tuple(state.get("query_requests", ()))
+        builder.source_statuses = list(state.get("source_statuses", ()))
         builder.gaps = list(state.get("gaps", ()))
         builder.degraded = bool(state.get("degraded", False))
         builder.master_log_total = int(state.get("master_log_total", 0))
@@ -135,11 +138,16 @@ class ObservationBuilder:
             "health": observations.health,
             "candidates": observations.candidates,
             "query_requests": observations.query_requests,
+            "source_statuses": observations.source_statuses,
             "gaps": tuple(self.gaps),
             "degraded": self.degraded,
             "time_basis": self.time_basis,
             "master_log_total": observations.master_log_total,
         }
+
+    def record_source_status(self, result: SourceWindowStatus) -> None:
+        if result not in self.source_statuses:
+            self.source_statuses.append(result)
 
     def mark_gap(self, observation: str) -> str:
         """근거가 일부 빠졌다는 사실을 남긴다. 리포트는 버리지 않는다.
@@ -273,6 +281,7 @@ class ObservationBuilder:
         return Observations(
             time_basis=self.time_basis,
             query_requests=self.query_requests,
+            source_statuses=tuple(self.source_statuses),
             requested=((self.window.start, self.window.end),),
             timeline=tuple(self.timeline[minute] for minute in sorted(self.timeline)),
             nodes=tuple(sorted(self.nodes.values(), key=lambda row: row.node)),

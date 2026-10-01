@@ -25,6 +25,9 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
+from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.observations import SourceWindowStatus
 
 from pydantic import BaseModel, Field
 
@@ -96,6 +99,7 @@ class _CandidateOutput(BaseModel):
 class NodeInvestigationResult:
     evidence: list[Evidence] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
+    source_statuses: list[SourceWindowStatus] = field(default_factory=list)
     # 실제로 SSH까지 간 노드. 테스트와 로그가 "조건부로 돌았는가"를 확인한다.
     investigated: list[ResolvedNode] = field(default_factory=list)
 
@@ -218,8 +222,12 @@ def investigate_nodes(
         except Exception as exc:
             _logger.warning("[node] %s SSH 실패: %s", candidate.node_id, exc)
             result.gaps.append(f"{candidate.node_id} 노드 로그 SSH 수집 실패: {exc}")
+            result.source_statuses.append(SourceWindowStatus("node_log", window.start, window.end,
+                "failed", None, datetime.now(KST), str(exc), host=resolved.host))
             continue
 
+        result.source_statuses.append(SourceWindowStatus("node_log", window.start, window.end,
+            "limited" if text.strip() else "ok", len(text.splitlines()), datetime.now(KST), host=resolved.host))
         if not text.strip():
             result.gaps.append(
                 f"{candidate.node_id} 노드의 해당 구간 로그가 비어 있었다"

@@ -37,9 +37,7 @@ from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits i
     truncate_raw,
 )
 
-# rejected는 **누적** 카운터다(``_nodes/stats``). 그래서 0이 아니라는 사실
-# 자체가 근거이고, 증가분을 따지지 않는다. 이 값만은 설정으로 열지 않는다 —
-# "거절이 있었다"는 클러스터 설정과 무관하게 사고다.
+# Lifetime rejected counters are observations, not current-window failures.
 _REJECTED_FLOOR = 0
 
 
@@ -125,9 +123,9 @@ def to_evidence(
                 entry,
                 "rejected",
                 rejected,
-                "Critical",
+                "Info",
                 f"{entry.node_name} search_rejected={entry.search_rejected} "
-                f"write_rejected={entry.write_rejected} (누적 카운터)",
+                f"write_rejected={entry.write_rejected} (누적 카운터, 구간 증가분 아님)",
             )
         if entry.jvm_heap_used_percent >= thresholds.heap_warn_percent:
             consider(

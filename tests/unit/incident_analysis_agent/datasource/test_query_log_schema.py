@@ -62,6 +62,7 @@ def test_select_all_maps_names_and_preserves_every_column():
     assert raw["success"] == "N"
     record = query_log.to_records([entry])[0]
     assert record.event_time == T0 and record.severity == "ERROR"
+    assert record.node_name is None
     assert json.loads(record.raw) == raw
 
 

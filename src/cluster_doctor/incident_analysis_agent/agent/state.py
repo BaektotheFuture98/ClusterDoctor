@@ -17,6 +17,7 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
     MasterEvent,
     NodeMetricRow,
     SlowCandidate,
+    SourceWindowStatus,
     TimelineRow,
 )
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
@@ -51,6 +52,7 @@ class AnalysisAgentState(DeepAgentState):
     health: NotRequired[Annotated[tuple[HealthPoint, ...], last_write_wins]]
     candidates: NotRequired[Annotated[tuple[SlowCandidate, ...], last_write_wins]]
     query_requests: NotRequired[Annotated[tuple[QueryLogEntry, ...], last_write_wins]]
+    source_statuses: NotRequired[Annotated[tuple[SourceWindowStatus, ...], last_write_wins]]
     gaps: NotRequired[Annotated[tuple[str, ...], last_write_wins]]
     degraded: NotRequired[Annotated[bool, last_write_wins]]
     time_basis: NotRequired[Annotated[str, last_write_wins]]
@@ -81,6 +83,7 @@ def initial_analysis_agent_state(
         "master_events": (),
         "health": (),
         "candidates": (),
+        "source_statuses": (),
         "gaps": (),
         "degraded": False,
         "time_basis": "",

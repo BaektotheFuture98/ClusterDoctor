@@ -55,6 +55,7 @@ from cluster_doctor.incident_analysis_agent.model.log_entries import (
 )
 from cluster_doctor.incident_analysis_agent.model.log_fetch import LogFetchResult
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
+from cluster_doctor.incident_analysis_agent.model.observations import SourceWindowStatus
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
     MAX_EVIDENCE_TOTAL,
     clamp_evidence,
@@ -204,6 +205,9 @@ class EvidenceCollector:
                 state.mark_gap(
                     f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({label}분): {exc}"
                 )
+                for source in ("slowlog", "es_query_log", "node_metric"):
+                    state.record_source_status(SourceWindowStatus(source, minute_range.start,
+                        minute_range.end, "failed", None, datetime.now(KST), str(exc)))
                 continue
 
             # 정상 조회가 0건인 경우도 성공이다. 데이터 부재와 조회 실패를 구분한다.
@@ -215,6 +219,15 @@ class EvidenceCollector:
                     f"{failure.window.end.astimezone(KST).isoformat()}): {failure.error}"
                 )
             entries = list(result.entries)
+            failures = {failure.source: failure for failure in result.failures}
+            for source in ("slowlog", "es_query_log", "node_metric"):
+                source_entries = [entry for entry in entries if entry.source == source]
+                failure = failures.get(source)
+                limited = any(entry.provenance and entry.provenance.excerpt for entry in source_entries)
+                state.record_source_status(SourceWindowStatus(source, minute_range.start,
+                    minute_range.end, "failed" if failure else ("limited" if limited else "ok"),
+                    None if failure else len(source_entries), datetime.now(KST),
+                    failure.error if failure else ""))
             state.record_log_observations(entries)
             minute = minute_range.start.replace(second=0, microsecond=0)
 
@@ -386,6 +399,8 @@ class EvidenceCollector:
             call_llm=self._call_llm,
             new_evidence_id=self._new_evidence_id,
         )
+        for status in result.source_statuses:
+            state.record_source_status(status)
         for gap in result.gaps:
             state.mark_gap(gap)
         return result

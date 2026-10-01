@@ -304,8 +304,8 @@ class SshNodeLogFetcher(NodeLogFetcher):
         finally:
             client.close()
 
-        if not raw and err:
-            return f"로그 조회 실패: {err}"
+        if err:
+            raise RuntimeError(f"SSH 로그 조회 실패: {err}")
 
         start_kst = start_dt.astimezone(_KST)
         end_kst = end_dt.astimezone(_KST)
