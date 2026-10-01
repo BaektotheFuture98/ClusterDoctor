@@ -10,6 +10,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
     kst_stamp,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.assessment_view import (
+    SEVERITY_CLASSES,
     render_actions,
     render_causes,
     render_findings,
@@ -182,12 +183,11 @@ def render_layout(
         title = card.representative_event.split(" · 회복 관측:")[0].split(
             " · 구간 종료"
         )[0]
-        if interpretations and card.start == card.end:
-            title = interpretations[0].text.split(" · ")[0]
         title = title.split(" — ")[0]
         if len(title) > 100:
             title = title[:100] + "…"
-        severity_class = card.severity.lower()
+        severity = card.severity.lower()
+        severity_class = severity if severity in SEVERITY_CLASSES else "info"
         cards.append(
             f'<article class="timeline-event timeline-event-{severity_class}">'
             f'<div class="event-time"><time datetime="{card.start.isoformat()}">{esc(kst_stamp(card.start))}</time>'

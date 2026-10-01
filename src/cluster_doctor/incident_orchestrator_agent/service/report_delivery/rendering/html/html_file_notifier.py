@@ -1,7 +1,7 @@
-"""Publish standalone operator reports with escaped source logs and a text fallback.
+"""Publish standalone operator reports with a plain-text fallback.
 
 No external assets are required. Publication failures retain the plain-text
-report in the application log. Layout and source escaping live in report_layout.
+report in the application log. Page layout lives in report_layout; HTML escaping in evidence_link.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class HtmlFileReportPublisher(ReportPublisher):
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
     ) -> ReportPublication:
-        # HTML 문자열은 report_layout.esc에서 이스케이프·인코딩 정리한다.
+        # HTML 문자열은 evidence_link.esc에서 이스케이프·인코딩 정리한다.
         # 평문 로그 폴백에는 scrub을 별도로 적용한다.
         gaps = tuple(scrub(gap) for gap in gaps)
 
@@ -120,9 +120,9 @@ def render_report(
 
     ``generated_at``은 테스트가 시각을 고정할 수 있게 열어 뒀다.
 
-    ``gaps``와 ``analysis_failed``는 배너로 그린다. 모델이 쓴 본문에 섞지
+    ``gaps``와 ``analysis_failed``는 별도 안내 영역으로 그린다. 모델이 쓴 본문에 섞지
     않는 이유는 두 가지다 — 본문과 시스템이 덧붙인 사실이 구별되어야 하고,
-    모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이 배너는 반드시 남는다.
+    모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이 안내는 반드시 남는다.
     """
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import (
         render_layout,
