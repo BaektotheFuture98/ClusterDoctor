@@ -57,65 +57,7 @@ def test_full_requests_survive_state_roundtrip_and_overlapping_windows():
     assert merged.query_requests[0].keyword == ("<keyword>",)
 
 
-def test_ranking_uses_mean_separates_cmd_and_keeps_keyword_combination():
-    rows = (
-        request(0, duration="10"),
-        request(1, duration="2"),
-        request(2, duration="9", cmd="agg"),
-        request(3, duration="1", keywords=("a", "b")),
-    )
-    ranks = query_ranking(rows)
-    assert [r.cmd for r in ranks[:2]] == ["agg", "search"]
-    assert ranks[1].average == Decimal(6)
-    assert ranks[1].total == Decimal(12)
-    assert ranks[1].count == 2
-    assert ranks[1].first == T0 and ranks[1].last == T0 + timedelta(seconds=1)
-    assert ranks[2].keywords == ("a", "b")
-    assert ranks[2].count == 1
-    assert query_ranking((request(cmd="custom"),))[0].query_type == "기타"
 
-
-def test_invalid_duration_is_not_zero_and_identity_dimensions_stay_separate():
-    rows = (
-        request(duration="NaN"),
-        replace(request(1), user="other"),
-        replace(request(2), company="other"),
-        request(3, duration="-1"),
-    )
-    ranks = query_ranking(rows)
-    missing = next(r for r in ranks if r.user == "user" and r.company == "company")
-    assert missing.average is None and missing.total is None
-    assert missing.valid_count == 0 and missing.count == 2
-    assert len(ranks) == 3
-
-
-def test_report_ranking_keeps_cmd_reg_date_identity_and_source():
-    from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceProvenance
-    from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
-        IncidentAnalysisReport,
-    )
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
-        render_report,
-    )
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
-        render_text,
-    )
-
-    r = replace(
-        request(cmd="agg"),
-        provenance=EvidenceProvenance(
-            method="clickhouse", table="db.log", excerpt=True
-        ),
-    )
-    report = IncidentAnalysisReport(observations=Observations(query_requests=(r,)))
-    html = render_report(report)
-    assert 'id="query-ranking"' in html
-    assert "&lt;keyword&gt;" in html and "<keyword>" not in html
-    assert "company" in html and "user" in html and "agg" in html
-    assert "reg_date" in html and "2026-10-01 09:00:00 KST" in html
-    assert "db.log" in html and "부분 집계" in html
-    assert ">30d<" in html and "2026-09-01 ~ 2026-09-30" in html
-    assert "keyword=['<keyword>']" in render_text(report)
 
 
 def test_subagent_result_keeps_full_request_snapshot():
@@ -160,47 +102,27 @@ def test_fetch_marks_partial_query_log_records(monkeypatch):
     assert fetched[0].keyword == ("keyword",)
 
 
-def test_search_period_is_visible_and_different_periods_are_ranked_separately():
-    from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
-        IncidentAnalysisReport,
-    )
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
-        render_report,
-    )
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
-        render_text,
-    )
-
-    rows = (
-        request(),
-        replace(
-            request(1), s_date=20260924, e_date=20260930, date_range=7, success="N"
-        ),
-    )
-    assert len(query_ranking(rows)) == 2
-    report = IncidentAnalysisReport(observations=Observations(query_requests=rows))
-    html = render_report(report)
-    assert "2026-09-01" in html and "2026-09-30" in html
-    assert ">30d<" in html and ">7d<" in html
-    assert "개별 요청" not in html and "/search" not in html
-    assert "시작일·종료일 정보가 없습니다" not in html
-    assert "date_range=30일" in render_text(report)
 
 
-def test_ranking_lines_list_all_groups_but_html_table_shows_top_five():
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_ranking import (
-        ranking_lines,
-    )
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import (
-        render_query_ranking,
-    )
 
-    rows = tuple(
-        request(i, duration=str(i + 1), keywords=(f"kw{i}",)) for i in range(7)
-    )
-    lines = ranking_lines(rows)
-    assert sum(line.startswith("[") for line in lines) == 7
-    assert "[7]" in "".join(lines)
-    html = render_query_ranking(rows)
-    assert html.count("<tbody") == 5
-    assert "전체 7개 중" in html
+def test_ranking_keeps_same_partial_keywords_as_individual_executions():
+    rows=(request(duration='10'),request(1,duration='2'),request(2,duration='9',cmd='bulk'))
+    ranked=query_ranking(rows)
+    assert [r.execution_seconds for r in ranked]==[Decimal('10'),Decimal('9'),Decimal('2')]
+    assert len(ranked)==3 and ranked[1].record.cmd=='bulk'
+
+
+def test_invalid_runtimes_remain_records_but_do_not_win():
+    ranked=query_ranking(tuple(request(i,duration=v) for i,v in enumerate(('NaN','Infinity','-1','0','2'))))
+    assert [r.execution_seconds for r in ranked]==[Decimal(2),Decimal(0),None,None,None]
+    assert len(ranked)==5
+
+
+def test_table_has_ten_individual_rows_no_average_or_internal_ids():
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
+    rows=tuple(request(i,duration=str(i+1)) for i in range(12))
+    html=render_query_ranking(rows)
+    assert html.count('class="execution-row"')==10
+    assert '<th>실행시간</th>' in html and '12s' in html
+    assert 'Avg' not in html and '<th>ID</th>' not in html
+    assert '&lt;keyword&gt;' in html
