@@ -133,6 +133,9 @@ class ReportWriter:
     @staticmethod
     def summary_for_supervisor(report: LogAnalysisReport, state: ObservationBuilder) -> str:
         """Supervisor가 읽을 한두 문단. 리포트 전문이 아니다."""
+        from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
+        if report.verification_status != VerificationStatus.PASSED:
+            return f"근거 {len(report.evidence_refs)}건, 분석 해석 {report.verification_status.value}."
         parts = [report.summary or "(요약 없음)"]
         if report.root_causes:
             cause = report.root_causes[0]

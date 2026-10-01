@@ -72,6 +72,7 @@ def _observations(state: dict) -> Observations:
         health=tuple(state.get("health", ())),
         candidates=tuple(state.get("candidates", ())),
         query_requests=tuple(state.get("query_requests", ())),
+        source_statuses=tuple(state.get("source_statuses", ())),
     )
 
 
@@ -122,7 +123,9 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
             deterministic = validate_report(
                 report, evidence, candidate_ids=candidate_ids
             )
-            found = grounding.validate(report, evidence)
+            from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
+            snapshot = ObservationBuilder.from_state(current["request"].analysis_window, current).to_observations()
+            found = grounding.validate(report, evidence, observations=snapshot, candidates=snapshot.candidates)
         except Exception as exc:
             return _validation_failure(current, report, reanalysis_count, exc)
         analysis = [
@@ -185,7 +188,7 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
             report = current["report"]
             continue
         try:
-            revised = seams.report_writer.revise_report(report, tuple(issues), evidence)
+            revised = seams.report_writer.revise_report(report, tuple(issues), evidence, observations=snapshot)
         except Exception as exc:
             return _validation_failure(current, report, reanalysis_count, exc)
         if revised is None:
@@ -204,7 +207,7 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
     final_report = report.model_copy(
         update={
             "verification_status": status,
-            "verification_issues": tuple(issues or unverifiable),
+            "verification_issues": tuple(issues + unverifiable),
             "revision_count": revisions,
         }
     )
