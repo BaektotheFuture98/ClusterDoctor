@@ -111,7 +111,7 @@ def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
                 f"s_date={entry.s_date} e_date={entry.e_date} date_range={entry.date_range} "
                 f"search_count={entry.search_count}"
             ),
-            node_name=entry.host or None,
+            node_name=None,
             severity="ERROR" if entry.is_success is False else None,
         )
         for index, entry in enumerate(ordered, start=1)

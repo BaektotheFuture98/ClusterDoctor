@@ -6,6 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
@@ -47,7 +48,7 @@ class NodeMetricRow:
 
     ``search_rejected``·``write_rejected``는 ``_nodes/stats``의 **누적**
     카운터다. 그래서 최댓값이 곧 구간 말 값이고, 구간 내 증가분이 아니다.
-    리포트에서 "0이 아니다"만 근거로 쓰는 이유가 그것이다.
+    현재 구간의 실패 건수나 심각도를 이 값만으로 판정하지 않는다.
     """
 
     node: str
@@ -117,6 +118,18 @@ class SlowCandidate:
 
 
 @dataclass(frozen=True)
+class SourceWindowStatus:
+    source: str
+    start: datetime
+    end: datetime
+    status: Literal["ok", "failed", "limited"]
+    row_count: int | None
+    collected_at: datetime
+    error: str = ""
+    host: str = ""
+
+
+@dataclass(frozen=True)
 class Observations:
     """코드가 관측한 사실 전부. 모델을 거치지 않는다.
 
@@ -141,48 +154,13 @@ class Observations:
     health: tuple[HealthPoint, ...] = ()
     candidates: tuple[SlowCandidate, ...] = ()
     query_requests: tuple[QueryLogEntry, ...] = ()
+    source_statuses: tuple[SourceWindowStatus, ...] = ()
 
 
 def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
-    """관측값만으로 심각도를 판정한다. 근거를 함께 돌려준다.
-
-    **모델의 severity를 대신하지 않는다.** 이것은 판단이 아니라 측정에서
-    기계적으로 따라 나오는 값이고, 리포트에도 "코드 판정"으로 따로 실린다.
-    두 값이 어긋나면 그것 자체가 읽을 거리다 — 모델이 Info라고 한 구간에서
-    코드가 rejected를 셌다면 모델의 판단을 의심할 근거가 된다.
-
-    필요한 이유는 실측이다. 모델이 ``severity``를 채우지 않는 일이 반복됐고
-    (프롬프트에 "반드시 고른다"를 두 군데 넣은 뒤에도 그랬다), 그래서 노드
-    이탈과 GREEN→YELLOW 전환이 분류 없이 리포트에 실렸다. 기본값을
-    ``"Info"``로 되돌리는 것은 이미 실패한 길이다 — 25초 지연과 노드 19대
-    타임아웃이 전부 Info로 나왔었다. 빈칸을 그럴듯한 값으로 채우는 대신,
-    **코드가 아는 사실로 말한다.**
-
-    판정 규칙은 전부 구조화된 필드에서 온다. 모델이 쓴 문장을 읽지 않는다 —
-    읽기 시작하면 모델 산문 파싱이 되고, 그것이 정확히 이 저장소가 두 번
-    당한 실패다.
-
-      Critical  rejected > 0        요청이 실제로 거절됐다. 사용자가 받은 오류다
-      Warning   마스터 ERROR        클러스터 이벤트가 오류 수준으로 찍혔다
-                분석 실패한 분      그 시각의 근거가 리포트에 없다
-      Info      마스터 WARN         임계값 초과 경고. 흔하지만 무시할 값은 아니다
-      (없음)    위 어느 것도 아님
-
-    **클러스터 상태(health)는 규칙에 넣지 않는다.** ``cluster_health``는 ES
-    실시간 API라 과거를 모르고, 과거 사고를 분석하면 그 값은 진단을 돌린
-    시점의 상태다(리포트도 그렇게 경고한다). 분석 구간 안에 들어오는 관측만
-    센다 — 밖의 값으로 심각도를 매기면 사고와 무관한 시각의 green이 "정상"
-    판정을 만든다.
-    """
+    """Severity from observed events, never lifetime rejection counters."""
     reasons: list[str] = []
     level = ""
-
-    rejected = sum(
-        row.search_rejected_max + row.write_rejected_max for row in obs.nodes
-    ) or sum(row.search_rejected_max + row.write_rejected_max for row in obs.timeline)
-    if rejected:
-        level = "Critical"
-        reasons.append(f"search/write rejected {rejected}건")
 
     errors = sum(1 for e in obs.master_events if e.level.upper() == "ERROR")
     warns = sum(1 for e in obs.master_events if e.level.upper() == "WARN")
@@ -283,6 +261,7 @@ def merge_observations(current: Observations, new: Observations) -> Observations
         master_log_total=current.master_log_total + new.master_log_total,
         health=current.health + new.health,
         query_requests=merge_query_requests(current.query_requests, new.query_requests),
+        source_statuses=tuple(dict.fromkeys(current.source_statuses + new.source_statuses)),
         candidates=tuple(
             sorted(
                 candidates.values(), key=lambda c: (len(c.candidate_id), c.candidate_id)

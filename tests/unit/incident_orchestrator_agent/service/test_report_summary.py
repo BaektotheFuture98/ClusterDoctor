@@ -79,7 +79,7 @@ def test_severity_and_confidence_are_separate_labelled_areas():
     assert s.index("Observed severity") < s.index("Root cause confidence")
     severity = s.split("Observed severity", 1)[1].split("Root cause confidence", 1)[0]
     confidence = s.split("Root cause confidence", 1)[1]
-    assert "CRITICAL" in severity and "HIGH" not in severity
+    assert "CRITICAL" not in severity and "HIGH" not in severity
     assert "HIGH" in confidence and "CRITICAL" not in confidence
     assert "근거 검증" not in s and "<ul>" not in s.split("주요 관측")[0]
 

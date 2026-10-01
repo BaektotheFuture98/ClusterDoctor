@@ -68,12 +68,13 @@ def test_only_highest_sample_per_node_and_rule_is_kept():
     assert "jvm_heap=95%" in evidence[0].message
 
 
-def test_rejected_floor_is_zero_not_configurable():
+def test_rejected_evidence_is_cumulative_observation():
     evidence = to_evidence(
         [_entry(search_rejected=1)], new_evidence_id=_new_evidence_id()
     )
     assert len(evidence) == 1
-    assert evidence[0].severity == "Critical"
+    assert evidence[0].severity != "Critical"
+    assert "누적" in evidence[0].message
 
 
 def test_custom_thresholds_change_what_counts_as_warning():
