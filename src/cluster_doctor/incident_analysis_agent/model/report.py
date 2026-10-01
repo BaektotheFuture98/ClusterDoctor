@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LogAnalysisStatus(StrEnum):
@@ -91,6 +91,12 @@ class RootCause(BaseModel):
     counter_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
 
 
+class ReportRecommendation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    text: str = ""
+    evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
+
+
 class LogAnalysisReport(BaseModel):
     """구간 분석 결과를 보관하는 구조화 보고서.
 
@@ -105,13 +111,14 @@ class LogAnalysisReport(BaseModel):
     analyzed_to: datetime
 
     summary: str = ""
+    summary_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
 
     timeline: tuple[TimelineEvent, ...] = Field(default_factory=tuple)
     findings: tuple[ReportFinding, ...] = Field(default_factory=tuple)
     root_causes: tuple[RootCause, ...] = Field(default_factory=tuple)
 
     unresolved_questions: tuple[str, ...] = Field(default_factory=tuple)
-    recommendations: tuple[str, ...] = Field(default_factory=tuple)
+    recommendations: tuple[ReportRecommendation, ...] = Field(default_factory=tuple)
 
     # 코드가 고른 느린 요청 후보(C1, C2 …) 중 모델이 지목한 것. **id와 이유만**
     # 담는다 — took·쿼리 원문·노드명은 코드가 id로 조인해 붙인다. 모델이 옮겨
@@ -125,12 +132,19 @@ class LogAnalysisReport(BaseModel):
     verification_issues: tuple[str, ...] = Field(default_factory=tuple)
     revision_count: int = 0
 
+    @field_validator("recommendations", mode="before")
+    @classmethod
+    def _legacy_actions(cls, value):
+        return [{"text": item} if isinstance(item, str) else item for item in value]
+
     def cited_refs(self) -> set[str]:
         """리포트 본문이 실제로 인용한 참조 전부.
 
         ``evidence_refs``(수집한 것)와 다르다. 검증은 이 둘의 차이를 본다.
         """
-        cited: set[str] = set()
+        cited: set[str] = set(self.summary_evidence_refs)
+        for action in self.recommendations:
+            cited.update(action.evidence_refs)
         for event in self.timeline:
             cited.update(event.evidence_refs)
         for finding in self.findings:

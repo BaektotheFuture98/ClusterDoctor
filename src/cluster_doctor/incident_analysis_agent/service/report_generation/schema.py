@@ -27,6 +27,7 @@ from cluster_doctor.incident_analysis_agent.model.kst import parse_kst
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     ReportFinding,
+    ReportRecommendation,
     RootCause,
     SuspectPick,
     TimelineEvent,
@@ -137,6 +138,11 @@ class DraftWindowSuggestion(BaseModel):
     end_iso: str = ""
 
 
+class DraftRecommendation(BaseModel):
+    text: str = Field(default="", description="근거와 연결된 확인 절차 또는 조치.")
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class DraftReport(BaseModel):
     """모델의 구조화 응답을 받는 구간 보고서 초안 스키마.
 
@@ -147,6 +153,7 @@ class DraftReport(BaseModel):
         default="",
         description="핵심 현상과 관측된 영향의 요약. 한두 문장. 확인되지 않은 영향은 지어내지 않는다.",
     )
+    summary_evidence_refs: list[str] = Field(default_factory=list, description="요약의 근거 Evidence id.")
     timeline: list[DraftTimelineEntry] = Field(
         default=[], description="사고 전개를 시간순으로. 근거가 있는 시각만."
     )
@@ -163,7 +170,7 @@ class DraftReport(BaseModel):
     unresolved_questions: list[str] = Field(
         default=[], description="이 구간의 근거만으로는 답할 수 없는 물음."
     )
-    recommendations: list[str] = Field(
+    recommendations: list[DraftRecommendation] = Field(
         default=[],
         description="우선순위 순서로 운영자가 취할 수 있는 확인 절차와 조치. 근거 없는 일반론은 쓰지 않는다.",
     )
@@ -185,6 +192,11 @@ class DraftReport(BaseModel):
         default=[], description="needs_more_context가 true일 때 필요한 시간 범위."
     )
 
+    @field_validator("recommendations", mode="before")
+    @classmethod
+    def _legacy_actions(cls, value):
+        return [{"text": item} if isinstance(item, str) else item for item in value]
+
     def to_domain(
         self,
         *,
@@ -203,6 +215,7 @@ class DraftReport(BaseModel):
             analyzed_from=window.start,
             analyzed_to=window.end,
             summary=self.summary,
+            summary_evidence_refs=tuple(self.summary_evidence_refs),
             timeline=tuple(
                 event
                 for event in (self._timeline_event(entry) for entry in self.timeline)
@@ -227,7 +240,8 @@ class DraftReport(BaseModel):
                 for item in self.root_causes
             ),
             unresolved_questions=tuple(self.unresolved_questions),
-            recommendations=tuple(self.recommendations),
+            recommendations=tuple(ReportRecommendation(text=item.text, evidence_refs=tuple(item.evidence_refs))
+                for item in self.recommendations),
             suspect_picks=tuple(
                 SuspectPick(candidate_id=item.candidate_id, reason=item.reason)
                 for item in self.suspect_picks

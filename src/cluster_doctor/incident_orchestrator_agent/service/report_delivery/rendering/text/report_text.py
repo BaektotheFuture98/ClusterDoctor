@@ -634,7 +634,7 @@ def render_text(report: IncidentAnalysisReport) -> str:
         cause += [f"반박 근거: {item}" for item in narrative.contradicting]
         cause += [f"확인하지 못한 것: {item}" for item in narrative.unverified]
         add("근본 원인", cause)
-        add("권장 조치", list(narrative.recommendations))
+        add("권장 조치", [str(action) for action in narrative.recommendations])
     elif report.narrative_text:
         add("모델 리포트 (평문)", report.narrative_text.splitlines())
 

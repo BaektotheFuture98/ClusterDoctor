@@ -47,6 +47,15 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class Recommendation:
+    text: str
+    citations: tuple[EvidenceCitation, ...] = ()
+
+    def __str__(self) -> str:
+        return self.text
+
+
+@dataclass(frozen=True)
 class Narrative:
     """모델의 판단.
 
@@ -62,8 +71,9 @@ class Narrative:
     contradicting: tuple[str, ...] = ()
     unverified: tuple[str, ...] = ()
     suspect_picks: tuple[SuspectPick, ...] = ()
-    recommendations: tuple[str, ...] = ()
+    recommendations: tuple[Recommendation | str, ...] = ()
     causes: tuple[CauseAssessment, ...] = ()
+    headline_citations: tuple[EvidenceCitation, ...] = ()
 
 
 @dataclass(frozen=True)
