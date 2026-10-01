@@ -27,7 +27,7 @@ class RawRecord:
     time_origin: Literal["parsed", "inherited", "fallback"] = "parsed"
 
     def as_prompt_line(self) -> str:
-        return f"#{self.record_id} {self.line}"
+        return f"#{self.record_id} {self.line} | time_origin={self.time_origin} at={self.event_time.isoformat()} raw_truncated={self.raw_truncated}"
 
 
 @dataclass(frozen=True)

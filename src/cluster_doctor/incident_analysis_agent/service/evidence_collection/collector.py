@@ -76,6 +76,8 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model impor
     group_into_buckets,
 )
 
+from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import required_query_evidence, preserve_required_evidence
+
 _logger = logging.getLogger(__name__)
 
 
@@ -159,11 +161,10 @@ class EvidenceCollector:
         ]
 
         collected.failed_minutes = self._failed_minutes
-        collected.evidence = clamp_evidence(
-            sorted(collected.evidence, key=lambda item: item.event_time),
-            MAX_EVIDENCE_TOTAL,
-            what="전체",
-        )
+        collected.evidence = preserve_required_evidence(
+            required_query_evidence(state.to_observations().query_requests,
+                new_evidence_id=self._new_evidence_id), collected.evidence)
+
 
         _logger.info(
             "[collector] %s ~ %s → Evidence %d건 (노드 조사 %d대)",

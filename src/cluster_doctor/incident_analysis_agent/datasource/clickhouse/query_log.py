@@ -42,7 +42,7 @@ SPEC = AnalysisSpec(
     ),
     what_is_noise=(
         "- success=True이고 run_time이 평범한 요청.\n"
-        "- 같은 cmd가 주기적으로 반복되는 것 (대표 한 줄만 남긴다).\n"
+        "- 같은 cmd나 최대 5개 키워드가 같아도 다른 실행이다. 실행별로 판단한다.\n"
         "- 헬스체크·모니터링 성격의 짧은 조회."
     ),
 )

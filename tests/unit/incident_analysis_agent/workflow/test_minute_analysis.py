@@ -69,3 +69,15 @@ def test_parallel_minutes_share_registered_incident_identifiers():
         )
     assert result.analyzed_minutes == 2 and result.failed_minutes == 0
     assert [e.raw for e in result.evidence] == ["user=shared-user #0", "user=shared-user #1"]
+
+
+def test_identical_selection_lines_keep_distinct_raw_queries():
+    start = datetime(2026, 10, 1, tzinfo=UTC)
+    records = [RawRecord(record_id=n, event_time=start, line='same five keywords', raw=f'url-{n}') for n in range(2)]
+    def llm(messages, response_format):
+        key = 'selected' if response_format is MapOutput else 'keep'
+        return json.dumps({key: [{'record_id': 0}, {'record_id': 1}]})
+    seq = count()
+    result = run_analysis(AnalysisSpec(source=EvidenceSource.QUERY_LOG, label='query', what_matters='', what_is_noise=''),
+        group_into_buckets(records), llm, new_evidence_id=lambda: f'E{next(seq)}')
+    assert {e.raw for e in result.evidence} == {'url-0', 'url-1'}
