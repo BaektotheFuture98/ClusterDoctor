@@ -161,7 +161,7 @@ def test_key_observations_pick_impact_node_and_cap_at_five():
 
 
 def test_nav_has_exactly_six_items():
-    html = render_report(build())
+    html = render_report(build(recommendations=("조치 하나",)))
     nav = html.split('aria-label="리포트 목차"', 1)[1].split("</nav>", 1)[0]
     assert re.findall(r">([^<]+)</a>", nav) == [
         "요약",

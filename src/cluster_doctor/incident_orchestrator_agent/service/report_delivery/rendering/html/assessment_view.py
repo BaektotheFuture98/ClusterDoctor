@@ -21,7 +21,12 @@ NO_CONTRADICTION = "현재 수집된 근거에서 명시적인 반증은 확인�
 SEVERITY_CLASSES = {"critical", "warning", "info"}
 
 
-def marked_list(items: tuple[str, ...], markers: list[str]) -> str:
+def marked_list(items: tuple[str, ...], single_marker: str | None = None) -> str:
+    markers = (
+        [single_marker]
+        if single_marker and len(items) == 1
+        else [f"{i:02d}" for i in range(1, len(items) + 1)]
+    )
     return (
         '<ol class="marked-list">'
         + "".join(
@@ -30,10 +35,6 @@ def marked_list(items: tuple[str, ...], markers: list[str]) -> str:
         )
         + "</ol>"
     )
-
-
-def numbered_list(items: tuple[str, ...]) -> str:
-    return marked_list(items, [f"{i:02d}" for i in range(1, len(items) + 1)])
 
 
 def evidence_lines(items: tuple[EvidenceCitation, ...], known: set[str]) -> str:
@@ -93,14 +94,9 @@ def render_causes(narrative: Narrative | None, known: set[str]) -> str:
                 )
             )
         if narrative.unverified:
-            markers = (
-                ["?"]
-                if len(narrative.unverified) == 1
-                else [f"{i:02d}" for i in range(1, len(narrative.unverified) + 1)]
-            )
             blocks.append(
                 '<div class="unverified"><h3>미확인 사항 <span class="model-tag">판단</span></h3>'
-                + marked_list(narrative.unverified, markers)
+                + marked_list(narrative.unverified, "?")
                 + "</div>"
             )
     return (
@@ -148,19 +144,27 @@ def render_findings(
         severity = f.severity.lower()
         sev_class = f" sev-{severity}" if severity in SEVERITY_CLASSES else ""
         node = finding_node(f)
-        refs = " ".join(evidence_ref(c.evidence_id, known) for c in f.citations)
+        refs = " ".join(
+            evidence_ref(ref, known)
+            for ref in dict.fromkeys(c.evidence_id for c in f.citations)
+        )
         lines.append(
             '<li class="finding-line"><p class="finding-head">'
             + (
                 f'<span class="sev{sev_class}">{esc(f.severity.upper())}</span>'
                 if f.severity
-                else '<span class="hint">분류 없음</span>'
+                else '<span class="hint">—</span>'
             )
             + f'<span class="finding-title">{esc(f.title)}</span>'
             + (f'<span class="event-node">{esc(node)}</span>' if node else "")
             + (f'<span class="event-refs">{refs}</span>' if refs else "")
             + "</p>"
             + (f'<p class="hint">{esc(f.detail)}</p>' if f.detail else "")
+            + (
+                f'<p class="hint">{esc(" · ".join(f.evidence))}</p>'
+                if f.evidence
+                else ""
+            )
             + "</li>"
         )
     return (
@@ -174,6 +178,6 @@ def render_actions(narrative: Narrative | None) -> str:
         return ""
     return (
         '<section id="actions"><h2>권장 조치 <span class="model-tag">판단</span></h2>'
-        + numbered_list(narrative.recommendations)
+        + marked_list(narrative.recommendations)
         + "</section>"
     )
