@@ -28,6 +28,10 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
     merge_node_row,
 )
 
+from cluster_doctor.incident_analysis_agent.service.observation.query_requests import (
+    valid_runtime, rank_query_requests,
+)
+
 # ES가 slowlog의 took을 내보내는 표기. 실측(packetbeat.slowlog_v2 612건)에서는
 # "37.1s"와 "1m" 두 가지만 나왔지만, ES는 아래 단위를 모두 쓸 수 있으므로
 # 전부 받는다.
@@ -109,8 +113,9 @@ def timeline_row(minute: datetime, logs: list[LogEntry], *, failed: bool = False
             elif took_max_ms is None and not took_max and log.took:
                 took_max = log.took
         elif isinstance(log, QueryLogEntry):
-            if log.run_time is not None and (runtime_max is None or log.run_time > runtime_max):
-                runtime_max = log.run_time
+            runtime = valid_runtime(log.run_time)
+            if runtime is not None and (runtime_max is None or runtime > runtime_max):
+                runtime_max = runtime
         elif isinstance(log, NodeMetricEntry):
             if jvm_heap_max is None or log.jvm_heap_used_percent > jvm_heap_max:
                 jvm_heap_max = log.jvm_heap_used_percent
@@ -188,7 +193,8 @@ def candidate_key(candidate: SlowCandidate) -> tuple:
         candidate.timestamp,
         candidate.node,
         candidate.took,
-        candidate.run_time,
+        valid_runtime(candidate.run_time),
+        candidate.query_record_key,
     )
 
 
@@ -232,14 +238,24 @@ def slow_candidates(logs: list[LogEntry], limit: int = 5) -> list[SlowCandidate]
             )
         )
 
-    queries.sort(key=lambda e: (e.run_time if e.run_time is not None else -1), reverse=True)
-    for entry in queries[:limit]:
+    seen_requests: set[str] = set()
+    for view in rank_query_requests(tuple(queries)):
+        if view.record_key in seen_requests:
+            continue
+        if len(seen_requests) >= limit:
+            break
+        seen_requests.add(view.record_key)
+        entry = view.record
         picked.append(
             SlowCandidate(
                 candidate_id="",
                 source=entry.source,
                 timestamp=entry.timestamp,
-                node=entry.host,
+                request_host=entry.host,
+                target_host=view.target_host or "",
+                query_record_key=view.record_key,
+                query=entry.url,
+                index_name=view.index_name or "",
                 run_time=entry.run_time,
                 cmd=entry.cmd,
                 company=entry.company or "",

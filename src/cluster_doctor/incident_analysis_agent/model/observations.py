@@ -111,6 +111,9 @@ class SlowCandidate:
     company: str = ""
     user: str = ""
     query: str = ""
+    request_host: str = ""
+    target_host: str = ""
+    query_record_key: str = ""
 
 
 @dataclass(frozen=True)
