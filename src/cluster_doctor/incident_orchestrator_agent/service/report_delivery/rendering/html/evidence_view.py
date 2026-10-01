@@ -43,7 +43,7 @@ def _fields(e: Evidence) -> list[tuple[str, str]]:
     ]
     if p:
         pairs += [
-            ("Method", METHOD_LABEL[p.method]),
+            ("Method", METHOD_LABEL.get(p.method, p.method)),
             ("Host", p.host),
             ("Table", p.table),
             ("File Path", p.file_path),

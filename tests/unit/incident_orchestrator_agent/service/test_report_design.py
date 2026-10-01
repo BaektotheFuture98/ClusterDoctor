@@ -162,7 +162,8 @@ def test_missing_raw_and_unverified_report_are_explicit():
         gaps=("SSH 수집 실패",),
     )
     evidence = html.split('id="evidence"', 1)[1].split('id="metadata"', 1)[0]
-    assert "summary" in evidence and "View raw log" not in evidence
+    assert 'class="evidence-message">summary<' in evidence
+    assert "View raw log" not in evidence
     assert "<pre" not in evidence and "<dt>Host</dt>" not in evidence
     assert "<dt>Evidence verification</dt><dd>NOT_VERIFIED</dd>" in html
     assert "근거 검증이 완료되지 않았습니다" in html and "unsupported claim" in html
@@ -264,3 +265,96 @@ def test_plain_text_copy_removed_but_details_preserved():
     metadata = html.split('id="metadata"', 1)[1]
     assert "Analysis Metadata" in metadata and "PASSED" in metadata
     assert "Revision" not in metadata
+
+
+def _two_event_report(status):
+    e = Evidence(
+        evidence_id="E-1", event_time=T0, source=EvidenceSource.SLOWLOG, message="m"
+    )
+    later = T0 + timedelta(minutes=30)
+    log = LogAnalysisReport(
+        incident_id="I",
+        analyzed_from=T0,
+        analyzed_to=later,
+        summary="요약",
+        verification_status=status,
+        timeline=(
+            TimelineEvent(at=T0, description="해석된 이벤트", evidence_refs=("E-1",)),
+        ),
+    )
+    obs = Observations(
+        timeline=(
+            TimelineRow(minute=T0, counts={"slowlog": 1}, search_rejected_max=1),
+            TimelineRow(minute=later, counts={"slowlog": 1}, search_rejected_max=1),
+        )
+    )
+    return to_incident_analysis_report(log, obs, [e])
+
+
+def test_analysis_note_is_per_event_and_only_for_passed_reports():
+    passed = timeline_html(_two_event_report(VerificationStatus.PASSED))
+    events = passed.split('<article class="timeline-event')[1:]
+    assert len(events) == 2
+    assert sum("analysis-note" in ev for ev in events) == 1
+    assert "해석된 이벤트" in events[0] and "analysis-note" not in events[1]
+    for status in (VerificationStatus.MISMATCH, VerificationStatus.NOT_VERIFIED):
+        assert "analysis-note" not in timeline_html(_two_event_report(status))
+
+
+def test_headline_and_issue_text_are_html_escaped():
+    log = LogAnalysisReport(
+        incident_id="I",
+        analyzed_from=T0,
+        analyzed_to=T0,
+        summary="<script>alert(1)</script> & 거절",
+        verification_status=VerificationStatus.MISMATCH,
+        verification_issues=("<b>bad</b> claim",),
+    )
+    html = render_report(to_incident_analysis_report(log, Observations(), []))
+    assert "<script>alert" not in html and "<b>bad</b>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt; &amp; 거절" in html
+    assert "&lt;b&gt;bad&lt;/b&gt; claim" in html
+
+
+def test_evidence_is_listed_in_time_order():
+    early = Evidence(
+        evidence_id="E-late-id", event_time=T0, source=EvidenceSource.SLOWLOG, message="a"
+    )
+    late = Evidence(
+        evidence_id="E-a",
+        event_time=T0 + timedelta(minutes=5),
+        source=EvidenceSource.SLOWLOG,
+        message="b",
+    )
+    html = evidence_html(
+        IncidentAnalysisReport(observations=Observations(), evidence=(late, early))
+    )
+    assert html.index("E-late-id") < html.index("E-a")
+
+
+def test_provenance_fields_appear_when_present():
+    html = evidence_html(example())
+    for label, value in (
+        ("Method", "SSH"),
+        ("Host", "10.0.1.23"),
+        ("File Path", "/es/prod.log"),
+        ("Query From", "2026-10-01 09:00:00 KST"),
+        ("Query To", "2026-10-01 09:01:00 KST"),
+        ("Collected At", "2026-10-01 09:00:00 KST"),
+    ):
+        assert f"<dt>{label}</dt><dd>{value}</dd>" in html
+
+
+def test_message_equal_to_raw_single_line_is_shown_once():
+    line = "single line failure"
+    e = Evidence(
+        evidence_id="E-1",
+        event_time=T0,
+        source=EvidenceSource.SLOWLOG,
+        message=line,
+        raw=line,
+    )
+    html = render_report(IncidentAnalysisReport(observations=Observations(), evidence=(e,)))
+    assert "<dt>Message</dt>" not in html
+    assert html.count(line) == 2  # summary line + raw block, no Message field
+    assert "<pre" in html

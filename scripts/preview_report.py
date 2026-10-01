@@ -1,5 +1,6 @@
 """Generate a fictional, offline report to review the layout without an LLM."""
 
+import argparse
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -12,12 +13,15 @@ from cluster_doctor.incident_analysis_agent.model.evidence import (
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import (
+    NodeMetricRow,
     Observations,
+    SlowCandidate,
     TimelineRow,
 )
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     RootCause,
+    SuspectPick,
     TimelineEvent,
     VerificationStatus,
 )
@@ -32,7 +36,25 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 )
 
 
-def main() -> None:
+LONG_QUERY = '{"query":{"bool":{"filter":[{"terms":{"keyword":["' + "반도체수출" * 60 + '"]}}]}}}'
+LONG_PATH = "/var/log/elasticsearch/demo-es/archive/2026/10/01/" + "nested-directory/" * 6 + "demo-es-2026-10-01-14.log.gz"
+LONG_SENTENCE = (
+    "검색 스레드풀 큐가 가득 찬 상태에서 고비용 집계 요청이 같은 시간대에 반복적으로 들어오면서 "
+    "데이터 노드의 처리 용량이 포화되었고 그 결과 일부 요청이 거절되었을 가능성이 있으나 "
+    "요청량 증가와 쿼리 비용 증가 중 어느 쪽이 먼저였는지는 수집된 근거만으로 확정할 수 없다"
+)
+VARIANTS = {
+    "default": (VerificationStatus.PASSED, ()),
+    "mismatch": (
+        VerificationStatus.MISMATCH,
+        ("E-demo-2 인용문이 수집된 원문과 일치하지 않음", "E-demo-9 존재하지 않는 근거 참조"),
+    ),
+    "not-verified": (VerificationStatus.NOT_VERIFIED, ()),
+}
+
+
+def main(variant: str = "default") -> None:
+    status, issues = VARIANTS[variant]
     start = datetime(2026, 10, 1, 14, 2, tzinfo=KST)
     end = start + timedelta(minutes=10)
     queue_time = start + timedelta(minutes=1)
@@ -111,12 +133,50 @@ def main() -> None:
             ),
         ]
     )
+    evidence.extend(
+        [
+            Evidence(
+                evidence_id="E-demo-5",
+                event_time=start + timedelta(minutes=3),
+                source=EvidenceSource.SLOWLOG,
+                node_name="data-03",
+                event_type="slowlog",
+                severity="Warning",
+                message="slow search took 31s",
+                raw_kind="query",
+                raw=LONG_QUERY,
+                raw_truncated=True,
+                provenance=EvidenceProvenance(
+                    method="ssh",
+                    host="192.0.2.23",
+                    file_path=LONG_PATH,
+                    query_from=start,
+                    query_to=end,
+                    collected_at=end,
+                ),
+            ),
+            Evidence(
+                evidence_id="E-demo-6",
+                event_time=start + timedelta(minutes=5),
+                source=EvidenceSource.NODE_LOG,
+                node_name="data-03",
+                message="stack trace with an unbroken line",
+                raw="java.lang.OutOfMemoryError: " + "Java heap space " * 3 + "\n"
+                "    at " + ".".join(f"demo.pkg{n}" for n in range(40)) + ".run(Demo.java:1)\n"
+                + "\n".join(f"    at example.Frame{n}.run(Frame{n}.java:{n})" for n in range(30)),
+                provenance=EvidenceProvenance(
+                    method="ssh", host="192.0.2.23", file_path=LONG_PATH
+                ),
+            ),
+        ]
+    )
     report = LogAnalysisReport(
         incident_id="DEMO-1",
         analyzed_from=start,
         analyzed_to=end,
         summary="검색 지연 증가와 일부 요청 거절 발생",
-        verification_status=VerificationStatus.PASSED,
+        verification_status=status,
+        verification_issues=issues,
         timeline=(
             TimelineEvent(
                 at=queue_time, description="검색 큐 증가", evidence_refs=("E-demo-1",)
@@ -143,9 +203,22 @@ def main() -> None:
                 confidence="Medium",
                 supporting_evidence_refs=("E-demo-1", "E-demo-2"),
             ),
+            RootCause(
+                statement=LONG_SENTENCE,
+                confidence="Low",
+                supporting_evidence_refs=("E-demo-3", "E-demo-5", "E-demo-6"),
+                counter_evidence_refs=("E-demo-4",),
+            ),
+        ),
+        suspect_picks=(
+            SuspectPick(
+                candidate_id="C1",
+                reason="같은 키워드 집계가 거절 시점 직전에 가장 오래 걸렸다. " + LONG_SENTENCE,
+            ),
         ),
         unresolved_questions=(
             "요청량 증가 또는 고비용 쿼리 중 무엇이 부하를 유발했는지 확인 필요",
+            LONG_SENTENCE,
         ),
         recommendations=(
             "data-03의 검색 큐와 요청 거절 추이를 확인합니다.",
@@ -192,16 +265,40 @@ def main() -> None:
     )
     obs = Observations(
         query_requests=query_requests,
+        candidates=(
+            SlowCandidate(
+                candidate_id="C1",
+                source=QueryLogEntry.source,
+                timestamp=query_requests[1].timestamp,
+                node="demo-es-host",
+                run_time=Decimal("12"),
+                cmd="agg",
+                company="가상 회사 A",
+                user="demo-user-1",
+            ),
+        ),
+        nodes=(
+            NodeMetricRow(
+                node="data-03",
+                samples=10,
+                jvm_heap_max=82,
+                search_queue_max=128,
+                search_rejected_max=3,
+            ),
+            NodeMetricRow(node="data-09", samples=0),
+        ),
         requested=((start, end),),
         time_basis="event_time",
         timeline=(
             TimelineRow(minute=queue_time, counts={"node_metric": 1}, jvm_heap_max=82),
+            TimelineRow(minute=gc_time, counts={"es_node_log": 2}),
             TimelineRow(
                 minute=rejection_time, counts={"es_query_log": 8}, search_rejected_max=3
             ),
         ),
     )
-    output = Path("reports/preview-report.html")
+    name = "preview-report" if variant == "default" else f"preview-{variant}"
+    output = Path(f"reports/{name}.html")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         render_report(
@@ -215,4 +312,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--variant", choices=sorted(VARIANTS), default="default")
+    main(parser.parse_args().variant)

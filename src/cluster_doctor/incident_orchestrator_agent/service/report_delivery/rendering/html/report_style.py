@@ -17,15 +17,15 @@ REPORT_CSS = """
 --crit:#F0857B;--crit-soft:#2F1917;--warn:#DFA93E;--warn-soft:#2C2313;--info:#9BA5B3}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);
-font-size:14px;line-height:1.7;-webkit-text-size-adjust:100%}
+font-size:14px;line-height:1.7;word-break:keep-all;-webkit-text-size-adjust:100%}
 .wrap{max-width:1120px;margin-inline:auto;padding-inline:clamp(16px,4vw,32px);
 padding-block:32px 64px}
 header{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line);
 padding-bottom:24px}
 header .hint{margin:0}
 .header-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
-.demo-badge{padding:1px 8px;border:1px solid var(--warn);border-radius:4px;
-background:var(--warn-soft);color:var(--warn);font-size:11px;font-weight:700;
+.demo-badge{padding:1px 8px;border:1px solid var(--line-strong);border-radius:4px;
+background:var(--surface-2);color:var(--ink-2);font-size:11px;font-weight:700;
 letter-spacing:.08em}
 .eyebrow{margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;
 text-transform:uppercase;color:var(--accent-ink)}
@@ -33,7 +33,7 @@ h1{margin:0;font-size:clamp(26px,4vw,30px);font-weight:700;line-height:1.25;
 letter-spacing:-.01em;text-wrap:balance}
 .stamp{margin:0;font-family:var(--mono);font-size:12px;color:var(--ink-2);
 font-variant-numeric:tabular-nums}
-.stamp,.headline,h1,.hint,li{overflow-wrap:anywhere}
+.stamp,.headline,h1,.hint,li,p{overflow-wrap:anywhere}
 a{color:var(--accent-ink);text-underline-offset:3px}
 section{margin-top:48px}
 h2{margin:0 0 16px;font-size:19px;font-weight:700;line-height:1.3;padding-bottom:8px;
@@ -49,8 +49,9 @@ border:1px solid var(--warn);border-left-width:3px;border-radius:8px;font-size:1
 .alert-card p{margin:0 0 8px}
 .alert-card ul{margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
 .alert-card details summary{cursor:pointer;font-weight:600}
-.report-nav{position:sticky;top:0;z-index:1;display:flex;flex-wrap:wrap;gap:12px 24px;
-padding:12px 0;background:var(--page);border-bottom:1px solid var(--line)}
+.report-nav{display:flex;flex-wrap:wrap;gap:12px 24px;padding:12px 0;
+background:var(--page);border-bottom:1px solid var(--line)}
+@media (min-width:701px){.report-nav{position:sticky;top:0;z-index:1}}
 .report-nav a{font-size:13px;text-decoration:none}
 section[id]{scroll-margin-top:56px}
 .incident-summary{margin-top:24px;padding:24px;background:var(--surface);
@@ -124,7 +125,8 @@ overflow-wrap:anywhere}
 pre.raw code{font:inherit}
 pre.raw-query{white-space:pre;overflow-wrap:normal;overflow-x:auto}
 .evidence-item summary,.detail-group summary,.raw-block summary{cursor:pointer}
-.raw-block summary,.detail-group summary{font-size:12px;color:var(--ink-2);padding:8px 0}
+.raw-block summary,.detail-group summary{color:var(--ink-2);padding:8px 0}
+.raw-block summary{font-size:12px}
 .detail-group{border-bottom:1px solid var(--line)}
 .detail-group summary{font-size:13px}
 .observation-detail{margin-top:24px;border-top:1px solid var(--line)}
@@ -176,10 +178,14 @@ summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-of
 .event-time{margin-bottom:8px}.event-time time{display:inline}
 .evidence-fields div,.meta-list div{display:block}
 .raw-block{margin-left:0}
-.cause-assessment{padding:16px}.evidence-line{display:block}
+.cause-assessment{padding:16px}.evidence-line{display:block}.evidence-line a{display:block}
 .key-observations{grid-template-columns:minmax(0,1fr)}.incident-summary{padding:16px}
 .report-nav{gap:8px 16px}}
 @media print{
+:root{color-scheme:light;--page:#fff;--surface:#fff;--surface-2:#f4f4f4;
+--ink:#111;--ink-2:#444;--ink-3:#555;--line:#ddd;--line-strong:#bbb;
+--accent:#2F47B5;--accent-soft:#E9EDFB;--accent-ink:#253A91;
+--crit:#B42318;--crit-soft:#FEE4E2;--warn:#B54708;--warn-soft:#FEF0C7;--info:#667085}
 body{background:#fff;color:#111}
 .wrap{max-width:none;padding:0}
 .report-nav{display:none}
@@ -189,7 +195,6 @@ details::details-content{content-visibility:visible;display:block}
 .incident-timeline::before,.timeline-event::before{display:none}
 .timeline-event{display:block;padding:16px 0}
 .event-time{margin-bottom:8px}
-pre.raw{background:#f4f4f4;color:#111}
 pre.raw-query{white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible}
 .query-ranking-table{min-width:0}.query-table-scroll{overflow:visible}
 .query-ranking-table th,.query-ranking-table td{padding:4px 8px;font-size:11px}}

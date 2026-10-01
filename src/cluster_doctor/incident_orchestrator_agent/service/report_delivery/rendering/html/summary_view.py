@@ -10,7 +10,6 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
 
 DEMO_GAP = "디자인 미리보기용 가상 데이터입니다. 실제 장애 분석 결과가 아닙니다."
 DEMO_NOTE = "실제 장애 분석 결과가 아닌 디자인 미리보기 데이터입니다."
-MAX_KEY_OBSERVATIONS = 5
 
 
 def is_demo(gaps: tuple[str, ...]) -> bool:
@@ -59,4 +58,4 @@ def key_observations(obs: Observations) -> tuple[tuple[str, str], ...]:
     else:
         items.append(("Write rejected", str(write_rejected)))
     items.append(("JVM heap max", f"{max(r.jvm_heap_max for r in nodes)}%"))
-    return tuple(items[:MAX_KEY_OBSERVATIONS])
+    return tuple(items)
