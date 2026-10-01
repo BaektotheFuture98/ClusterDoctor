@@ -2,12 +2,12 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import render_ssh_logs
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import render_ssh_logs, ssh_evidence
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import DEMO_GAP
 
 _EXTRA_CSS='''
@@ -53,11 +53,13 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
         for item in (*card.impacts,*card.causes):timeline+=f'<p>{esc(item.text)}</p>'
         if narrative:
             for item in card.interpretations:timeline+=f'<p class="analysis-note">{esc(item.text)}</p>'
+        timeline+=quotes(timeline_sources(card,ssh_evidence(report.evidence)))
         timeline+='</div></article>'
     timeline+='</section>'
     metrics='<section id="system-metrics"><h2>시스템 지표 · 관측 최대값</h2>'
     nodes=tuple(n for n in obs.nodes if n.samples > 0)
     if nodes:
+        metrics+=''.join(f'<p>{esc(value)}</p>' for value in system_maxima(nodes))
         metrics+='<table><thead><tr><th>ES 노드</th><th>CPU(%)</th><th>JVM heap(%)</th><th>Search 큐</th><th>Write 큐</th><th>Search rejected 누적</th><th>Write rejected 누적</th></tr></thead><tbody>'
         for row in sorted(nodes,key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:
             metrics+='<tr>'+''.join(f'<td>{esc(str(v))}</td>' for v in (row.node,row.cpu_max,row.jvm_heap_max,row.search_queue_max,row.write_queue_max,row.search_rejected_max,row.write_rejected_max))+'</tr>'

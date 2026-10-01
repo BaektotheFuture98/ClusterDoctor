@@ -58,7 +58,7 @@ class GroundingValidator:
             except (LlmApiError, LlmResponseError) as exc:
                 issues.append(_unverifiable(f'원문 대조 호출 실패: {exc}'))
                 return
-            issues.extend(self._parse_response(text, expected_claim_ids={c['claim_id'] for c in items}, known_evidence_refs=refs))
+            issues.extend(self._parse_response(text, expected_claim_ids={c['claim_id'] for c in items}, known_evidence_refs=refs, claim_evidence_refs={c['claim_id']:set(c['evidence_refs'] + c.get('counter_evidence_refs', [])) for c in items}))
         for claim in claims:
             refs = set(claim['evidence_refs'] + claim.get('counter_evidence_refs', []))
             if not claim['evidence_refs'] or any(ref not in known or not known[ref].raw or known[ref].raw_truncated for ref in refs):
@@ -118,7 +118,7 @@ class GroundingValidator:
         )
 
     @staticmethod
-    def _parse_response(response: str, *, expected_claim_ids: set[str], known_evidence_refs: set[str]) -> list[VerificationIssue]:
+    def _parse_response(response: str, *, expected_claim_ids: set[str], known_evidence_refs: set[str], claim_evidence_refs: dict[str, set[str]] | None = None) -> list[VerificationIssue]:
         try:
             items = json.loads(_FENCE.sub('', response.strip()))
         except (ValueError, TypeError):
@@ -138,7 +138,8 @@ class GroundingValidator:
             seen.add(key)
             status = item.get('status')
             refs = item.get('affected_evidence_refs', [])
-            if status not in ('PASSED', 'MISMATCH', 'UNVERIFIABLE') or not isinstance(refs, list) or any(not isinstance(r, str) or r not in known_evidence_refs for r in refs):
+            allowed_refs = claim_evidence_refs.get(key, set()) if claim_evidence_refs is not None else known_evidence_refs
+            if status not in ('PASSED', 'MISMATCH', 'UNVERIFIABLE') or not isinstance(refs, list) or any(not isinstance(r, str) or r not in allowed_refs for r in refs):
                 issues.append(_unverifiable(f'{key}: 잘못된 판정 또는 근거 ID.'))
                 continue
             if status == 'PASSED':

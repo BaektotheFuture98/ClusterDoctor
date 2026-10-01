@@ -42,3 +42,22 @@ def test_actual_html_is_individual_source_backed_report():
 def test_absent_ssh_does_not_render_empty_table():
     html=render_report(replace(report(),evidence=()))
     assert 'id="ssh-logs"' not in html
+
+
+def test_global_maximum_nodes_survive_detail_table_limit():
+    from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow
+    r=report()
+    nodes=tuple(NodeMetricRow(node=f'busy-{i}',samples=1,search_queue_max=1,cpu_max=5,jvm_heap_max=5) for i in range(10))
+    nodes+=(NodeMetricRow(node='hottest-node',samples=1,cpu_max=99,jvm_heap_max=99),)
+    r=replace(r,observations=replace(r.observations,nodes=nodes))
+    for rendered in (render_report(r),render_text(r)):
+        assert 'hottest-node' in rendered and '99%' in rendered
+
+
+def test_grouped_timeline_preserves_all_supporting_raw_logs_beyond_ssh_limit():
+    r=report('PASSED');sample=r.evidence[0]
+    evidence=tuple(sample.model_copy(update={'evidence_id':f'E{i}','event_time':T0+timedelta(seconds=i),
+        'event_type':'gc','time_origin':'parsed','message':f'GC unique-{i}','raw':f'GC unique-{i}'}) for i in range(11))
+    r=replace(r,evidence=evidence)
+    for rendered in (render_report(r),render_text(r)):
+        assert 'unique-10' in rendered

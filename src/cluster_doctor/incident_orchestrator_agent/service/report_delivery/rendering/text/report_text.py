@@ -545,7 +545,7 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport) -> str:
     """Plain fallback with the same execution facts and verification gate as HTML."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
     obs=report.observations
@@ -566,6 +566,7 @@ def render_text(report: IncidentAnalysisReport) -> str:
         out.append(f'{stamp(card.start)} · {card.representative_event}')
         out.extend(item.text for item in (*card.impacts,*card.causes))
         if narrative:out.extend(item.text for item in card.interpretations)
+        out.extend(visible_citations(timeline_sources(card,ssh_evidence(report.evidence))))
     out.append('느린 개별 실행 로그')
     for row in rows[:10]:
         e=row.record
@@ -576,6 +577,7 @@ def render_text(report: IncidentAnalysisReport) -> str:
         out.append('SSH 노드 로그')
         out.extend(evidence_text(e) for e in ssh)
     out.append('시스템 지표 · 관측 최대값')
+    out.extend(system_maxima(obs.nodes))
     for n in sorted((n for n in obs.nodes if n.samples > 0),key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:
         out.append(f'{n.node} · CPU={n.cpu_max}% JVM heap={n.jvm_heap_max}% search_queue={n.search_queue_max} write_queue={n.write_queue_max} search_rejected 누적={n.search_rejected_max} write_rejected 누적={n.write_rejected_max}')
     out.append('원인 판단·조치')

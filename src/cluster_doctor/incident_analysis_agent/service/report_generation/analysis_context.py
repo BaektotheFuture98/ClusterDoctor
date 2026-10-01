@@ -18,6 +18,7 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
         'query_execution_count': len(ranked),
         'maximum_execution_seconds': str(ranked[0].execution_seconds) if ranked and ranked[0].execution_seconds is not None else None,
         'execution_unit': 'seconds',
+        'context_omissions': {},
         'slow_executions': [dict(record_key=row.record_key, event_time=row.record.timestamp.isoformat(),
             execution_seconds=str(row.execution_seconds) if row.execution_seconds is not None else None,
             cmd=row.record.cmd, request_host=row.record.host, target_host=row.target_host,
@@ -32,12 +33,60 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
     }
     def encode():
         return json.dumps(data, ensure_ascii=False, default=str)
-    # The stored Evidence original stays untouched; only the drafting view is excerpted.
-    for index, (view, original) in enumerate(zip(data['evidence'], evidence)):
-        if not original.raw:
+    # Protect the complete JSON budget, not only raw snippets. All source DTOs
+    # remain intact; compaction is explicitly visible to the model.
+    omissions = data['context_omissions']
+    nodes = [row for row in observations.nodes if row.samples > 0]
+    data['node_metric_maxima'] = {
+        field: {'value': max(getattr(n, field) for n in nodes),
+                'nodes': [n.node for n in nodes if getattr(n, field) == max(getattr(x, field) for x in nodes)]}
+        for field in ('cpu_max', 'jvm_heap_max', 'search_queue_max', 'write_queue_max',
+                      'search_rejected_max', 'write_rejected_max')
+    } if nodes else {}
+    if len(encode()) > MAX_RAW_LOG_CHARS:
+        if len(data['node_metrics']) > 10:
+            omissions['node_metrics'] = len(data['node_metrics']) - 10
+            data['node_metrics'] = data['node_metrics'][:10]
+        for item in data['evidence']:
+            if len(item['message']) > 128:
+                item['message'] = item['message'][:128]
+                omissions['messages_excerpted'] = omissions.get('messages_excerpted', 0) + 1
+    def compact(value):
+        if isinstance(value, str) and len(value) > 400:
+            omissions['metadata_strings_excerpted'] = omissions.get('metadata_strings_excerpted', 0) + 1
+            return value[:400] + '…'
+        if isinstance(value, dict):
+            return {key: compact(child) for key, child in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [compact(child) for child in value]
+        return value
+    if len(encode()) > MAX_RAW_LOG_CHARS:
+        for key in ('slow_executions', 'source_statuses', 'node_metric_maxima', 'evidence'):
+            data[key] = compact(data[key])
+        for row in data['slow_executions']:
+            if len(row['conditions']) > 20:
+                omissions['conditions'] = omissions.get('conditions', 0) + len(row['conditions']) - 20
+                row['conditions'] = row['conditions'][:20]
+    # Drop optional context rows only when compaction is still insufficient.
+    # Exact count/maxima above survive; absent metadata never means normal/zero.
+    for field in ('node_metrics', 'evidence', 'source_statuses', 'slow_executions'):
+        while data[field] and len(encode()) > MAX_RAW_LOG_CHARS - 100:
+            data[field].pop()
+            omissions[field] = omissions.get(field, 0) + 1
+    while len(encode()) > MAX_RAW_LOG_CHARS - 100:
+        # A cluster can have enormous tie lists; values remain code-computed.
+        ties = [entry['nodes'] for entry in data['node_metric_maxima'].values() if entry['nodes']]
+        if not ties:
+            break
+        max(ties, key=len).pop()
+        omissions['maximum_node_names'] = omissions.get('maximum_node_names', 0) + 1
+    originals = {e.evidence_id: e for e in evidence}
+    for index, view in enumerate(data['evidence']):
+        original = originals.get(view['evidence_id'])
+        if not original or not original.raw:
             continue
         remaining = max(0, MAX_RAW_LOG_CHARS - len(encode()) - 100)
-        allowance = min(6000, remaining // max(1, len(evidence) - index))
+        allowance = min(6000, remaining // max(1, len(data['evidence']) - index))
         excerpt = original.raw[:allowance]
         while excerpt and len(json.dumps(excerpt, ensure_ascii=False)) > allowance:
             excerpt = excerpt[:max(0,len(excerpt)//2)]
