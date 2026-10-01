@@ -458,7 +458,7 @@ def render_layout(
     return (
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>ClusterDoctor 진단 리포트 {esc(kst_stamp(now))}</title><style>{css}\n{LAYOUT_CSS}\n{QUERY_CSS}</style></head>"
+        f"<title>ClusterDoctor 진단 리포트 {esc(kst_stamp(now))}</title><style>{css}\n{QUERY_CSS}</style></head>"
         '<body><main class="wrap"><header><p class="eyebrow">ClusterDoctor / Incident report</p>'
         f'<h1>{esc(report.cluster or "Elasticsearch")} · 장애 진단</h1><p class="stamp">{esc(span)}</p>'
         f'<p class="hint">시각 기준 {esc(obs.time_basis or "미확인")} · 생성 {esc(kst_stamp(now))}</p></header>'
@@ -476,60 +476,3 @@ def render_layout(
         "</main></body></html>"
     )
 
-
-LAYOUT_CSS = """
-.wrap{max-width:900px}header .hint{margin:0}.incident-summary{padding:26px 0 22px;
-border-bottom:1px solid var(--line)}.section-label{font-size:12px;color:var(--ink-2);margin:0 0 8px}
-.incident-summary .headline{font-size:clamp(22px,3vw,30px);border:0;padding:0;line-height:1.4}
-.summary-status{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;margin:16px 0;
-font-size:13px;color:var(--ink-2)}.cause-summary{margin-top:12px}.next-actions{margin-top:20px}
-.next-actions h3{font-size:15px;margin:0 0 8px}.next-actions ul{margin:0;padding-left:22px}
-.report-nav{display:flex;flex-wrap:wrap;gap:12px 22px;padding:18px 0;border-bottom:1px solid var(--line)}
-a{color:var(--accent-ink);text-underline-offset:3px}.report-nav a{font-size:13px;text-decoration:none}
-.timeline-card{background:transparent;border:0;border-radius:0;border-bottom:1px solid var(--line);
-padding:12px 0 24px;break-inside:auto}.timeline-card::before{top:19px}
-.timeline-card dl{grid-template-columns:1fr;gap:4px}.timeline-card dd{margin-bottom:10px}
-.timeline-card dd li{display:block}.timeline-card dd li::before{display:none}
-.timeline-refs{display:inline-block;font-size:12px;margin-left:6px}
-.timeline-evidence{margin-top:20px}.evidence-block{margin:14px 0 20px;scroll-margin-top:20px}
-.evidence-title{font-size:13px;font-weight:600;margin:0 0 5px}.evidence-meta{font-size:12px;
-color:var(--ink-2);overflow-wrap:anywhere}.raw-label{font-size:12px;color:var(--ink-2);margin:10px 0 6px}
-pre.raw{border:0;border-left:2px solid var(--line-strong);border-radius:0;white-space:pre-wrap;
-overflow-wrap:anywhere;word-break:break-word;overflow-x:visible}pre.raw code{font:inherit}
-.log-remainder{margin-top:-4px}.log-remainder summary,.detail-group summary{cursor:pointer;
-font-size:13px;color:var(--ink-2);padding:10px 0}.detail-group{border-bottom:1px solid var(--line)}
-.cause-assessment{padding:18px 0;border-bottom:1px solid var(--line)}
-.cause-assessment h3{font-size:16px;margin:0 0 8px}.cause-assessment p{overflow-wrap:anywhere}
-.stamp,.headline,h1,.hint,li{overflow-wrap:anywhere}.sev{font-size:12px;letter-spacing:0}
-@media(max-width:640px){.summary-status{gap:8px 12px}.timeline-card{padding:10px 0 20px}
-.evidence-meta{font-size:12px}.report-nav{gap:10px 18px}}
-@media print{.wrap{max-width:none;padding:0}.report-nav,details.source{display:none}
-.timeline-card,.evidence-block{break-inside:auto}.evidence-title{break-after:avoid}
-details.detail-group>summary{display:none}details.detail-group>:not(summary){display:block}
-details.log-remainder>:not(summary){display:block}.log-remainder summary{display:none}
-pre.raw{background:#f4f4f4;color:#111}.banner{break-inside:avoid}}
-"""
-
-LAYOUT_CSS += """
-.wrap{max-width:1120px}.incident-timeline{padding:0;gap:0}.incident-timeline::before{left:175px;top:22px;bottom:22px}
-.timeline-card{display:grid;grid-template-columns:150px minmax(0,1fr);gap:52px;padding:28px 0;border:0}
-.timeline-card::before{left:170px;top:34px;background:var(--ground)}
-.event-time{font:12px var(--mono);color:var(--ink-2);padding-top:3px;line-height:1.8}
-.event-time time{display:block;font-weight:600;color:var(--ink)}.event-end{display:block}
-.event-body{min-width:0;border-bottom:1px solid var(--line);padding-bottom:28px}
-.event-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}.event-heading h3{flex-basis:100%;font-size:18px;margin:0 0 2px}
-.node-badge{font-size:12px;color:var(--ink-2);background:var(--surface);padding:3px 8px;border-radius:4px}
-.event-observation{margin-top:18px}.event-observation ul,.event-interpretation ul{padding-left:20px;margin:6px 0}
-.event-observation li,.event-interpretation li{font-size:14px;line-height:1.7}
-.event-evidence{margin:16px 0}.compact-evidence{padding:12px 14px;background:var(--surface);margin:10px 0;border-radius:6px}
-.source-location{font-size:12px;color:var(--ink-2);overflow-wrap:anywhere;margin:3px 0}
-.compact-evidence pre.raw{margin:6px 0;padding:10px 12px;font-size:12px;background:transparent}
-.source-details summary,.timeline-observations summary{font-size:12px;cursor:pointer;color:var(--ink-2);padding:8px 0}
-.source-details .evidence-meta{padding:10px 0}.event-interpretation{border-left:2px solid var(--accent-ink);padding:2px 0 2px 14px;margin-top:18px}
-.hypothesis-label{font-size:12px;color:var(--ink-2);margin:12px 0 0}
-@media(max-width:700px){.incident-timeline{padding-left:20px}.incident-timeline::before{left:4px}
-.timeline-card{display:block;padding:20px 0}.timeline-card::before{left:-20px;top:27px}
-.event-time{margin-bottom:10px}.event-end{display:inline}.event-heading h3{font-size:16px}.compact-evidence{padding:10px}}
-@media print{.source-details::details-content{content-visibility:visible;display:block}.source-details>summary{display:none}
-.timeline-card{display:block}.incident-timeline::before,.timeline-card::before{display:none}.event-time{margin-bottom:8px}}
-"""
