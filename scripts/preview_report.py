@@ -241,7 +241,6 @@ def main(variant: str = "default") -> None:
             s_date=20260924 if minute == 2 else 20260901,
             e_date=20260930,
             date_range=7 if minute == 2 else 30,
-            keyword_count=len(keywords),
             search_count=42,
             url="/search",
             etc="",

@@ -126,7 +126,6 @@ class QueryLogEntry(LogEntry):
     e_date: int
     date_range: int
     keyword: tuple[str, ...]
-    keyword_count: int
     url: str
     cmd: str
     service: str
@@ -137,12 +136,21 @@ class QueryLogEntry(LogEntry):
     search_count: int
     etc: str
     cluster: str
+    # 테이블 컬럼이 아니다. 수집 시 keyword를 앞 5개로 자르면서 버린 개수를
+    # 담는 계산 값이다. 0이면 잘리지 않았다.
+    keyword_omitted: int = field(default=0, kw_only=True)
     additional_fields: dict[str, object] = field(default_factory=dict, kw_only=True)
 
     @property
     def timestamp(self) -> datetime:
         """Internal event-time accessor; the stored DTO field remains reg_date."""
         return self.reg_date
+
+    @property
+    def keyword_text(self) -> str:
+        """프롬프트·로그용 표기. 잘린 개수가 있으면 "외 N개"를 붙인다."""
+        text = f"keyword={list(self.keyword)}"
+        return f"{text} 외 {self.keyword_omitted}개" if self.keyword_omitted else text
 
     @property
     def is_success(self) -> bool | None:

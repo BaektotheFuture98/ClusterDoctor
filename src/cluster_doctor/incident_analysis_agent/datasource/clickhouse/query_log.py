@@ -47,6 +47,12 @@ SPEC = AnalysisSpec(
 )
 
 
+# 한 쿼리가 키워드를 수백 개 싣고 오는 경우가 있다(실측 최대 594개). 줄 하나가
+# 수천 자가 되어 분당 입력 토큰 한도를 넘기므로, 수집 시점에 앞 5개만 보존한다.
+# 버린 개수는 keyword_omitted에 따로 남긴다.
+MAX_STORED_KEYWORDS = 5
+
+
 def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
     sql = (
         f"SELECT * FROM {table} "
@@ -65,11 +71,14 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
     known = {f.name for f in fields(QueryLogEntry)} - {
         "provenance",
         "additional_fields",
+        "keyword_omitted",
     }
     entries = []
     for row in rows:
         values = {name: row[name] for name in known}
-        values["keyword"] = tuple(values["keyword"])
+        keywords = tuple(values["keyword"])
+        values["keyword"] = keywords[:MAX_STORED_KEYWORDS]
+        values["keyword_omitted"] = max(0, len(keywords) - MAX_STORED_KEYWORDS)
         entries.append(
             QueryLogEntry(
                 **values,
@@ -95,9 +104,9 @@ def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
                 f"run_time={entry.run_time} success={entry.success} "
                 f"host={entry.host or '?'} service={entry.service or '?'} "
                 f"company={entry.company or '?'} user={entry.user or '?'} "
-                f"cmd={entry.cmd or '(없음)'} keyword={list(entry.keyword)} "
+                f"cmd={entry.cmd or '(없음)'} {entry.keyword_text} "
                 f"s_date={entry.s_date} e_date={entry.e_date} date_range={entry.date_range} "
-                f"keyword_count={entry.keyword_count} search_count={entry.search_count}"
+                f"search_count={entry.search_count}"
             ),
             node_name=entry.host or None,
             severity="ERROR" if entry.is_success is False else None,

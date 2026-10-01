@@ -74,7 +74,6 @@ class Client:
                 "e_date": 20260930,
                 "date_range": 30,
                 "keyword": [],
-                "keyword_count": 0,
                 "url": "/search",
                 "cmd": "original cmd",
                 "service": "service",
