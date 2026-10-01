@@ -23,6 +23,9 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import (
+    anchor,
+)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
     render_report,
 )
@@ -113,7 +116,8 @@ def test_summary_timeline_and_visible_source_logs_precede_details():
         html.index('id="summary"')
         < html.index('id="timeline"')
         < html.index('id="causes"')
-        < html.index('id="details"')
+        < html.index('id="evidence"')
+        < html.index('id="metadata"')
     )
     assert "10.0.1.23" in html and "/es/prod.log" in html
     assert "raw-0 &lt;tag&gt;&amp;" in html and "raw-14 &lt;tag&gt;&amp;" in html
@@ -123,13 +127,13 @@ def test_summary_timeline_and_visible_source_logs_precede_details():
     p.feed(html)
     assert len(p.ids) == len(set(p.ids))
     assert set(p.links) <= set(p.ids)
-    # #evidence is built in a later report section.
-    assert set(p.nav_links) - {"evidence"} <= set(p.ids)
-    assert any(d.get("class") == "log-remainder" for d in p.details)
-    assert all("open" not in d for d in p.details if d.get("class") == "detail-group")
+    assert set(p.nav_links) <= set(p.ids)
+    assert all("open" not in d for d in p.details)
     assert len(example().narrative.causes) == 2
     assert "存在しない" not in html
-    assert "존재하지 않는 근거 참조" in html
+    causes = html.split('id="causes"', 1)[1].split('id="query-ranking"', 1)[0]
+    assert "missing 근거 없음(dangling)" in causes
+    assert anchor("missing") not in html
 
 
 def test_plain_text_keeps_source_and_original_logs():
@@ -157,8 +161,11 @@ def test_missing_raw_and_unverified_report_are_explicit():
         analysis_failed=True,
         gaps=("SSH 수집 실패",),
     )
-    assert "원문 미확보" in html and "수집 위치 미확인" in html
-    assert "미검증" in html and "unsupported claim" in html
+    evidence = html.split('id="evidence"', 1)[1].split('id="metadata"', 1)[0]
+    assert "summary" in evidence and "View raw log" not in evidence
+    assert "<pre" not in evidence and "<dt>Host</dt>" not in evidence
+    assert "<dt>Evidence verification</dt><dd>NOT_VERIFIED</dd>" in html
+    assert "근거 검증이 완료되지 않았습니다" in html and "unsupported claim" in html
     assert "SSH 수집 실패" in html
 
 
@@ -196,3 +203,64 @@ def test_analysis_note_only_when_interpretations_exist():
     plain = IncidentAnalysisReport(observations=obs, evidence=(e,))
     timeline = timeline_html(plain)
     assert "timeline-event" in timeline and "analysis-note" not in timeline
+
+
+def evidence_html(report):
+    html = render_report(report)
+    return html.split('id="evidence"', 1)[1].split('id="metadata"', 1)[0]
+
+
+def test_raw_is_rendered_exactly_once_in_evidence():
+    report = example()
+    html = render_report(report)
+    assert html.count("raw-7 &lt;tag&gt;&amp;") == 1
+    assert "raw-7" in evidence_html(report)
+    assert html.count("raw-0 &lt;tag&gt;&amp;") == 1
+
+
+def test_every_evidence_link_resolves_to_one_block():
+    html = render_report(example())
+    hrefs = set(re.findall(r'href="#(evidence-[0-9a-f]+)"', html))
+    assert hrefs
+    for h in hrefs:
+        assert html.count(f'id="{h}"') == 1
+
+
+def test_evidence_without_raw_has_no_raw_area_and_no_empty_fields():
+    e = Evidence(
+        evidence_id="E-9",
+        event_time=T0,
+        source=EvidenceSource.SLOWLOG,
+        message="only a summary",
+    )
+    html = evidence_html(IncidentAnalysisReport(observations=Observations(), evidence=(e,)))
+    assert "only a summary" in html
+    assert "View raw log" not in html and "<pre" not in html
+    for label in ("Host", "Table", "File Path", "Endpoint", "Query From", "Role", "Node", "Event Type"):
+        assert f"<dt>{label}</dt>" not in html
+    assert "<dt>Evidence ID</dt>" in html
+
+
+def test_raw_kind_and_truncation_markers():
+    q = Evidence(
+        evidence_id="E-q",
+        event_time=T0,
+        source=EvidenceSource.SLOWLOG,
+        message="m",
+        raw="select 1",
+        raw_kind="query",
+        raw_truncated=True,
+    )
+    html = evidence_html(IncidentAnalysisReport(observations=Observations(), evidence=(q,)))
+    assert 'class="raw raw-query"' in html and "잘림" in html
+    assert "잘림" not in evidence_html(example())
+
+
+def test_plain_text_copy_removed_but_details_preserved():
+    html = render_report(example())
+    assert 'class="source"' not in html and "리포트 평문" not in html
+    assert 'id="limits"' not in html and 'id="details"' not in html
+    assert "전체 분 단위 관측값" in html and "관측 상세" in html
+    metadata = html.split('id="metadata"', 1)[1]
+    assert "Analysis Metadata" in metadata and "PASSED" in metadata
+    assert "Revision" not in metadata
