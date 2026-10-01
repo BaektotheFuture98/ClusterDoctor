@@ -178,7 +178,7 @@ def make_reduce_to_evidence(
             record = records.get(record_id)
             if record is None:
                 continue
-            key = (record.line, record.node_id, record.node_name, record.provenance)
+            key = (record.line, record.raw, record.event_time, record.node_id, record.node_name, record.provenance)
             if key in seen_lines:
                 continue
             seen_lines.add(key)

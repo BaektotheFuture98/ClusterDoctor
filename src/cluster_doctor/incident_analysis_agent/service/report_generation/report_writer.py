@@ -19,6 +19,8 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import ll
 from cluster_doctor.incident_analysis_agent.model.analysis_contract import LogAnalysisRequest
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
 from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
 from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import (
     build_analysis_prompt,
@@ -67,6 +69,7 @@ class ReportWriter:
             candidates_for_prompt=state.candidates_for_prompt(),
             prior_summary=self._prior_summary(request.prior_report),
             gaps=tuple(state.gaps),
+            analysis_context=build_analysis_context(state.to_observations(), evidence),
         )
         try:
             with llm_label("report_draft"):
@@ -102,8 +105,10 @@ class ReportWriter:
         report: LogAnalysisReport,
         issues: tuple[str, ...],
         evidence: list[Evidence],
+        *, observations: Observations | None = None,
     ) -> LogAnalysisReport | None:
-        prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence)
+        prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence,
+            analysis_context=build_analysis_context(observations or Observations(), evidence))
         try:
             with llm_label("report_revision"):
                 text = self._call_llm(

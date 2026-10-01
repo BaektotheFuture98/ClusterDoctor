@@ -43,7 +43,7 @@ def _format_slowlog(entry: SlowlogEntry) -> str:
 def _format_query_log(entry: QueryLogEntry) -> str:
     line = (
         f"  {entry.timestamp} [{entry.success}] "
-        f"node={entry.host or '-'} comp={entry.service or '-'} "
+        f"request_host={entry.host or '-'} comp={entry.service or '-'} "
         f"[{entry.cmd}] project={entry.project} env={entry.env} "
         f"cluster={entry.cluster} runtime={entry.run_time}s "
         f"{entry.keyword_text} "
@@ -102,7 +102,8 @@ def format_evidence_line(evidence: Evidence) -> str:
     """프롬프트에 실을 근거 한 줄. 모델이 id로 골라 쓰게 한다."""
     parts = [
         f"[{evidence.evidence_id}]",
-        evidence.event_time.strftime("%Y-%m-%d %H:%M:%S"),
+        evidence.event_time.isoformat(),
+        f"time_origin={evidence.time_origin} raw_truncated={evidence.raw_truncated}",
     ]
     parts.append(str(evidence.source))
     if evidence.severity:
