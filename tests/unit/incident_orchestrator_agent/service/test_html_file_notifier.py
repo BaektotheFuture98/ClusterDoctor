@@ -60,4 +60,5 @@ def test_render_report_includes_timeline_citation_details():
     )
     html = render_report(report)
     assert "근거 원문 (출처별)" in html
-    assert '<details class="timeline-observations">' in html
+    assert 'class="timeline-event' in html
+    assert "timeline-observations" not in html
