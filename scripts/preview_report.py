@@ -27,6 +27,9 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
     render_report,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import (
+    DEMO_GAP,
+)
 
 
 def main() -> None:
@@ -204,9 +207,7 @@ def main() -> None:
         render_report(
             to_incident_analysis_report(report, obs, evidence, cluster="demo-es"),
             generated_at=end,
-            gaps=(
-                "디자인 미리보기용 가상 데이터입니다. 실제 장애 분석 결과가 아닙니다.",
-            ),
+            gaps=(DEMO_GAP,),
         ),
         encoding="utf-8",
     )

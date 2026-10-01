@@ -84,12 +84,19 @@ class Links(HTMLParser):
         self.ids = []
         self.links = []
         self.details = []
+        self.in_nav = False
+
+    def handle_endtag(self, tag):
+        if tag == "nav":
+            self.in_nav = False
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        if tag == "nav":
+            self.in_nav = True
         if "id" in a:
             self.ids.append(a["id"])
-        if tag == "a" and a.get("href", "").startswith("#"):
+        if tag == "a" and not self.in_nav and a.get("href", "").startswith("#"):
             self.links.append(a["href"][1:])
         if tag == "details":
             self.details.append(a)
