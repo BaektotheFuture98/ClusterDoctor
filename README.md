@@ -141,6 +141,12 @@ evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신,
 없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 query 원문과
 company/user 식별자를 담을 수 있으므로 `reports/`는 Git에 넣지 않는다.
 
+LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가명으로 바꾸고 응답에서
+복원한다. 가명 대응표는 Incident마다 새로 만들며, 같은 Incident의 Main/SubAgent와
+병렬 조회·분 단위 분석이 공유한다. 분석이 성공하거나 실패해 종료되면 대응표를
+해제하므로, 상시 실행 중 이전 Incident의 식별자가 누적되지 않는다. 키워드·노드 이름·
+쿼리 본문과 저장된 원본 데이터는 이 가명 처리의 대상이 아니다.
+
 ## 요구 사항
 
 - Python 3.13 이상과 [uv](https://docs.astral.sh/uv/)
@@ -170,13 +176,31 @@ slowlog까지 기다리지 않고 기동 시점에 실패하며, 오류는 secre
 | `ES_USER`, `ES_PASSWORD` | empty | 비면 basic auth를 사용하지 않음 |
 | `SSH_USER`, `SSH_PASSWORD`, `SSH_PORT` | empty, empty, `22` | data-node log용 SSH |
 | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `KAFKA_GROUP_ID` | `localhost:9092`, `slowlog`, `clusterdoctor` | consumer 설정 |
+| `KAFKA_FAILURE_TIMEOUT_SECONDS` | `300` | Kafka 연결 확인의 연속 실패 상한(초), 양수만 허용 |
 | `CLUSTER_NAME` | `elasticsearch` | 표시 이름 |
 | `NODE_HEAP_WARN_PERCENT`, `NODE_QUEUE_WARN` | `85`, `100` | metric evidence threshold |
-| `REPORT_DIR` | `reports` | Incident HTML output directory |
+| `REPORT_DIR` | `reports` | HTML 보고서 저장 디렉터리. 미지정·빈 값이면 `reports`, 상대 경로는 작업 디렉터리 기준 |
+| `LOG_DIR` | `logs` | `app.log` 저장 디렉터리. 미지정·빈 값이면 `logs`, 상대 경로는 작업 디렉터리 기준 |
 | `LITELLM_LOCAL_MODEL_COST_MAP` | `True` | litellm의 GitHub cost-map fetch를 막음 |
 
 Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed offset이 없으면
 `auto_offset_reset=latest`로 끝에서 시작한다.
+
+consumer 기동 후에는 연결 검사 완료 후 10초를 기다렸다가 다음 검사를 수행한다.
+검사는 구독 topic의 존재, 할당된 partition leader의 `end_offsets()` 응답,
+consumer group coordinator의 `committed()` 응답을 확인한다. 이 조회들은 메시지를
+소비하거나 consumer 위치·committed offset을 변경하지 않는다. 메시지가 없거나
+offset이 0이어도 정상이며, committed offset이 없는 `None` 응답도 정상이다.
+할당이 완료된 대기 consumer는 topic metadata와 coordinator만 확인하므로 다른
+consumer가 담당하는 partition leader 장애로 종료하지 않는다. 리밸런싱 중이거나
+검사 도중 할당이 바뀌면 실패 시간을 초기화하지 않고 다음 검사에서 다시 판단한다.
+전체 검사 한 번은 최대 10초(장애 상한까지 남은 시간이 더 짧으면 그 시간)만
+기다리며, 정상 확인 실패가 `KAFKA_FAILURE_TIMEOUT_SECONDS` 동안 연속되면 consumer 종료를
+시도한다(정리 대기 최대 10초). 연결이 복구되면 실패 누적 시간을 초기화한다.
+앱은 종료 사유를 로그로 남긴 뒤 코드 1로 프로세스 전체를 종료한다. 이때 대기 중이거나
+진행 중인 분석은 폐기하며 분석 스레드의 완료를 기다리지 않는다. 기동 중 Kafka 오류도
+실패 종료하며, consumer 기동 대기는 같은 설정값으로 제한한다.
+자동 재시작은 앱 자체가 아닌 실행 관리자에서 설정한다.
 
 ### 고정 한도
 
@@ -218,7 +242,12 @@ uv sync
 uv run python -m cluster_doctor.main
 ```
 
-Kafka consumer는 block하며 log는 stderr와 `logs/app.log`, report는 `REPORT_DIR`에 남긴다.
+Kafka consumer는 block하며 log는 stderr와 `LOG_DIR/app.log`, report는 `REPORT_DIR`에 남긴다.
+`.env`에 `LOG_DIR=/var/log/clusterdoctor`처럼 절대 경로를 지정할 수 있다. 지정하지
+않거나 빈 값이면 기존처럼 작업 디렉터리의 `logs/app.log`에 저장한다. 디렉터리가
+없으면 자동 생성하며, 실행 계정에 쓰기 권한이 있어야 한다.
+보고서는 `.env`의 `REPORT_DIR=/var/lib/clusterdoctor/reports`로 경로를 지정한다.
+미지정하거나 빈 값이면 기존처럼 작업 디렉터리의 `reports/`에 저장한다.
 실제 slowlog를 기다리지 않는 trigger 확인에는 다음을 쓴다.
 
 ```bash

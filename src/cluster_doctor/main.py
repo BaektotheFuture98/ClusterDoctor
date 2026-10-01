@@ -1,13 +1,15 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 
-from cluster_doctor.bootstrap.configuration.settings import get_settings
+from cluster_doctor.bootstrap.configuration.settings import LoggingSettings, get_settings
 from cluster_doctor.bootstrap.dependency.wiring import (
     build_kafka_consumer,
     build_slowlog_intake,
 )
 from cluster_doctor.bootstrap.lifecycle.app_lifecycle import close_clickhouse_client
+from cluster_doctor.exceptions import KafkaUnavailableError
 from cluster_doctor.log_context import IncidentIdLogFilter
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s [%(incident_id)s] %(message)s"
@@ -24,11 +26,12 @@ def configure_logging() -> None:
     if already_configured:
         return
 
-    os.makedirs("logs", exist_ok=True)
+    log_dir = Path(LoggingSettings().log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
     formatter = logging.Formatter(_LOG_FORMAT)
     incident_id_filter = IncidentIdLogFilter()
 
-    file_handler = logging.FileHandler("logs/app.log", encoding="utf-8")
+    file_handler = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
     stream_handler = logging.StreamHandler()
     for handler in (file_handler, stream_handler):
         handler.setFormatter(formatter)
@@ -47,6 +50,13 @@ async def main() -> None:
 
     try:
         await consumer.run()
+    except KafkaUnavailableError as exc:
+        logging.getLogger(__name__).critical("%s; terminating process with exit code 1", exc)
+        logging.shutdown()
+        # Consumer cleanup has already been attempted. Normal shutdown waits
+        # for analysis threads, so it cannot enforce this fatal outage policy.
+        # Exit the whole process, discarding pending/in-flight analysis.
+        os._exit(1)
     finally:
         try:
             await intake.close()

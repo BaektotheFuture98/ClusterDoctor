@@ -20,6 +20,7 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
     PseudonymizeMiddleware,
+    pseudonym_scope,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import AgentRoleLogMiddleware
 from cluster_doctor.incident_analysis_agent.agent.runtime.rate_limit_retry import (
@@ -276,6 +277,7 @@ def project_result(state: dict) -> WindowAnalysisResult:
     )
 
 
+@pseudonym_scope()
 def run_analysis_agent(
     *, seams: AnalysisSeams, request: LogAnalysisRequest, model
 ) -> WindowAnalysisResult:

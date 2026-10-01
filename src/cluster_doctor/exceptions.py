@@ -12,6 +12,10 @@ class ClusterDoctorError(RuntimeError):
     """이 애플리케이션이 스스로 올리는 실패의 뿌리."""
 
 
+class KafkaUnavailableError(ClusterDoctorError):
+    """Kafka connectivity did not recover within the configured deadline."""
+
+
 class LlmApiError(ClusterDoctorError):
     """LLM provider가 비-2xx 응답을 반환했다.
 
