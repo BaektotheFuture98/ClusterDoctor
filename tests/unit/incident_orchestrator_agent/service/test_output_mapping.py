@@ -1,6 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    EvidenceSource,
+)
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
@@ -10,7 +13,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
     to_incident_analysis_report,
 )
 
-_UTC = timezone.utc
+_UTC = UTC
 
 
 def test_to_incident_analysis_report_quotes_finding_evidence_with_citation_format():
@@ -36,5 +39,5 @@ def test_to_incident_analysis_report_quotes_finding_evidence_with_citation_forma
     result = to_incident_analysis_report(report, Observations(), [evidence])
 
     assert result.narrative.findings[0].evidence == (
-        "[E-abc-1] | 2026-09-30 15:22:54 | es_query_log | query runtime=28.66s",
+        "[E-abc-1] | 2026-10-01 00:22:54 KST | es_query_log | query runtime=28.66s",
     )

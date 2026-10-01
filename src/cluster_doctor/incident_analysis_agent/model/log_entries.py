@@ -1,21 +1,26 @@
-"""세 소스가 공유하는 계약.
+"""로그·메트릭 소스가 공유하는 계약.
 
 개별 사건(event) 로그(slowlog / es_query_log / node_log)와 주기 수집 샘플
 (node_metric)이 전부 이 베이스를 쓴다. 실제 타입(``SlowlogEntry``,
 ``NodeLogEntry``, ``QueryLogEntry``, ``NodeMetricEntry``)은 소스별 폴더로
 나뉘어 있지 않고 전부 이 파일 하나에 정의돼 있다.
 
-공통으로 두는 것은 발생 시각과 출처뿐이다. ``fetch_logs``가 여럿을 한 리스트에
-담아 돌려주고 ``split_by_minute``이 ``timestamp``로 묶으므로 그 둘은 필요하다.
+공통 계약은 시각 접근자 ``timestamp``와 출처다. 쿼리 로그는 원본 필드
+``reg_date``를 저장하고 내부 공통 처리에서만 읽기 전용 시각 접근자를 제공한다.
+``fetch_logs``는 여러 소스의 레코드를 ``LogFetchResult.entries``에 함께 담는다.
+조회 결과 정렬과 분 단위 관측값 집계는 공통 ``timestamp`` 접근자를 사용한다.
 ``source``는 인스턴스 필드가 아니라 ``ClassVar``다 — 타입이 정해지면 출처도
 정해지므로 생성자에서 매번 넘길 이유가 없고, 넘기면 오타 한 번에 프롬프트의
 소스별 묶기가 조용히 어긋난다.
 """
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from decimal import Decimal
 from typing import ClassVar
+
+from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceProvenance
 
 
 @dataclass(frozen=True)
@@ -25,11 +30,28 @@ class LogEntry:
     아직 선별 전이며, 파이프라인이 RawRecord와 보고서 근거 Evidence로 변환한다.
     """
 
-    timestamp: datetime
+    provenance: EvidenceProvenance | None = field(default=None, kw_only=True)
 
     # 값을 주지 않는다. 구현체가 반드시 정의해야 하는 것이지, 빠뜨렸을 때
     # 조용히 넘어갈 기본값이 있어서는 안 된다.
     source: ClassVar[str]
+
+
+def record_json(entry: LogEntry) -> str:
+    """Serialize only the fetched record fields, without collection metadata."""
+    values = {
+        f.name: getattr(entry, f.name)
+        for f in fields(entry)
+        if f.name not in ("provenance", "additional_fields")
+    }
+    if isinstance(entry, QueryLogEntry):
+        values.update(entry.additional_fields)
+    return json.dumps(
+        values,
+        ensure_ascii=False,
+        default=str,
+        indent=2,
+    )
 
 
 @dataclass(frozen=True)
@@ -48,11 +70,13 @@ class NodeLogEntry(LogEntry):
     둘이 어긋날 수 있으므로(``"WARN "`` 대 ``"warn"``) 둘 다 들고 있는다 —
     어느 쪽을 신뢰할지는 조회하는 쪽이 정한다.
 
-    SSH 경로(``domain/model/ssh``)는 이 타입을 만들지 않는다 — 원문 문자열을
+    SSH 경로(``datasource/ssh/node_log.py``)는 이 타입을 만들지 않는다 — 원문 문자열을
     그대로 돌려준다.
     """
 
     source: ClassVar[str] = "node_log"
+
+    timestamp: datetime
 
     node: str
     node_role: str
@@ -72,6 +96,8 @@ class NodeMetricEntry(LogEntry):
 
     source: ClassVar[str] = "node_metric"
 
+    timestamp: datetime
+
     node_name: str
     node_ip: str
     os_cpu_percent: int
@@ -88,38 +114,52 @@ class NodeMetricEntry(LogEntry):
 
 @dataclass(frozen=True)
 class QueryLogEntry(LogEntry):
-    """ES 쿼리 실행 기록 한 건. company·user가 사는 곳이다."""
+    """ClickHouse log record. Column names and stored values are preserved."""
 
     source: ClassVar[str] = "es_query_log"
 
+    reg_date: datetime
     host: str
     run_time: Decimal
-    success: bool
+    success: str
+    s_date: int
+    e_date: int
+    date_range: int
+    keyword: tuple[str, ...]
+    keyword_count: int
+    url: str
     cmd: str
     service: str
     env: str
     project: str
+    company: str
+    user: str
+    search_count: int
+    etc: str
     cluster: str
-    # tuple이다. list를 필드로 두면 frozen이어도 해시가 깨져 중복 제거·집합
-    # 연산에 쓸 수 없다.
-    keywords: tuple[str, ...]
-    company: str | None
-    user: str | None
+    additional_fields: dict[str, object] = field(default_factory=dict, kw_only=True)
+
+    @property
+    def timestamp(self) -> datetime:
+        """Internal event-time accessor; the stored DTO field remains reg_date."""
+        return self.reg_date
+
+    @property
+    def is_success(self) -> bool | None:
+        return {"Y": True, "N": False}.get(self.success)
 
 
 @dataclass(frozen=True)
 class SlowlogEntry(LogEntry):
     """ES가 임계치 초과로 남긴 느린 쿼리 한 건.
 
-    ``timestamp``를 뺀 나머지에 기본값을 둔 이유: 이 타입을 채우는 곳은
-    ClickHouse 조회(``agent/integrations/clickhouse/reader.py``)뿐이다.
-    Kafka consumer는 트리거용으로 발생 시각만 필요하므로
-    ``ingestion/kafka/event.py``의 ``SlowlogTriggerEvent``를 따로 쓰고, 이
-    타입을 재사용하지 않는다 — 재사용하면 그 목적에 없는 여섯 필드가 항상
-    기본값으로만 채워진다.
+    발생 시각 외 필드는 조회 결과에서 채우며 비어 있을 수 있다. Kafka
+    트리거는 intake 전용 이벤트 타입을 사용하고 이 조회 타입을 재사용하지 않는다.
     """
 
     source: ClassVar[str] = "slowlog"
+
+    timestamp: datetime
 
     index_name: str = ""
     node: str = ""

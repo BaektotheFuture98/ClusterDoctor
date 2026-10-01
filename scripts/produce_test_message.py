@@ -17,16 +17,16 @@ Kafka 없이 진단만 한 번 돌리려면 run_analysis.py를 쓴다. 시각 �
     uv run python scripts/produce_test_message.py --at "2026-08-27T14:00:00"
     uv run python scripts/produce_test_message.py --at "2026-08-27T14:00:00" --count 5 --span 3m
 """
+
 import argparse
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
-
-from aiokafka import AIOKafkaProducer
-from dotenv import load_dotenv
+from datetime import UTC, datetime
 
 import _timeargs
+from aiokafka import AIOKafkaProducer
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -35,7 +35,7 @@ TOPIC = os.environ.get("KAFKA_TOPIC", "slowlog")
 
 
 def build_message(moment: datetime, seq: int) -> dict:
-    """slowlog 한 건. ClusterGuard가 실제로 읽는 것은 ``@timestamp`` 뿐이다.
+    """slowlog 한 건. ClusterDoctor가 실제로 읽는 것은 ``@timestamp`` 뿐이다.
 
     나머지 필드는 실제 파이프라인 형태를 흉내 낸 것이고 진단에는 쓰이지
     않는다 — 내용 분석은 ClickHouse를 조회해서 하기 때문이다
@@ -71,8 +71,7 @@ def build_message(moment: datetime, seq: int) -> dict:
             # 파이프라인이 보내는 형태와 같게 UTC로 직렬화한다. consumer는
             # 오프셋이 붙은 값을 그대로 읽으므로 어느 표기든 동작하지만,
             # 실제 메시지와 다른 모양으로 테스트하면 그 차이가 드러나지 않는다.
-            "@timestamp": moment.astimezone(timezone.utc)
-            .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+            "@timestamp": moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
             + "Z",
             "message": "[test-index-v1][0]",
         },
@@ -98,7 +97,7 @@ def main() -> None:
         description="테스트용 slowlog 메시지를 Kafka에 보낸다.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "ClusterGuard consumer는 auto_offset_reset=latest다.\n"
+            "ClusterDoctor consumer는 auto_offset_reset=latest다.\n"
             "먼저 `uv run python -m cluster_doctor.main`을 띄운 뒤 보낼 것."
         ),
     )

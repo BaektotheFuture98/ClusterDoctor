@@ -21,7 +21,9 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_hea
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
-from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import SshNodeLogFetcher
+from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
+    SshNodeLogFetcher,
+)
 from cluster_doctor.incident_orchestrator_agent.agent.adapter import (
     DeepAgentsConfig,
     build_deepagents_incident_analyzer,
@@ -60,6 +62,8 @@ def get_clickhouse_client():
         host=host, port=port, database=db,
         username=s.clickhouse_user, password=s.clickhouse_password,
         send_receive_timeout=_CLICKHOUSE_SEND_RECEIVE_TIMEOUT_SECONDS,
+        # 공유 HTTP client의 병렬 조회가 동일한 ClickHouse 세션을 사용하지 않도록 한다.
+        autogenerate_session_id=False,
     )
 
 

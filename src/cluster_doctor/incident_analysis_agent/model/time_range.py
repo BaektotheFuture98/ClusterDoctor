@@ -15,13 +15,10 @@ MAX_TIME_RANGE_DURATION = timedelta(minutes=10)
 
 
 class InvalidTimeRangeError(ValueError):
-    """Raised when a :class:`TimeRange` is constructed from an invalid pair.
+    """Invalid window values, distinct from parsing or provider failures.
 
-    Subclasses ``ValueError`` so callers doing value-style handling keep
-    working, but it is a distinct type so the HTTP layer can map *only* this
-    domain rejection to 400. A bare ``ValueError`` handler would also catch
-    ``pydantic.ValidationError`` and ``json.JSONDecodeError``, turning
-    internal failures into client errors and echoing their messages back.
+    Tool and lifecycle callers can handle range rejection separately from
+    other ValueError subclasses without exposing unrelated error details.
     """
 
 
@@ -38,13 +35,8 @@ class TimeRange:
     def __post_init__(self):
         if self.start is None or self.end is None:
             raise InvalidTimeRangeError("start와 end는 None일 수 없습니다")
-        # Both the `<` comparison and the subtraction below raise TypeError
-        # when one side is timezone-aware and the other naive. TypeError is
-        # not the domain rejection, so it escaped the 400 handler and became
-        # a generic 500 -- misleading the caller and filling the error log
-        # with what is really a bad request. `utcoffset() is None` is the
-        # canonical awareness test (a tzinfo whose utcoffset returns None
-        # leaves the datetime naive). No input values are echoed.
+        # Reject mixed timezone awareness before comparison can raise TypeError.
+        # utcoffset() also catches tzinfo objects that leave a datetime naive.
         if (self.start.utcoffset() is None) != (self.end.utcoffset() is None):
             raise InvalidTimeRangeError(
                 "start와 end의 시간대 정보가 서로 달라 비교할 수 없습니다 "

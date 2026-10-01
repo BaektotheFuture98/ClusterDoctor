@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +36,23 @@ class EvidenceSource(StrEnum):
     CLUSTER_STATE = "cluster_state"
 
 
+class EvidenceProvenance(BaseModel):
+    """Collection-time location, never authored by the model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    method: Literal["ssh", "clickhouse", "elasticsearch_api"]
+    collected_at: datetime | None = None
+    query_from: datetime | None = None
+    query_to: datetime | None = None
+    host: str | None = None
+    table: str | None = None
+    file_path: str | None = None
+    endpoint: str | None = None
+    role: str | None = None
+    excerpt: bool = False
+
+
 class Evidence(BaseModel):
     """소스별 원자료에서 선별해 Incident 식별자를 부여한 근거 한 건.
 
@@ -45,10 +63,9 @@ class Evidence(BaseModel):
     ``message``는 Cross-source 프롬프트(``format_evidence_line``)와 운영자
     리포트 인용(``evidence_citation.cite``)이 함께 읽는, 코드가 렌더링한 한
     줄이다. 소스가 파일 원문이면(SSH ``node_log``) 원문 그대로이고, 그 외에는
-    구조화된 필드에서 조립한 서술이다. 원문 자체가 필요하면
-    (``GroundingValidator``만 그렇다) ``raw``를 직접 읽는다 — 지금은 세 생성
-    지점 모두 두 값이 같은 문자열이지만, 그것은 "이보다 더 원본에 가까운 것이
-    없다"는 사정이지 지켜야 할 규약이 아니다.
+    구조화된 필드에서 조립한 서술이다. 원문은 ``raw``에 별도로 보존한다. 로그는 실제 로그 줄이고, 메트릭과
+    쿼리 실행 기록은 조회된 필드의 직렬화 값이다. 검증기와 리포트가 이 값을
+    함께 읽으며 ``raw_kind``로 원문 형태를 구분한다.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -70,6 +87,10 @@ class Evidence(BaseModel):
 
     # 이 근거를 만든 원문. 비어 있으면 그 근거는 인용으로 검증할 수 없다.
     raw: str | None = None
+    provenance: EvidenceProvenance | None = None
+    raw_kind: Literal["log", "record", "query"] = "log"
+    raw_truncated: bool = False
+    time_origin: Literal["parsed", "inherited", "fallback"] = "parsed"
     # 왜 이 줄을 남겼는가. Reduce 단계가 채운다.
     selection_reason: str | None = None
 

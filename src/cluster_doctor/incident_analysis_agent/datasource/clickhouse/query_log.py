@@ -6,15 +6,29 @@ slowlog와 달리 **성공한 요청도 들어온다.** 그래서 이쪽에서�
 
 from __future__ import annotations
 
+from dataclasses import fields
+from datetime import UTC, datetime
+
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
     MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     query_segment,
 )
-from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.log_entries import LogEntry, QueryLogEntry
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    EvidenceProvenance,
+    EvidenceSource,
+)
+from cluster_doctor.incident_analysis_agent.model.log_entries import (
+    LogEntry,
+    QueryLogEntry,
+    record_json,
+)
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
+    RawRecord,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import (
+    AnalysisSpec,
+)
 
 SPEC = AnalysisSpec(
     source=EvidenceSource.QUERY_LOG,
@@ -35,32 +49,37 @@ SPEC = AnalysisSpec(
 
 def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
     sql = (
-        f"SELECT reg_date, host, run_time, success, cmd, service, env, project, cluster, keyword, company, user "
-        f"FROM {table} "
+        f"SELECT * FROM {table} "
         "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
         f"LIMIT {MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
     )
-    # row 인덱스: 0=reg_date, 1=host, 2=run_time, 3=success, 4=cmd,
-    #             5=service, 6=env, 7=project, 8=cluster,
-    #             9=keyword, 10=company, 11=user
-    return [
-        QueryLogEntry(
-            timestamp=row[0],
-            host=row[1],
-            run_time=row[2],
-            # ClickHouse는 'Y'/'N'을 준다. 도메인까지 그 표현을 끌고 가지 않는다.
-            success=row[3] == "Y",
-            cmd=row[4],
-            service=row[5],
-            env=row[6],
-            project=row[7],
-            cluster=row[8],
-            keywords=tuple(row[9] or ()),
-            company=row[10] or None,
-            user=row[11] or None,
+    rows = query_segment(client, sql, tr, "es_query_log", named=True)
+    provenance = EvidenceProvenance(
+        method="clickhouse",
+        collected_at=datetime.now(UTC),
+        table=table,
+        query_from=tr.start,
+        query_to=tr.end,
+        excerpt=len(rows) >= MAX_ROWS_PER_SEGMENT_PER_SOURCE,
+    )
+    known = {f.name for f in fields(QueryLogEntry)} - {
+        "provenance",
+        "additional_fields",
+    }
+    entries = []
+    for row in rows:
+        values = {name: row[name] for name in known}
+        values["keyword"] = tuple(values["keyword"])
+        entries.append(
+            QueryLogEntry(
+                **values,
+                provenance=provenance,
+                additional_fields={
+                    name: value for name, value in row.items() if name not in known
+                },
+            )
         )
-        for row in query_segment(client, sql, tr, "es_query_log")
-    ]
+    return entries
 
 
 def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
@@ -69,14 +88,19 @@ def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
         RawRecord(
             record_id=index,
             event_time=entry.timestamp,
+            raw=record_json(entry),
+            raw_kind="record",
+            provenance=entry.provenance,
             line=(
                 f"run_time={entry.run_time} success={entry.success} "
                 f"host={entry.host or '?'} service={entry.service or '?'} "
                 f"company={entry.company or '?'} user={entry.user or '?'} "
-                f"cmd={entry.cmd or '(없음)'}"
+                f"cmd={entry.cmd or '(없음)'} keyword={list(entry.keyword)} "
+                f"s_date={entry.s_date} e_date={entry.e_date} date_range={entry.date_range} "
+                f"keyword_count={entry.keyword_count} search_count={entry.search_count}"
             ),
             node_name=entry.host or None,
-            severity=None if entry.success else "ERROR",
+            severity="ERROR" if entry.is_success is False else None,
         )
         for index, entry in enumerate(ordered, start=1)
     ]

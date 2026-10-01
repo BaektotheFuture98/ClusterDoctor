@@ -14,9 +14,15 @@ from __future__ import annotations
 
 from cluster_doctor.incident_analysis_agent.model.evidence import EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.log_entries import NodeLogEntry
-from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_log_line
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import AnalysisSpec
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import RawRecord
+from cluster_doctor.incident_analysis_agent.service.observation.log_format import (
+    format_log_line,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
+    RawRecord,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import (
+    AnalysisSpec,
+)
 
 # 조회 조건. 레벨만으로는 안 된다 — 실측(packetbeat.loki_logs)에서 INFO 10건 중
 # 진단에 필요한 것은 AllocationService 1건이었고 나머지 9건은 ML 유지보수·만료
@@ -25,14 +31,14 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model impor
 MASTER_ROLE = "master"
 MASTER_LOG_LEVELS = ("WARN", "ERROR")
 MASTER_EVENT_LOGGERS = (
-    "o.e.c.s.MasterService",                   # 클러스터 상태 변경, node-left/join
-    "o.e.c.c.Coordinator",                     # 리더 선출, 마스터 이탈
+    "o.e.c.s.MasterService",  # 클러스터 상태 변경, node-left/join
+    "o.e.c.c.Coordinator",  # 리더 선출, 마스터 이탈
     "o.e.c.c.NodeLeftExecutor",
     "o.e.c.c.NodeJoinExecutor",
-    "o.e.c.r.a.AllocationService",             # 샤드 할당 (INFO로 기록된다)
-    "o.e.c.r.a.DiskThresholdMonitor",          # 디스크 워터마크
+    "o.e.c.r.a.AllocationService",  # 샤드 할당 (INFO로 기록된다)
+    "o.e.c.r.a.DiskThresholdMonitor",  # 디스크 워터마크
     "o.e.c.r.a.d.DiskThresholdDecider",
-    "o.e.m.j.JvmGcMonitorService",             # GC overhead
+    "o.e.m.j.JvmGcMonitorService",  # GC overhead
     "o.e.i.b.HierarchyCircuitBreakerService",  # circuit breaker
     "o.e.c.InternalClusterInfoService",
 )
@@ -67,6 +73,8 @@ def to_records(entries: list[NodeLogEntry]) -> list[RawRecord]:
         RawRecord(
             record_id=index,
             event_time=entry.timestamp,
+            raw=entry.line,
+            provenance=entry.provenance,
             line=format_log_line(entry),
             node_name=entry.node or None,
             severity=(entry.level or entry.detected_level or "").strip() or None,

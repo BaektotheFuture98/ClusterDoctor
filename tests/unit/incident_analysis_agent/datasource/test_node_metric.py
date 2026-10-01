@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import (
     NodeMetricThresholds,
@@ -6,7 +6,7 @@ from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric im
 )
 from cluster_doctor.incident_analysis_agent.model.log_entries import NodeMetricEntry
 
-_T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
+_T0 = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
 
 
 def _entry(**overrides) -> NodeMetricEntry:
@@ -43,12 +43,18 @@ def test_below_threshold_produces_no_evidence():
     assert evidence == []
 
 
-def test_message_and_raw_carry_the_same_text():
+def test_raw_preserves_fetched_metric_record_separately_from_summary():
     evidence = to_evidence(
         [_entry(jvm_heap_used_percent=90)], new_evidence_id=_new_evidence_id()
     )
     assert len(evidence) == 1
-    assert evidence[0].raw == evidence[0].message
+    import json
+
+    raw = json.loads(evidence[0].raw)
+    assert raw["jvm_heap_used_percent"] == 90
+    assert raw["node_ip"] == "10.0.0.1"
+    assert "기준 85%" in evidence[0].message
+    assert evidence[0].raw_kind == "record"
 
 
 def test_only_highest_sample_per_node_and_rule_is_kept():

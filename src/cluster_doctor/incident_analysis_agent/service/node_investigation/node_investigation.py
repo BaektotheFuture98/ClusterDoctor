@@ -32,15 +32,28 @@ from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     NodeResolver,
 )
-from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import NodeLogFetcher
 from cluster_doctor.incident_analysis_agent.datasource.ssh import node_log
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, ProblemNodeCandidate
+from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
+    NodeLogFetcher,
+)
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    ProblemNodeCandidate,
+)
 from cluster_doctor.incident_analysis_agent.model.resolved_node import ResolvedNode
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import truncate_raw
-from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_evidence_line
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import run_analysis
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import group_into_buckets
+from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
+    MAX_RAW_LOG_CHARS,
+)
+from cluster_doctor.incident_analysis_agent.service.observation.log_format import (
+    format_evidence_line,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
+    run_analysis,
+)
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
+    group_into_buckets,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -195,6 +208,7 @@ def investigate_nodes(
             continue
 
         try:
+            provenance = node_log.ssh_provenance(resolved, window.start, window.end)
             text = fetcher.fetch(
                 resolved.host,
                 resolved.log_path or "",
@@ -215,7 +229,10 @@ def investigate_nodes(
 
         result.investigated.append(resolved)
         records = node_log.to_records(
-            truncate_raw(text), fallback_time=window.start
+            text[:MAX_RAW_LOG_CHARS],
+            fallback_time=window.start,
+            provenance=provenance,
+            raw_truncated=len(text) > MAX_RAW_LOG_CHARS,
         )
         analysis = run_analysis(
             node_log.SPEC,

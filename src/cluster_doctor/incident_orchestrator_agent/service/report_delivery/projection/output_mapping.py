@@ -16,15 +16,18 @@ Analysis Agent의 최종 리포트와 MainAgentState가 누적한 관측값·근
 from __future__ import annotations
 
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
+    CauseAssessment,
     Finding,
     IncidentAnalysisReport,
     Narrative,
     TimelineAnnotation,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
+    citations,
     cite,
 )
 
@@ -33,6 +36,8 @@ def to_incident_analysis_report(
     report: LogAnalysisReport | None,
     observations: Observations,
     evidence: list[Evidence],
+    *,
+    cluster: str = "",
 ) -> IncidentAnalysisReport:
     """최종 전달용 리포트를 만든다.
 
@@ -41,7 +46,9 @@ def to_incident_analysis_report(
     무슨 일이 있었는지는 남아야 한다.
     """
     if report is None:
-        return IncidentAnalysisReport(observations=observations, evidence=tuple(evidence))
+        return IncidentAnalysisReport(
+            observations=observations, evidence=tuple(evidence), cluster=cluster
+        )
 
     evidence_by_id = {item.evidence_id: item for item in evidence}
     return IncidentAnalysisReport(
@@ -56,16 +63,25 @@ def to_incident_analysis_report(
             for event in report.timeline
         ),
         verification_status=report.verification_status.value,
+        verification_issues=report.verification_issues,
+        cluster=cluster,
+        analyzed_from=report.analyzed_from,
+        analyzed_to=report.analyzed_to,
         narrative=Narrative(
             headline=report.summary,
             context=tuple(
-                f"{event.at:%H:%M:%S} {event.description}" for event in report.timeline
+                f"{event.at.astimezone(KST):%H:%M:%S} KST {event.description}"
+                for event in report.timeline
             ),
             findings=tuple(
                 Finding(
                     severity=item.severity,
                     title=item.title,
-                    evidence=_quote(item.evidence_refs, evidence_by_id, extra=item.detail),
+                    evidence=_quote(
+                        item.evidence_refs, evidence_by_id, extra=item.detail
+                    ),
+                    citations=citations(item.evidence_refs, tuple(evidence)),
+                    detail=item.detail,
                 )
                 for item in report.findings
             ),
@@ -89,6 +105,19 @@ def to_incident_analysis_report(
             unverified=report.unresolved_questions,
             suspect_picks=report.suspect_picks,
             recommendations=report.recommendations,
+            causes=tuple(
+                CauseAssessment(
+                    statement=cause.statement,
+                    confidence=cause.confidence,
+                    supporting=citations(
+                        cause.supporting_evidence_refs, tuple(evidence)
+                    ),
+                    contradicting=citations(
+                        cause.counter_evidence_refs, tuple(evidence)
+                    ),
+                )
+                for cause in report.root_causes
+            ),
         ),
     )
 

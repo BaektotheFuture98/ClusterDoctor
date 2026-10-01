@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import (
@@ -12,9 +12,9 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
     HtmlFileReportPublisher,
 )
 
-_T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
-_T1 = datetime(2024, 1, 1, 13, 10, tzinfo=timezone.utc)
-_T2 = datetime(2024, 1, 1, 13, 20, tzinfo=timezone.utc)
+_T0 = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
+_T1 = datetime(2024, 1, 1, 13, 10, tzinfo=UTC)
+_T2 = datetime(2024, 1, 1, 13, 20, tzinfo=UTC)
 
 
 def _report(summary: str, start, end) -> LogAnalysisReport:
@@ -29,7 +29,7 @@ def _report(summary: str, start, end) -> LogAnalysisReport:
 
 async def test_last_verified_report_is_published_as_html(tmp_path):
     # 여러 window의 리포트가 MainAgentState.window_results에 순서대로 쌓이고,
-    # 대표로는 마지막 window의 리포트를 쓴다 — ArtifactStore 없이도 같은 동작이다.
+    # 대표로는 마지막 window의 리포트를 쓴다.
     reports = [
         _report("cpu spike in window A", _T0, _T1),
         _report("query timeout in window B", _T1, _T2),

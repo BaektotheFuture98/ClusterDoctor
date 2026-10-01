@@ -28,6 +28,10 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     IncidentAnalysisReport,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
+    citation_text,
+    citations,
+)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import (
     TimelineCard,
     TimelineItem,
@@ -135,10 +139,10 @@ def _card_item_line(item: TimelineItem) -> str:
 
 
 def _card_citation_lines(card: TimelineCard) -> list[str]:
-    if not card.citations:
+    if not card.evidence_citations:
         return []
     lines = ["  근거 원문 (출처별)"]
-    lines.extend(f"    {line}" for line in card.citations)
+    lines.extend(f"    {citation_text(item)}" for item in card.evidence_citations)
     return lines
 
 
@@ -213,11 +217,7 @@ def node_lines(rows: tuple[NodeMetricRow, ...]) -> list[str]:
     if not rows:
         return []
 
-    flagged = [
-        row
-        for row in rows
-        if row.search_rejected_max or row.write_rejected_max
-    ]
+    flagged = [row for row in rows if row.search_rejected_max or row.write_rejected_max]
     if flagged:
         ordered = sorted(flagged, key=_node_rank)
         shown = ordered[:_NODE_RENDER_MAX]
@@ -296,8 +296,7 @@ def master_log_lines(events: tuple[MasterEvent, ...], total: int = 0) -> list[st
     대표 줄은 원문 그대로 남긴다. 근거로 인용하려면 원문이어야 한다.
 
     묶지 못한 줄(``_UNGROUPED``)은 예외다. 그 묶음의 구성원은 서로 다른
-    사건이므로 대표 한 줄로 줄이면 나머지가 통째로 사라진다 — SSH 폴백으로
-    받은 로그가 312줄에서 1줄로 붕괴한 것이 그 경우였다.
+    사건이므로 각 원문을 보존한다.
     """
     if not events:
         return []
@@ -327,7 +326,11 @@ def master_log_lines(events: tuple[MasterEvent, ...], total: int = 0) -> list[st
         )
         if targets:
             names = [name for name, _ in targets.most_common(_MASTER_TARGETS_SHOWN)]
-            more = f" 외 {len(targets) - len(names)}대" if len(targets) > len(names) else ""
+            more = (
+                f" 외 {len(targets) - len(names)}대"
+                if len(targets) > len(names)
+                else ""
+            )
             lines.append(f"  대상 노드 {len(targets)}대: {', '.join(names)}{more}")
 
         shown = (
@@ -388,7 +391,6 @@ def health_lines(
     return lines
 
 
-
 def candidate_details(candidate: SlowCandidate, reason: str = "") -> list[str]:
     """후보 한 건의 하위 항목. 없으면 빈 리스트.
 
@@ -432,9 +434,7 @@ def offender_lines(candidates: tuple[SlowCandidate, ...]) -> list[str]:
         companies.setdefault(candidate.company or "미상", []).append(candidate)
 
     def total_runtime(items: list[SlowCandidate]) -> Decimal:
-        return sum(
-            (c.run_time for c in items if c.run_time is not None), Decimal(0)
-        )
+        return sum((c.run_time for c in items if c.run_time is not None), Decimal(0))
 
     def max_runtime(items: list[SlowCandidate]) -> Decimal | None:
         values = [c.run_time for c in items if c.run_time is not None]
@@ -479,7 +479,9 @@ def overview_lines(obs: Observations) -> list[str]:
     ``총 대기 시간: 0초``만 적힌 섹션은 정보가 아니라 잡음이고, 그런 섹션이
     목차에 자리를 차지하면 진짜 내용이 밀린다.
     """
-    if not (obs.first_seen or obs.requested or obs.time_basis or obs.total_wait_seconds):
+    if not (
+        obs.first_seen or obs.requested or obs.time_basis or obs.total_wait_seconds
+    ):
         return []
 
     lines: list[str] = []
@@ -546,9 +548,8 @@ def render_text(report: IncidentAnalysisReport) -> str:
     로그 폴백과 HTML의 원문 블록이 이것을 쓴다. HTML 본문은 같은 줄
     함수들로 따로 조립하지만 내용은 같다.
 
-    섹션 번호는 코드가 센다. 제목에 박아 두면 빈 섹션 하나가 건너뛰어질 때
-    6 다음이 8이 되고, HTML 쪽(``_sections_from_report``)은 처음부터 다시 번호를
-    매기므로 같은 섹션이 두 출력에서 다른 번호로 불린다.
+    평문 섹션 번호는 코드가 순서대로 매긴다. HTML은 이름 있는 앵커와
+    접힌 상세 자료를 사용하므로 번호를 공유하지 않는다.
     """
     obs = report.observations
     out: list[str] = []
@@ -560,8 +561,28 @@ def render_text(report: IncidentAnalysisReport) -> str:
         numbered[0] += 1
         out.extend([f"{numbered[0]}. {title}", _SEPARATOR, *lines, ""])
 
+    narrative = report.narrative
+    summary = (
+        [narrative.headline or "결론이 확인되지 않음"]
+        if narrative
+        else ["결론이 확인되지 않음"]
+    )
+    summary.append(f"근거 검증 상태: {report.verification_status}")
+    summary.append(severity_line(obs))
+    if narrative:
+        if narrative.causes:
+            first = narrative.causes[0]
+            summary.append(
+                f"유력 원인: {first.statement} (확신도 {first.confidence or '확인되지 않음'})"
+            )
+        elif narrative.root_cause:
+            summary.append(f"유력 원인: {narrative.root_cause}")
+        summary.extend(f"우선 확인: {item}" for item in narrative.recommendations[:3])
+    add("핵심 요약", summary)
     add("인시던트 개요", overview_lines(obs))
-    add("영향·원인 통합 인시던트 타임라인", timeline_card_lines(report))
+    add("시간별 사건 흐름 (타임라인)", timeline_card_lines(report))
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_ranking import ranking_lines
+    add("검색 요청 분석", ranking_lines(obs.query_requests))
     add("노드별 구간 최대값 (관측값)", node_lines(obs.nodes))
     add(
         "마스터 노드 로그 (관측값)",
@@ -577,14 +598,19 @@ def render_text(report: IncidentAnalysisReport) -> str:
         candidate_lines.append(candidate_line(candidate))
         candidate_lines += [
             f"      {detail}"
-            for detail in candidate_details(candidate, picks.get(candidate.candidate_id, ""))
+            for detail in candidate_details(
+                candidate, picks.get(candidate.candidate_id, "")
+            )
         ]
     add("느린 요청 후보 (관측값 + 모델 선정)", candidate_lines)
     add("가해자 집계 (관측값)", offender_lines(obs.candidates))
 
     narrative = report.narrative
     if narrative is not None:
-        add("결론", [narrative.headline, *narrative.context] if narrative.headline else [])
+        add(
+            "결론",
+            [narrative.headline, *narrative.context] if narrative.headline else [],
+        )
         findings = []
         for finding in narrative.findings:
             # severity가 비면 모델이 분류하지 않은 것이다. ": 제목"으로
@@ -595,7 +621,14 @@ def render_text(report: IncidentAnalysisReport) -> str:
             findings += [f"    - {item}" for item in finding.evidence]
         add("발견된 문제점", findings)
         cause = []
-        if narrative.root_cause:
+        if narrative.causes:
+            for c in narrative.causes:
+                cause.append(
+                    f"원인 후보: {c.statement} (확신도 {c.confidence or '확인되지 않음'})"
+                )
+                cause += [f"지지 근거: {item.evidence_id}" for item in c.supporting]
+                cause += [f"반박 근거: {item.evidence_id}" for item in c.contradicting]
+        elif narrative.root_cause:
             cause.append(narrative.root_cause)
         cause += [f"근거: {item}" for item in narrative.supporting]
         cause += [f"반박 근거: {item}" for item in narrative.contradicting]
@@ -605,10 +638,28 @@ def render_text(report: IncidentAnalysisReport) -> str:
     elif report.narrative_text:
         add("모델 리포트 (평문)", report.narrative_text.splitlines())
 
+    referenced = [e.evidence_id for e in report.evidence]
+    if narrative:
+        referenced += [
+            c.evidence_id
+            for cause in narrative.causes
+            for c in (*cause.supporting, *cause.contradicting)
+        ]
+        referenced += [
+            c.evidence_id for finding in narrative.findings for c in finding.citations
+        ]
+    add(
+        "근거 출처와 원문",
+        [citation_text(c) for c in citations(tuple(referenced), report.evidence)],
+    )
+    add("검증 문제", list(report.verification_issues))
+
     # 번호 붙은 본문에서 뺀다. 사고 원인 분석과 직접 관련 없는 참고 정보라,
     # 나란히 세면 "분석 결과 중 하나"로 읽힌다(health_lines 독스트링 참고).
     health = health_lines(obs.health, obs.requested)
     if health:
-        out.extend(["참고: 클러스터 현재 상태 (사고 시각 상태 아님)", _SEPARATOR, *health, ""])
+        out.extend(
+            ["참고: 클러스터 현재 상태 (사고 시각 상태 아님)", _SEPARATOR, *health, ""]
+        )
 
     return "\n".join(out).rstrip() + "\n"

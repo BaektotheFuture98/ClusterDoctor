@@ -6,10 +6,10 @@ middleware와 도구 코드이고, 이 모듈은 안내 문장만 담는다.
 
 from __future__ import annotations
 
-from cluster_doctor.incident_orchestrator_agent.agent.tools import TASK_TOOL_NAME
 from cluster_doctor.incident_orchestrator_agent.agent.state import (
     ANALYSIS_SUBAGENT,
 )
+from cluster_doctor.incident_orchestrator_agent.agent.tools import TASK_TOOL_NAME
 
 # 문자열 보간을 쓰지 않는다(f-string 아님). 본문에 중괄호가 들어가면 어느
 # 단계에서든 서식으로 해석되어 프롬프트가 조용히 망가진다. SubAgent 이름
@@ -22,7 +22,7 @@ _SYSTEM_PROMPT_TEMPLATE = """<role>
 
 로그의 해석, DataSource별 선별, Cross-source 분석, Root Cause 판단, 리포트
 작성, 그리고 리포트의 근거 검증과 수정은 analysis SubAgent의 일이다.
-SubAgent는 구간 하나를 끝까지 처리해 **검증을 마친 리포트** 하나를 돌려준다.
+SubAgent는 구간 하나를 끝까지 처리해 **리포트와 검증 상태**를 돌려준다. 검증 실패나 미검증 상태도 구분한다.
 </role>
 
 
@@ -81,8 +81,9 @@ SubAgent는 구간 하나를 끝까지 처리해 **검증을 마친 리포트** 
 설득해서 늘릴 수 있는 것이 아니고, 우회할 수 있는 자리도 없다.
 
 예산의 단위는 호출 수가 아니라 **분**이다. 비용이 분에 비례하기 때문이다 —
-조회가 분 단위로 쪼개지고, 비어 있지 않은 분마다 DataSource별로 LLM이
-한 번씩 돈다. 1분 창과 10분 창은 값이 열 배 다르다.
+세 주 소스 조회는 분 단위로 쪼개져 병렬 실행되지만, slowlog·query log의
+비어 있지 않은 분마다 소스별 LLM 선별 비용이 든다. 노드 지표는 규칙으로 분석한다.
+병렬 조회가 분석 분 예산을 줄이지는 않는다.
 
 그래서 구간은 **필요한 최소 범위**로 잡는다. 넓게 잡아 두고 나중에 줄이는
 전략은 없다. 이미 태운 분은 돌아오지 않는다.
@@ -128,10 +129,10 @@ list_candidate_windows가 보여주는 첫 후보는 관측된 시작점에서 �
      completed  이 구간의 검증 절차를 마치고 리포트를 남겼다.
      failed     이 구간에서 쓸 만한 것을 얻지 못했다.
    - verification_status
-     PASSED       리포트가 원본 로그와 대조되어 통과했다.
+     PASSED       리포트가 수집 근거 원문과 대조되어 통과했다.
      MISMATCH     SubAgent 내부의 수정과 재분석을 거치고도 원본과 어긋나는
                   부분이 남았다. failure_reason에 그 내용이 있다.
-     NOT_VERIFIED 리포트가 없다.
+     NOT_VERIFIED 근거 대조 검증을 완료하지 못했다. 리포트 유무는 has_report로 확인한다.
    - has_report       false면 이번 위임은 리포트를 남기지 못했다.
    - failure_reason  실패하거나 MISMATCH일 때의 사유.
    - analysis_summary  그 구간 리포트의 요약. 충분성 판단은 이 글로 한다.

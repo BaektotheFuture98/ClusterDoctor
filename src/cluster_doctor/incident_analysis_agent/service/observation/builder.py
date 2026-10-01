@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     NodeLogEntry,
+    QueryLogEntry,
 )
 from cluster_doctor.incident_analysis_agent.model.observations import (
     MasterEvent,
@@ -23,6 +24,7 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
     Observations,
     SlowCandidate,
     TimelineRow,
+    merge_query_requests,
 )
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.observation.compute import (
@@ -44,9 +46,9 @@ CANDIDATES_PER_WINDOW = 5
 # HTML이 수백 KB가 된다. 잘린 사실은 ``master_log_total``로 드러난다.
 MASTER_LOG_REPORT_MAX = 120
 
-# 마스터 로그 정렬의 기준점. SSH 폴백으로 온 줄은 timestamp를 뽑을 수 없어
-# None인데, None과 datetime을 직접 비교하면 TypeError가 난다.
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# 시각을 확보하지 못한 기존 마스터 로그는 None일 수 있다.
+# None과 datetime을 직접 비교하지 않도록 정렬 기준점을 둔다.
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _candidate_prompt_line(candidate: SlowCandidate) -> str:
@@ -93,6 +95,7 @@ class ObservationBuilder:
         self.master_logs: dict[object, MasterEvent] = {}
         self.health: list[HealthPoint] = []
         self.candidates: dict[object, SlowCandidate] = {}
+        self.query_requests: tuple[QueryLogEntry, ...] = ()
 
         # 수집하지 못한 보조 근거. 리포트는 유효하지만 일부가 빠졌다는 사실이
         # 운영자에게 반드시 도달해야 한다 — notifier가 배너로 그린다.
@@ -103,7 +106,7 @@ class ObservationBuilder:
         self.master_log_total = 0
 
     @classmethod
-    def from_state(cls, window: TimeRange, state: dict) -> "ObservationBuilder":
+    def from_state(cls, window: TimeRange, state: dict) -> ObservationBuilder:
         """Rebuild a short-lived local builder from AnalysisAgentState snapshots."""
         builder = cls(window, str(state.get("time_basis", "")))
         builder.timeline = {row.minute: row for row in state.get("timeline", ())}
@@ -116,6 +119,7 @@ class ObservationBuilder:
         builder.candidates = {
             candidate_key(item): item for item in state.get("candidates", ())
         }
+        builder.query_requests = tuple(state.get("query_requests", ()))
         builder.gaps = list(state.get("gaps", ()))
         builder.degraded = bool(state.get("degraded", False))
         builder.master_log_total = int(state.get("master_log_total", 0))
@@ -130,6 +134,7 @@ class ObservationBuilder:
             "master_events": observations.master_events,
             "health": observations.health,
             "candidates": observations.candidates,
+            "query_requests": observations.query_requests,
             "gaps": tuple(self.gaps),
             "degraded": self.degraded,
             "time_basis": self.time_basis,
@@ -139,8 +144,9 @@ class ObservationBuilder:
     def mark_gap(self, observation: str) -> str:
         """근거가 일부 빠졌다는 사실을 남긴다. 리포트는 버리지 않는다.
 
-        ``degraded``와 나누는 기준은 "분석이 성립했는가"다. 보조 조사가 실패해도
-        주 분석 결과는 온전하므로 리포트를 버릴 이유가 없다.
+        일부 소스·구간 또는 보조 조사의 실패는 gap으로 남기고 확보한 결과는 유지한다.
+        세 주 소스의 모든 구간 조회 실패나 수집 자체의 중단은 호출자가 별도로
+        ``degraded``를 설정한다. 이 메서드는 수집 성공 여부를 판정하지 않는다.
         """
         self.gaps.append(observation)
         _logger.info("[analysis] gap: %s", observation)
@@ -168,44 +174,6 @@ class ObservationBuilder:
                     rendered=format_log_line(entry),
                 )
 
-    def record_master_text(self, text: str) -> None:
-        """SSH 폴백으로 온 마스터 로그. 줄 자체가 키다.
-
-        ES 로그 줄에서 시각·레벨·로거를 뽑는다. 세 칸을 비워 두면 리포트가
-        사건별로 묶을 때 쓰는 키가 모든 줄에 대해 같은 값이 되어 수백 줄이
-        헤더 한 줄로 붕괴한다.
-
-        뽑지 못한 줄(스택 트레이스 연속 행 등)은 버리지 않는다. 값이 없다는
-        것과 줄이 없다는 것은 다르고, 렌더러가 그런 줄을 따로 다룬다.
-        """
-        from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
-            ES_LOG_LINE_RE,
-        )
-
-        for line in text.splitlines():
-            if not line.strip() or line in self.master_logs:
-                continue
-            timestamp = None
-            level = ""
-            logger_name = ""
-            match = ES_LOG_LINE_RE.match(line)
-            if match:
-                level = match.group(2).strip()
-                logger_name = match.group(3).strip()
-                try:
-                    timestamp = datetime.fromisoformat(match.group(1)).replace(
-                        tzinfo=KST
-                    )
-                except ValueError:
-                    timestamp = None
-            self.master_logs[line] = MasterEvent(
-                timestamp=timestamp,
-                level=level,
-                logger=logger_name,
-                line=line,
-                rendered=line,
-            )
-
     def record_candidates(self, entries: list[LogEntry]) -> None:
         """느린 요청 후보에 id를 붙여 기록한다.
 
@@ -230,6 +198,10 @@ class ObservationBuilder:
         운영자에게는 "아무 일도 없던 시간"으로 보인다.
         """
         try:
+            self.query_requests = merge_query_requests(
+                self.query_requests,
+                tuple(e for e in entries if isinstance(e, QueryLogEntry)),
+            )
             merge_node_rows(self.nodes, node_metric_summary(entries))
             self.record_candidates(entries)
             self.record_timeline(entries)
@@ -286,8 +258,8 @@ class ObservationBuilder:
         수집 중에는 병합이 쉬운 dict로 들고 있다가 여기서 정렬된 tuple이 된다.
         리포트에 실린 뒤에는 바뀌지 않아야 하므로 frozen 타입으로 옮긴다.
         """
-        # timestamp가 있는 줄을 먼저, 시간순으로. SSH 폴백 줄(timestamp 없음)은
-        # 뒤로 보내되 넣은 순서를 유지한다 — 원본 파일의 순서가 곧 시간순이다.
+        # timestamp가 있는 줄을 시간순으로 정렬한다. 시각이 없는 기존 기록은
+        # 뒤로 보내고 입력 순서를 유지한다.
         ordered_master = sorted(
             enumerate(self.master_logs.values()),
             key=lambda pair: (
@@ -300,6 +272,7 @@ class ObservationBuilder:
 
         return Observations(
             time_basis=self.time_basis,
+            query_requests=self.query_requests,
             requested=((self.window.start, self.window.end),),
             timeline=tuple(self.timeline[minute] for minute in sorted(self.timeline)),
             nodes=tuple(sorted(self.nodes.values(), key=lambda row: row.node)),

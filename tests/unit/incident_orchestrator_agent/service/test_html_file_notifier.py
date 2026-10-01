@@ -1,4 +1,10 @@
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    EvidenceSource,
+)
 from cluster_doctor.incident_analysis_agent.model.observations import (
     Observations,
     SlowCandidate,
@@ -9,13 +15,9 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
     render_report,
-    _sections_from_report,
 )
 
-from datetime import datetime, timezone
-from decimal import Decimal
-
-_UTC = timezone.utc
+_UTC = UTC
 
 
 def test_render_report_includes_offender_section():
@@ -28,12 +30,11 @@ def test_render_report_includes_offender_section():
         company="마크로밀엠브레인",
         user="mqtai02@embrain.com",
     )
-    report = IncidentAnalysisReport(observations=Observations(candidates=(candidate,)), evidence=())
+    report = IncidentAnalysisReport(
+        observations=Observations(candidates=(candidate,)), evidence=()
+    )
     html = render_report(report)
     assert "가해자 집계 (관측값)" in html
-
-    sections = _sections_from_report(report)
-    assert any(section.title == "가해자 집계 (관측값)" for section in sections)
 
 
 def test_render_report_includes_timeline_citation_details():
@@ -54,7 +55,9 @@ def test_render_report_includes_timeline_citation_details():
             message="search rejected 1",
         ),
     )
-    report = IncidentAnalysisReport(observations=Observations(timeline=(row,)), evidence=evidence)
+    report = IncidentAnalysisReport(
+        observations=Observations(timeline=(row,)), evidence=evidence
+    )
     html = render_report(report)
     assert "근거 원문 (출처별)" in html
-    assert "<details class=\"timeline-observations\">" in html
+    assert '<details class="timeline-observations">' in html

@@ -106,6 +106,38 @@ Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `IncidentAn
 evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신, 인과 역전과 모순을
 검사하고, 주장이 원문과 맞는지도 확인한다.
 
+리포트는 핵심 요약 → 주요 타임라인 → 원인 판단 → 상세 자료 → 분석 범위와 한계 순으로
+구성한다. 타임라인은 사건 시작 시각별로 관측 → 대표 원문 → 해석·의심을 표시한다.
+다른 시각의 사건은 분리하고 반복 로그는 첫·마지막 시각과 건수를 유지한다. 관측된 회복은
+별도 시점으로 표시한다. 대표 원문에는 근거 ID·시각(KST)·노드·출처를 표시하고,
+수집 시각과 조회 구간 등 메타데이터는 펼쳐 확인한다. SSH 근거에는 실제 접속한
+호스트와 로그 파일 경로를, ClickHouse 근거에는 실제 조회한 DB·테이블과 확보한 원본
+호스트·파일 정보를 표시한다. 마스터 로그에서 지목된 문제 노드는 Elasticsearch로
+접속 정보를 조회한 뒤 SSH로 추가 조사한다.
+위치를 확보하지 못한 기존 근거는 `수집 위치 미확인`, 원문이 없는 근거는 `원문 미확보`로
+표시한다. 파일 로그와 구조화된 수집 레코드를 구분하고, 발췌·길이 제한·시각 상속도 명시한다.
+
+원인 확신도와 근거 검증 상태는 별도로 표시한다. 타임라인에서는 근거 최대 3건의 첫 3줄을 보여 주고,
+전체 원문·추가 근거·수집 정보는 펼쳐 확인한다. 전체 지표와 보조 로그 목록은 접힌 상세 자료에 있으며, 수집 실패와
+검증 문제는 상단에서도 확인할 수 있다. 웹폰트·CDN 없이 단일 HTML 파일로 열 수 있다.
+
+검색 요청 분석은 ClickHouse `log` 조회 결과 전체를 키워드 조합·회사·사용자·cmd로
+검색 기간까지 구분해 묶어 평균 실행 시간 내림차순으로 보여 준다. `reg_date`를 검색 시각(KST)으로 표시하고,
+`cmd` 원문과 `agg`/`search`/기타 유형을 구분한다. 요청 수·실패 수·평균·최대·합계와
+첫·마지막 검색 시각을 확인하며, 필터와 정렬은 외부 의존성 없이 HTML 안에서 동작한다.
+집계는 모든 수집 기록을 사용하고 각 조합의 개별 요청 상세는 실행 시간순 상위 20건이다.
+조회 상한에 도달한 구간은 부분 집계로 표시한다. 공통 요청 ID가 없어 동일한 전체 기록은
+중복 조회에서 관측된 최대 건수로 병합한다. `log`는 `SELECT *`로 조회하고 컬럼명으로
+매핑한다. `QueryLogEntry`는 `reg_date`, `keyword`, `success` 등 원본 컬럼 이름과 값을
+유지한다. 알려진 19개 컬럼 외의 추가 컬럼도 보존해 수집 레코드에 원래 이름으로 표시한다.
+검색 대상 기간은 `s_date/e_date`(YYYYMMDD), 검색 일수는 저장된 `date_range`로 표시한다.
+검색 시각 `reg_date`와 데이터 검색 기간은 별도로 표시한다. 요청 상세에는 `keyword_count`,
+`search_count`, `url`도 보이며 `etc`와 추가 컬럼은 전체 수집 레코드에서 확인한다.
+
+외부 시스템이나 LLM 없이 디자인을 확인하려면 `uv run python scripts/preview_report.py`를
+실행한다. `reports/preview-report.html`에 가상 데이터로 만든 미리보기를 저장하며 기존
+장애 리포트는 변경하지 않는다.
+
 모델이 빈 draft를 주거나 report 저장이 실패해도 observation은 전달한다. HTML 파일을 쓸 수
 없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 query 원문과
 company/user 식별자를 담을 수 있으므로 `reports/`는 Git에 넣지 않는다.
@@ -307,10 +339,15 @@ Kafka를 거치지 않는 수동 실행은 `scripts/run_analysis.py`에서
 
 ## 데이터 소스와 metric 해석
 
+분 단위 구간마다 slowlog·쿼리 로그·노드 메트릭을 최대 3개의 작업으로 병렬 조회한다.
+각 소스는 독립적으로 성공·실패 처리하며, 성공한 결과는 유지하고 실패한 소스와
+조회 구간·오류는 리포트의 수집 누락 정보에 남긴다. 정상 조회 0건은 실패로 취급하지 않는다.
+공유 ClickHouse HTTP client는 자동 세션 ID를 끄고 독립적인 조회를 실행한다.
+
 | table | time column | 내용 |
 |---|---|---|
 | `slowlog_v2` | `_source.@timestamp` | slow query index, node, took, hits, shards, query, opaque-id fields |
-| `log` | `reg_date` | ES query execution host, duration, success, command, keyword, company, user |
+| `log` | `reg_date` | 쿼리 로그 전체 컬럼: reg_date, 실행 시간·유형, 검색 기간·일수, 키워드·사용자·회사, URL·건수·etc 등 |
 | `es_node_metric` | `reg_date` | CPU, OS memory, JVM heap, search/write queue와 rejected |
 | `loki_logs` | `timestamp` | master node log line, role, level, logger, filename, host |
 
@@ -347,8 +384,8 @@ asset만 제거하고, `litellm/proxy/` 전체는 실제 `completion()` 경로�
   gap을 전달하지만, 모델 판단의 근본 해결은 아니다.
 - 대기 큐는 메모리 기반이다. 프로세스 종료 시 대기 중인 트리거를 영속 복구하지 않으며,
   실패한 Incident를 자동 재실행하지 않는다. 큐가 가득 차면 새 트리거를 기다리지 않고 버린다.
-- master log 0건과 아직 ingest되지 않음을 구별하지 못한다. SSH fallback은 ClickHouse query가
-  실패한 경우에만 동작한다.
+- master log 0건과 아직 ingest되지 않음을 구별하지 못한다. 마스터 로그는 ClickHouse에서만
+  조회하며, 조회 실패는 gap으로 표시한다. 마스터 노드로 SSH 폴백하지 않는다.
 - data-node log는 SSH credential과 network reachability에 의존한다. Elasticsearch `_nodes`가
   내부 주소를 돌려주면 외부 실행 host의 SSH는 timeout 뒤 gap으로 남는다.
 

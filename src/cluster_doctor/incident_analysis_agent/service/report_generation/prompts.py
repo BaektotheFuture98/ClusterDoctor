@@ -6,8 +6,8 @@
 근거는 ``[id]``로 인용하게 한다. 내용을 옮겨 적게 하면 틀린다 — 그것이 이
 저장소가 두 번 당한 실패이고, Evidence에 id를 붙인 이유 전부다.
 
-문자열 보간을 쓰지 않는다(f-string 아님). 본문의 중괄호가 서식으로 해석되면
-프롬프트가 조용히 망가진다. 값이 들어갈 자리만 ``format``으로 채운다.
+프롬프트 상수와 동적 데이터는 별도 섹션으로 연결한다. 로그와 JSON 안의
+중괄호는 서식 템플릿으로 다시 해석하지 않는다.
 """
 
 from __future__ import annotations
@@ -38,14 +38,22 @@ Log Analysis SubAgent다. 지금 단계는 Cross-source Analysis다.
 _ANALYSIS_RULES = """
 규칙:
 
-- 모든 주장에 evidence_refs를 단다. 근거를 댈 수 없는 주장은 쓰지 않는다.
+- timeline과 findings에는 evidence_refs를, root_causes에는 supporting_evidence_refs를 단다.
+  근거를 댈 수 없는 주장은 쓰지 않는다. summary와 recommendations도 확보한 근거에 기반한다.
 - 반드시 주어진 [id] 중에서만 인용한다. 없는 id를 만들어 내지 않는다.
 - timeline의 at은 인용한 근거의 시각을 **그대로** 쓴다. 반올림하거나 옮기지 않는다.
+- timeline은 새로운 로그 유형, 수치 변화, 노드 확산, 회복 등 특징적인 변화별로 쓴다.
+  description에는 그 시점의 관측과 의심되는 상황을 짧게 구분해 설명한다.
+  서로 다른 시각의 사건을 한 항목으로 몰지 않는다. 시간 순서만으로 인과관계를 단정하지 않는다.
 - 노드 이름은 근거에 실제로 등장한 것만 쓴다.
 - 근거가 부족한 원인을 확정적으로 쓰지 않는다.
   "~이다"가 아니라 "~로 보인다", confidence는 Low로 둔다.
   확정할 수 없다는 것을 쓰는 것이 틀린 확신보다 낫다.
 - 답할 수 없는 물음은 unresolved_questions에 남긴다. 지어내서 채우지 않는다.
+- 수집 누락 정보에는 실패한 소스와 조회 구간이 적혀 있다. 다른 소스에서 확보한
+  근거는 계속 사용하되, 실패한 소스·구간의 상태를 정상 또는 로그 0건으로 단정하지 않는다.
+  정상 조회 0건과 조회 실패를 구분한다. 선별된 근거가 없다는 사실만으로 원본 로그가
+  없다고 단정하지 않는다. 누락 때문에 확인할 수 없는 판단은 unresolved_questions에 남긴다.
 
 이 분석 구간 **밖의** 시간을 봐야 답할 수 있는 것이 있으면
 needs_more_context=true로 두고 suggested_windows에 필요한 범위를 쓴다.
@@ -73,14 +81,22 @@ def build_analysis_prompt(
         f"분석 구간: {window_label}",
     ]
     if analysis_goal:
-        sections += ["", "이 구간을 분석하는 이유 (Supervisor가 정한 목표):", analysis_goal]
+        sections += [
+            "",
+            "이 구간을 분석하는 이유 (Supervisor가 정한 목표):",
+            analysis_goal,
+        ]
     if prior_summary:
         sections += [
             "",
             "같은 Incident의 앞선 분석 결과 (참고용, 이번 구간의 근거가 아니다):",
             prior_summary,
         ]
-    sections += ["", "코드가 센 관측값 (모델이 옮겨 적지 않는다. 참고만 한다):", observation_summary]
+    sections += [
+        "",
+        "코드가 센 관측값 (모델이 옮겨 적지 않는다. 참고만 한다):",
+        observation_summary,
+    ]
     if candidates_for_prompt:
         sections += ["", candidates_for_prompt]
     if gaps:
@@ -118,41 +134,28 @@ def build_revision_prompt(
     evidence: list[Evidence],
 ) -> str:
     """검증이 잡은 불일치를 고쳐 다시 쓰게 한다."""
-    findings = "\n".join(
-        f"- [{item.severity or '미분류'}] {item.title} (근거: {', '.join(item.evidence_refs) or '없음'})"
-        for item in report.findings
-    )
-    causes = "\n".join(
-        f"- {item.statement} (confidence={item.confidence or '미기재'}, "
-        f"근거: {', '.join(item.supporting_evidence_refs) or '없음'})"
-        for item in report.root_causes
-    )
-    timeline = "\n".join(
-        f"- {item.at:%Y-%m-%d %H:%M:%S} {item.description} "
-        f"(근거: {', '.join(item.evidence_refs) or '없음'})"
-        for item in report.timeline
+    editable = report.model_dump_json(
+        include={
+            "summary",
+            "timeline",
+            "findings",
+            "root_causes",
+            "unresolved_questions",
+            "recommendations",
+            "suspect_picks",
+        }
     )
     return "\n".join(
         [
             _REVISION_HEADER,
             "",
             "--- 검증이 지적한 것 ---",
-            "\n".join(f"{index}. {issue}" for index, issue in enumerate(issues, start=1)),
+            "\n".join(
+                f"{index}. {issue}" for index, issue in enumerate(issues, start=1)
+            ),
             "",
-            "--- 현재 리포트 ---",
-            f"요약: {report.summary or '(없음)'}",
-            "",
-            "타임라인:",
-            timeline or "(없음)",
-            "",
-            "발견된 문제:",
-            findings or "(없음)",
-            "",
-            "원인 후보:",
-            causes or "(없음)",
-            "",
-            "미해결 물음:",
-            "\n".join(f"- {item}" for item in report.unresolved_questions) or "(없음)",
+            "--- 현재 리포트 (JSON) ---",
+            editable,
             "",
             _ANALYSIS_RULES,
             "",

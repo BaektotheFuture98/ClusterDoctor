@@ -13,7 +13,10 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from statistics import median
 
-from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+from cluster_doctor.incident_analysis_agent.model.evidence import (
+    Evidence,
+    EvidenceSource,
+)
 from cluster_doctor.incident_analysis_agent.model.observations import (
     MasterEvent,
     Observations,
@@ -23,6 +26,8 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     TimelineAnnotation,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
+    EvidenceCitation,
+    citations,
     cite,
 )
 
@@ -51,6 +56,7 @@ class TimelineCard:
     evidence_refs: tuple[str, ...] = ()
     raw_rows: tuple[TimelineRow, ...] = ()
     citations: tuple[str, ...] = ()
+    evidence_citations: tuple[EvidenceCitation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,7 +75,7 @@ def project_timeline(
     *,
     verification_status: str = "NOT_VERIFIED",
 ) -> tuple[TimelineCard, ...]:
-    """선별 규칙을 적용하고 겹치는 구간을 하나의 카드로 합친다."""
+    """특징적인 사건을 시작 시각별로 투영한다. 반복 신호의 구간은 유지한다."""
     rows = tuple(sorted(observations.timeline, key=lambda row: row.minute))
     evidence = tuple(sorted(evidence, key=lambda item: item.event_time))
 
@@ -83,6 +89,7 @@ def project_timeline(
     signals += _annotation_signals(
         annotations, evidence, verification_status=verification_status
     )
+    signals = _with_recovery_events(signals, evidence)
 
     if not signals:
         if not rows:
@@ -102,7 +109,11 @@ def project_timeline(
 
     by_id = {item.evidence_id: item for item in evidence}
     return tuple(
-        replace(card, citations=_citation_lines(card.evidence_refs, by_id))
+        replace(
+            card,
+            citations=_citation_lines(card.evidence_refs, by_id),
+            evidence_citations=citations(card.evidence_refs, evidence),
+        )
         for card in cards
     )
 
@@ -111,9 +122,50 @@ def _minute(moment: datetime) -> datetime:
     return moment.replace(second=0, microsecond=0)
 
 
-def _groups(
-    rows: tuple[TimelineRow, ...], predicate
-) -> list[tuple[TimelineRow, ...]]:
+def _with_recovery_events(
+    signals: list[_Signal], evidence: tuple[Evidence, ...]
+) -> list[_Signal]:
+    """이미 관측된 회복을 별도 시점으로 표시한다. 회복을 추론하지 않는다."""
+    result = []
+    by_id = {item.evidence_id: item for item in evidence}
+    for signal in signals:
+        text, marker, recovery = signal.item.text.partition(" · 회복 관측:")
+        if not marker or signal.end <= signal.start:
+            result.append(signal)
+            continue
+        recovery_refs = tuple(
+            ref
+            for ref in signal.item.evidence_refs
+            if ref in by_id and _minute(by_id[ref].event_time) == signal.end
+        )
+        result.append(
+            replace(
+                signal,
+                end=max(signal.start, signal.end - _ONE_MINUTE),
+                item=TimelineItem(
+                    text,
+                    tuple(
+                        ref
+                        for ref in signal.item.evidence_refs
+                        if ref not in recovery_refs
+                    ),
+                ),
+            )
+        )
+        recovery = re.sub(r"\b\d{2}:\d{2}\s+", "", recovery.strip())
+        result.append(
+            _Signal(
+                start=signal.end,
+                end=signal.end,
+                severity="Info",
+                category="impact",
+                item=TimelineItem("회복 관측: " + recovery, recovery_refs),
+            )
+        )
+    return result
+
+
+def _groups(rows: tuple[TimelineRow, ...], predicate) -> list[tuple[TimelineRow, ...]]:
     grouped: list[list[TimelineRow]] = []
     for row in rows:
         if not predicate(row):
@@ -144,9 +196,7 @@ def _refs_between(
     return tuple(dict.fromkeys(refs))
 
 
-def _next_row(
-    rows: tuple[TimelineRow, ...], moment: datetime
-) -> TimelineRow | None:
+def _next_row(rows: tuple[TimelineRow, ...], moment: datetime) -> TimelineRow | None:
     wanted = moment + _ONE_MINUTE
     return next((row for row in rows if row.minute == wanted), None)
 
@@ -217,16 +267,19 @@ def _rejected_signals(
         lambda row: row.search_rejected_max > 0 or row.write_rejected_max > 0,
     ):
         previous = _previous_row(rows, group[0].minute)
-        if (
-            previous is not None
-            and (previous.failed or previous.counts.get("node_metric", 0) <= 0)
+        if previous is not None and (
+            previous.failed or previous.counts.get("node_metric", 0) <= 0
         ):
             previous = None
         search_start = (
-            previous.search_rejected_max if previous is not None else group[0].search_rejected_max
+            previous.search_rejected_max
+            if previous is not None
+            else group[0].search_rejected_max
         )
         write_start = (
-            previous.write_rejected_max if previous is not None else group[0].write_rejected_max
+            previous.write_rejected_max
+            if previous is not None
+            else group[0].write_rejected_max
         )
         search_end = group[-1].search_rejected_max
         write_end = group[-1].write_rejected_max
@@ -396,7 +449,9 @@ def _latency_peak_signals(
         row for row in rows if not row.failed and row.runtime_max is not None
     )
     if runtime_rows:
-        values = [row.runtime_max for row in runtime_rows if row.runtime_max is not None]
+        values = [
+            row.runtime_max for row in runtime_rows if row.runtime_max is not None
+        ]
         baseline = median(values)
         threshold = baseline * 2
         warning_groups = _groups(
@@ -506,7 +561,9 @@ def _volume_spike_signals(
     )
     signals: list[_Signal] = []
     for source in sources:
-        nonempty = [row.counts.get(source, 0) for row in rows if row.counts.get(source, 0) > 0]
+        nonempty = [
+            row.counts.get(source, 0) for row in rows if row.counts.get(source, 0) > 0
+        ]
         if not nonempty:
             continue
         baseline = median(nonempty)
@@ -733,10 +790,16 @@ def _master_signals(
             ]
 
         groups: list[list[MasterEvent]] = []
-        for event in sorted(raw, key=lambda event: event.timestamp or refs[0].event_time):
+        for event in sorted(
+            raw, key=lambda event: event.timestamp or refs[0].event_time
+        ):
             if event.timestamp is None:
                 continue
-            if groups and _minute(event.timestamp) - _minute(groups[-1][-1].timestamp) <= _ONE_MINUTE:
+            if (
+                groups
+                and _minute(event.timestamp) - _minute(groups[-1][-1].timestamp)
+                <= _ONE_MINUTE
+            ):
                 groups[-1].append(event)
             else:
                 groups.append([event])
@@ -779,7 +842,9 @@ def _health_signals(
     signals: list[_Signal] = []
     for index, point in enumerate(points):
         status = point.status.lower()
-        if status not in ("red", "yellow") or not (window_start <= point.at <= window_end):
+        if status not in ("red", "yellow") or not (
+            window_start <= point.at <= window_end
+        ):
             continue
         severity = "Critical" if status == "red" else "Warning"
         text = (
@@ -898,37 +963,29 @@ def _merge_cards(
         ),
     )
     groups: list[list[_Signal]] = []
-    current_end: datetime | None = None
     for signal in ordered:
-        if (
-            groups
-            and current_end is not None
-            and signal.start <= current_end + _ONE_MINUTE
-        ):
+        if groups and signal.start == groups[-1][0].start:
             groups[-1].append(signal)
-            current_end = max(current_end, signal.end)
         else:
             groups.append([signal])
-            current_end = signal.end
 
     cards: list[TimelineCard] = []
     for group in groups:
         start = min(signal.start for signal in group)
         end = max(signal.end for signal in group)
-        severity = max(
-            (signal.severity for signal in group),
-            key=lambda level: _SEVERITY_RANK[level],
-            default="Info",
-        ) or "Info"
+        severity = (
+            max(
+                (signal.severity for signal in group),
+                key=lambda level: _SEVERITY_RANK[level],
+                default="Info",
+            )
+            or "Info"
+        )
         impacts = _items(group, "impact")
         causes = _items(group, "cause")
         interpretations = _items(group, "interpretation")
         refs = tuple(
-            dict.fromkeys(
-                ref
-                for signal in group
-                for ref in signal.item.evidence_refs
-            )
+            dict.fromkeys(ref for signal in group for ref in signal.item.evidence_refs)
         )
         representative = _representative(group)
         raw_rows = tuple(row for row in rows if start <= row.minute <= end)
