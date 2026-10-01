@@ -23,6 +23,10 @@ padding-block:32px 64px}
 header{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line);
 padding-bottom:24px}
 header .hint{margin:0}
+.header-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.demo-badge{padding:1px 8px;border:1px solid var(--warn);border-radius:4px;
+background:var(--warn-soft);color:var(--warn);font-size:11px;font-weight:700;
+letter-spacing:.08em}
 .eyebrow{margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;
 text-transform:uppercase;color:var(--accent-ink)}
 h1{margin:0;font-size:clamp(26px,4vw,30px);font-weight:700;line-height:1.25;
@@ -38,21 +42,36 @@ h3{font-weight:600}
 p{margin:0 0 12px;max-width:72ch}
 .hint{color:var(--ink-2);font-size:13px}
 .section-label{margin:0 0 8px;font-size:12px;color:var(--ink-2)}
-.banner{margin-top:24px;padding:12px 16px;background:var(--warn-soft);
-border:1px solid var(--warn);border-left-width:3px;border-radius:6px;font-size:13px}
-.banner ul{margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
-.report-nav{display:flex;flex-wrap:wrap;gap:12px 24px;padding:16px 0;
-border-bottom:1px solid var(--line)}
+.alert-card{margin-top:16px;padding:16px 24px;background:var(--warn-soft);
+border:1px solid var(--warn);border-left-width:3px;border-radius:8px;font-size:13px}
+.alert-card h2{margin:0 0 8px;padding:0;border:0;font-size:16px}
+.alert-card h3{margin:16px 0 0;font-size:14px}
+.alert-card p{margin:0 0 8px}
+.alert-card ul{margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.alert-card details summary{cursor:pointer;font-weight:600}
+.report-nav{position:sticky;top:0;z-index:1;display:flex;flex-wrap:wrap;gap:12px 24px;
+padding:12px 0;background:var(--page);border-bottom:1px solid var(--line)}
 .report-nav a{font-size:13px;text-decoration:none}
-.incident-summary{margin-top:0;padding:24px 0;border-bottom:1px solid var(--line)}
-.incident-summary .headline{margin:0;border:0;padding:0;font-size:clamp(22px,3vw,26px);
-line-height:1.4}
-.summary-status{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center;margin:16px 0;
-font-size:13px;color:var(--ink-2)}
-.cause-summary{margin-top:12px}
-.next-actions{margin-top:24px}
-.next-actions h3{font-size:15px;margin:0 0 8px}
-.next-actions ul{margin:0;padding-left:24px}
+section[id]{scroll-margin-top:56px}
+.incident-summary{margin-top:24px;padding:24px;background:var(--surface);
+border:1px solid var(--line);border-radius:8px}
+.incident-summary .headline{margin:0 0 24px;border:0;padding:0 0 0 16px;
+border-left:2px solid var(--accent);font-size:clamp(22px,3vw,26px);line-height:1.4}
+.model-tag{display:inline-block;margin-left:4px;padding:0 6px;border-radius:4px;
+background:var(--accent-soft);color:var(--accent-ink);font-size:11px;font-weight:600}
+.summary-field{margin-top:24px}
+.summary-field p{margin:0 0 4px}
+.field-label{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--ink-2)}
+h3.field-label{line-height:1.7}
+.key-observations{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 32px;
+margin:0}
+.key-observations div{display:flex;justify-content:space-between;gap:16px;
+padding-bottom:8px;border-bottom:1px solid var(--line)}
+.key-observations dt{color:var(--ink-2)}
+.key-observations dd{margin:0;font-family:var(--mono);font-size:13px;font-weight:600;
+text-align:right;overflow-wrap:anywhere}
+.cause-summary p:not(.field-label){padding-left:16px;border-left:2px solid var(--accent)}
+.confidence-value{font-weight:700;letter-spacing:.04em}
 .sev{font-size:12px;font-weight:600;white-space:nowrap}
 .sev::before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;
 border-radius:50%;background:currentColor}
@@ -84,7 +103,7 @@ padding:2px 8px;border:1px solid var(--line);border-radius:4px}
 .event-interpretation{margin-top:16px;padding:2px 0 2px 16px;
 border-left:2px solid var(--accent)}
 .hypothesis-label{margin:12px 0 0;font-size:12px;color:var(--ink-2)}
-.evidence-block{margin:16px 0 24px;scroll-margin-top:24px}
+.evidence-block{margin:16px 0 24px;scroll-margin-top:56px}
 .compact-evidence{margin:8px 0;padding:12px 16px;background:var(--surface);
 border:1px solid var(--line);border-radius:6px}
 .evidence-title{margin:0 0 4px;font-family:var(--mono);font-size:12px;font-weight:600}
@@ -115,12 +134,13 @@ summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-of
 .timeline-card{display:block;padding:20px 0}.timeline-card::before{left:-20px;top:28px}
 .event-time{margin-bottom:8px}.event-end{display:inline}
 .event-heading h3{font-size:16px}.compact-evidence{padding:8px 12px}
-.summary-status{gap:8px 16px}.report-nav{gap:8px 16px}}
+.key-observations{grid-template-columns:minmax(0,1fr)}.incident-summary{padding:16px}
+.report-nav{gap:8px 16px}}
 @media print{
 body{background:#fff;color:#111}
 .wrap{max-width:none;padding:0}
 .report-nav,details.source{display:none}
-.incident-summary,.cause-assessment,.timeline-card,.evidence-block,.banner{break-inside:avoid}
+.incident-summary,.cause-assessment,.timeline-card,.evidence-block,.alert-card{break-inside:avoid}
 .evidence-title{break-after:avoid}
 details::details-content{content-visibility:visible;display:block}
 details>summary{display:none}

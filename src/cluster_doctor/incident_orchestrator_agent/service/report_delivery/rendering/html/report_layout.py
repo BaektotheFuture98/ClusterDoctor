@@ -19,6 +19,14 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
     QUERY_CSS,
     render_query_ranking,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import (
+    DEMO_GAP,
+    DEMO_NOTE,
+    confidence_label,
+    format_window,
+    is_demo,
+    key_observations,
+)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
     candidate_details,
     candidate_line,
@@ -159,6 +167,33 @@ def verification(status: str) -> str:
     }.get(status, "미검증")
 
 
+def render_alert(report: IncidentAnalysisReport, notices: list[str]) -> str:
+    out = ['<section class="alert-card" role="note">']
+    if report.verification_status != "PASSED":
+        issues = report.verification_issues
+        out.append(
+            "<h2>Evidence verification issue</h2>"
+            f"<p>{esc(VERIFICATION_NOTE.get(report.verification_status, VERIFICATION_NOTE['NOT_VERIFIED']))}</p>"
+        )
+        if issues:
+            out.append(
+                f'<details><summary>{len(issues)} issues found</summary>'
+                + bullet_list(issues)
+                + "</details>"
+            )
+    if notices:
+        title = "h3" if len(out) > 1 else "h2"
+        out.append(f"<{title}>분석 주의 사항</{title}>" + bullet_list(notices))
+    out.append("</section>")
+    return "".join(out)
+
+
+VERIFICATION_NOTE = {
+    "MISMATCH": "모델이 인용한 근거가 수집된 원문과 일치하지 않습니다. 모델 해석과 원인을 확정된 사실로 읽지 않습니다.",
+    "NOT_VERIFIED": "근거 검증이 완료되지 않았습니다. 모델 해석과 원인을 확정된 사실로 읽지 않습니다.",
+}
+
+
 def render_layout(
     report: IncidentAnalysisReport,
     now: datetime,
@@ -171,28 +206,34 @@ def render_layout(
     narrative = report.narrative
     renderer = CitationRenderer()
     level, reasons = observed_severity(obs)
-    warnings = []
+    demo = is_demo(gaps)
+    notices = []
     if analysis_failed:
-        warnings.append(
+        notices.append(
             "이 진단은 분석에 실패했다. 결론을 신뢰할 수 없다. 확보된 관측값과 근거를 아래에 표시한다."
         )
-    if report.verification_status != "PASSED":
-        warnings.append(
-            verification(report.verification_status)
-            + " · 모델 해석과 원인을 확정된 사실로 읽지 않는다."
-        )
     if any(row.failed for row in obs.timeline):
-        warnings.append("이 리포트에는 분석하지 못한 구간이 있다.")
-    warnings.extend(gaps)
-    warnings.extend(report.verification_issues)
-    warnings = list(dict.fromkeys(warnings))
-    banner = (
-        '<aside class="banner" role="note"><b>분석 주의 사항</b>'
-        + bullet_list(warnings)
-        + "</aside>"
-        if warnings
-        else ""
+        notices.append("이 리포트에는 분석하지 못한 구간이 있다.")
+    notices.extend(gap for gap in gaps if gap != DEMO_GAP)
+    notices = list(dict.fromkeys(notices))
+    unverified = report.verification_status != "PASSED"
+    warnings = list(
+        dict.fromkeys(
+            [
+                *notices,
+                *(
+                    [
+                        verification(report.verification_status)
+                        + " · 모델 해석과 원인을 확정된 사실로 읽지 않는다."
+                    ]
+                    if unverified
+                    else []
+                ),
+                *report.verification_issues,
+            ]
+        )
     )
+    alert = render_alert(report, notices) if unverified or notices else ""
 
     windows = obs.requested or (
         ((report.analyzed_from, report.analyzed_to),)
@@ -200,7 +241,10 @@ def render_layout(
         else ()
     )
     span = (
-        " · ".join(f"{kst_stamp(start)} ~ {kst_stamp(end)}" for start, end in windows)
+        " · ".join(
+            f'<time datetime="{start.isoformat()}/{end.isoformat()}">{esc(format_window(start, end))}</time>'
+            for start, end in windows
+        )
         or "분석 구간 미확인"
     )
     first_cause = narrative.causes[0] if narrative and narrative.causes else None
@@ -214,27 +258,39 @@ def render_layout(
         if narrative and narrative.headline
         else "결론이 확인되지 않음"
     )
-    actions = narrative.recommendations[:3] if narrative else ()
+    key_items = key_observations(obs)
+    severity = (
+        f'<span class="sev sev-{level.lower()}">{esc(level.upper())}</span>'
+        if level
+        else '<span class="hint">이상 신호 없음</span>'
+    )
     summary = (
-        '<section id="summary" class="incident-summary"><p class="section-label">핵심 요약</p>'
+        '<section id="summary" class="incident-summary">'
+        '<p class="section-label">핵심 요약 <span class="model-tag">분석</span></p>'
         f'<h2 class="headline">{esc(headline)}</h2>'
-        '<div class="summary-status">'
-        f'<span class="sev sev-{(level or "Info").lower()}">관측 심각도 {esc(level or "이상 신호 없음")}</span>'
-        f"<span>원인 확신도 {esc(confidence(first_cause.confidence if first_cause else ''))}</span>"
-        f"<span>{esc(verification(report.verification_status))}</span></div>"
-        f'<p class="cause-summary"><b>유력 원인</b> {esc(cause or "확인되지 않음")}</p>'
+        '<div class="summary-field"><p class="field-label">Observed severity</p>'
+        f"<p>{severity}</p>"
         + (
-            f'<p class="hint">관측 근거: {esc(", ".join(reasons))}</p>'
+            f'<p class="hint">{esc(", ".join(reasons))}</p>'
             if reasons
             else ""
         )
-        + '<div class="next-actions"><h3>우선 확인할 것</h3>'
+        + "</div>"
         + (
-            bullet_list(actions)
-            if actions
-            else '<p class="hint">권장 조치가 확인되지 않음</p>'
+            '<div class="summary-field"><h3 class="field-label">주요 관측</h3><dl class="key-observations">'
+            + "".join(
+                f"<div><dt>{esc(k)}</dt><dd>{esc(v)}</dd></div>" for k, v in key_items
+            )
+            + "</dl></div>"
+            if key_items
+            else ""
         )
-        + "</div></section>"
+        + '<div class="summary-field cause-summary">'
+        '<p class="field-label">유력 원인 <span class="model-tag">판단</span></p>'
+        f"<p>{esc(cause or '확인되지 않음')}</p></div>"
+        '<div class="summary-field"><p class="field-label">Root cause confidence <span class="model-tag">판단</span></p>'
+        f'<p class="confidence-value">{esc(confidence_label(first_cause.confidence if first_cause else ""))}</p>'
+        "</div></section>"
     )
 
     cards = []
@@ -459,12 +515,17 @@ def render_layout(
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>ClusterDoctor 진단 리포트 {esc(kst_stamp(now))}</title><style>{css}\n{QUERY_CSS}</style></head>"
-        '<body><main class="wrap"><header><p class="eyebrow">ClusterDoctor / Incident report</p>'
-        f'<h1>{esc(report.cluster or "Elasticsearch")} · 장애 진단</h1><p class="stamp">{esc(span)}</p>'
-        f'<p class="hint">시각 기준 {esc(obs.time_basis or "미확인")} · 생성 {esc(kst_stamp(now))}</p></header>'
-        + banner
+        '<body><main class="wrap"><header>'
+        '<div class="header-top"><p class="eyebrow">ClusterDoctor · Incident Report</p>'
+        + ('<span class="demo-badge">DEMO DATA</span>' if demo else "")
+        + "</div>"
+        + f'<h1>{esc(report.cluster or "Elasticsearch")}</h1><p class="stamp">{span}</p>'
+        + f'<p class="hint">Generated {esc(kst_stamp(now))} · Time basis: {esc(obs.time_basis or "미확인")}</p>'
+        + (f'<p class="hint">{esc(DEMO_NOTE)}</p>' if demo else "")
+        + "</header>"
+        '<nav class="report-nav" aria-label="리포트 목차"><a href="#summary">요약</a><a href="#timeline">사건 흐름</a><a href="#causes">원인 판단</a><a href="#query-ranking">의심 요청</a><a href="#actions">조치</a><a href="#evidence">근거</a></nav>'
         + summary
-        + '<nav class="report-nav" aria-label="리포트 목차"><a href="#summary">요약</a><a href="#timeline">타임라인</a><a href="#query-ranking">검색 요청</a><a href="#causes">원인 판단</a><a href="#details">상세 자료</a><a href="#limits">범위와 한계</a></nav>'
+        + alert
         + timeline
         + render_query_ranking(obs.query_requests)
         + causes
