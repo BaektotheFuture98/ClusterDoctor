@@ -15,23 +15,6 @@ from cluster_doctor.incident_analysis_agent.model.log_entries import (
     SlowlogEntry,
 )
 
-# 한 쿼리가 키워드 200개 넘게 싣고 오는 경우가 있다. 그대로 그리면 한 줄이
-# 2,000자를 넘고(실측 2,029자), 같은 유저가 agg와 count로 같은 목록을 두 번
-# 보내면 4,000자가 연달아 들어간다. 분당 입력 토큰 한도를 넘긴 주범이었다.
-#
-# 진단에 필요한 것은 "이 유저가 어떤 주제를 검색했나"이지 전량이 아니다.
-# 앞 몇 개면 주제가 드러나고, 전체 개수는 따로 알려 주면 "키워드 215개짜리
-# 쿼리"라는 사실도 근거로 쓸 수 있다.
-_MAX_KEYWORDS_SHOWN = 5
-
-
-def _format_keywords(keywords: tuple[str, ...]) -> str:
-    if len(keywords) <= _MAX_KEYWORDS_SHOWN:
-        return f"keyword={list(keywords)}"
-    shown = list(keywords[:_MAX_KEYWORDS_SHOWN])
-    return f"keyword={shown} 외 {len(keywords) - _MAX_KEYWORDS_SHOWN}개"
-
-
 @singledispatch
 def format_log_line(entry) -> str:
     """한 항목을 프롬프트 한 줄로 그린다. 소스마다 그리는 법이 다르다.
@@ -63,9 +46,9 @@ def _format_query_log(entry: QueryLogEntry) -> str:
         f"node={entry.host or '-'} comp={entry.service or '-'} "
         f"[{entry.cmd}] project={entry.project} env={entry.env} "
         f"cluster={entry.cluster} runtime={entry.run_time}s "
-        f"{_format_keywords(entry.keyword)} "
+        f"{entry.keyword_text} "
         f"s_date={entry.s_date} e_date={entry.e_date} date_range={entry.date_range} "
-        f"keyword_count={entry.keyword_count} search_count={entry.search_count}"
+        f"search_count={entry.search_count}"
     )
     if entry.company or entry.user:
         line += f" company={entry.company or '-'} user={entry.user or '-'}"

@@ -21,7 +21,6 @@ def source_row():
         "e_date": 20260930,
         "date_range": 30,
         "keyword": ["a", "b"],
-        "keyword_count": 2,
         "url": "/search",
         "cmd": "agg",
         "service": "web",
@@ -56,10 +55,30 @@ def test_select_all_maps_names_and_preserves_every_column():
     assert entry.success == "N" and entry.is_success is False
     assert entry.keyword == ("a", "b")
     raw = json.loads(record_json(entry))
-    assert set(raw) == set(data)
+    assert set(raw) - {"keyword_omitted"} == set(data)
+    assert raw["keyword_omitted"] == 0
     assert raw["date_range"] == 30 and raw["s_date"] == 20260901
     assert raw["etc"] == data["etc"] and raw["new_column"] == data["new_column"]
     assert raw["success"] == "N"
     record = query_log.to_records([entry])[0]
     assert record.event_time == T0 and record.severity == "ERROR"
     assert json.loads(record.raw) == raw
+
+
+def test_keywords_are_stored_as_first_five():
+    data = source_row() | {"keyword": [f"k{i}" for i in range(9)]}
+    names = tuple(data)
+    entry = query_log.fetch(
+        SimpleNamespace(
+            query=lambda sql, parameters: SimpleNamespace(
+                column_names=names, result_rows=[tuple(data[n] for n in names)]
+            )
+        ),
+        "db.log",
+        TimeRange(T0, T0 + timedelta(minutes=1)),
+    )[0]
+    assert entry.keyword == ("k0", "k1", "k2", "k3", "k4")
+    assert entry.keyword_omitted == 4
+    raw = json.loads(record_json(entry))
+    assert raw["keyword"] == ["k0", "k1", "k2", "k3", "k4"] and raw["keyword_omitted"] == 4
+    assert entry.keyword_text.endswith("외 4개")
