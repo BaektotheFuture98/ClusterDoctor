@@ -8,7 +8,8 @@ LangChain ``BaseChatModel``이 필요하다.
 장치가 새 경로에서만 사라지는 사고가 난다 — 아래 세 가지는 그쪽과 **같은
 값**이어야 하고, 그래서 표를 옮겨 적지 않고 import해서 쓴다:
 
-1. 재시도 0회 (429 증폭 방지)
+1. 자체 재시도 0회 (429 증폭 방지). 429/503은 ``RateLimitRetryMiddleware``가
+   오류 종류를 가려 한 번만 다시 부른다
 2. 요청 타임아웃 600초
 3. temperature를 비롯한 샘플링 인자를 보내지 않는다
 
@@ -38,6 +39,9 @@ from cluster_doctor.bootstrap.configuration.settings import (  # noqa: E402
 # 일부러 가져다 쓴다. 이 둘은 "litellm에 어떤 문자열로 어떤 조건으로
 # 부르는가"이고, 그것이 두 모듈에서 달라지면 provider를 하나 추가할 때
 # 한쪽만 고쳐진다. 복제본을 만드는 것보다 사유를 적고 참조하는 쪽이 낫다.
+from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import (  # noqa: E402
+    AgentCallLogHandler,
+)
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (  # noqa: E402
     _PROVIDER_PREFIX,
     _REQUEST_TIMEOUT_SECONDS,
@@ -126,6 +130,7 @@ def build_chat_model(*, provider: str, model: str, api_key: str) -> BaseChatMode
         # 한 층이 같은 증폭을 그대로 일으킨다. ``model_kwargs``는 그대로
         # ``litellm.completion(**kwargs)``로 흘러간다.
         model_kwargs={"num_retries": 0},
+        callbacks=[AgentCallLogHandler(f"{_PROVIDER_PREFIX[provider]}/{model}")],
         # temperature/top_p/top_k/n은 건드리지 않는다. ChatLiteLLM의 기본값이
         # None이고, litellm은 None을 보내지 않은 것과 같게 취급하므로
         # provider 기본값이 그대로 쓰인다 — 모델을 바꾸면 그 모델에 맞는

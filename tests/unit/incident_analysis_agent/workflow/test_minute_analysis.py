@@ -16,7 +16,7 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import
 def test_parallel_minute_map_reduce_preserves_original_records(reduce_fails):
     start = datetime(2024, 1, 1, tzinfo=UTC)
     records = [RawRecord(record_id=n, event_time=start + timedelta(minutes=n), line=f'original-{n}', node_name='node') for n in range(2)]
-    def llm(messages, tokens, response_format):
+    def llm(messages, response_format):
         if response_format is MapOutput:
             n = 0 if '#0 ' in messages[0]['content'] else 1
             return json.dumps({'selected':[{'record_id':n,'event_type':'failure'}, {'record_id':99}]})

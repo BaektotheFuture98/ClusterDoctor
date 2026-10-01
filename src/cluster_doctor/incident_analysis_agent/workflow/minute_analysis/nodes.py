@@ -15,6 +15,7 @@ import logging
 from collections.abc import Callable
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
+from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
     truncate_raw,
@@ -41,14 +42,8 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state impor
 
 _logger = logging.getLogger(__name__)
 
-# 분별 선별은 번호와 짧은 이유만 돌려주므로 길 이유가 없다. 한도를 낮추면
-# finish_reason="length"로 잘릴 여지도 함께 줄어든다.
-_MAP_MAX_TOKENS = 1024
-# Reduce는 구간 전체의 후보를 보고 고르므로 조금 더 준다.
-_REDUCE_MAX_TOKENS = 2048
-
 # ``complete``에서 provider/model/api_key를 미리 묶어 둔 형태. 호출부는
-# 메시지·토큰 한도·응답 스키마만 정한다.
+# 메시지와 응답 스키마만 정한다.
 StructuredLlmCaller = Callable[..., str]
 EvidenceIdFactory = Callable[[], str]
 
@@ -65,11 +60,11 @@ def make_map_minute(spec: AnalysisSpec, call_llm: StructuredLlmCaller):
         valid_ids = {record.record_id for record in bucket.records}
         prompt = build_map_prompt(spec, bucket)
         try:
-            text = call_llm(
-                [{"role": "user", "content": prompt}],
-                _MAP_MAX_TOKENS,
-                response_format=MapOutput,
-            )
+            with llm_label(f"minute_select {spec.label} {label}"):
+                text = call_llm(
+                    [{"role": "user", "content": prompt}],
+                    response_format=MapOutput,
+                )
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning(
                 "[minute_analysis] %s %s 선별 실패: %s", spec.label, label, exc
@@ -149,11 +144,11 @@ def make_reduce_to_evidence(
         chosen: list[tuple[int, str]] = []
         prompt = build_reduce_prompt(spec, results, records, limit=spec.max_evidence)
         try:
-            text = call_llm(
-                [{"role": "user", "content": prompt}],
-                _REDUCE_MAX_TOKENS,
-                response_format=ReduceOutput,
-            )
+            with llm_label(f"minute_reduce {spec.label}"):
+                text = call_llm(
+                    [{"role": "user", "content": prompt}],
+                    response_format=ReduceOutput,
+                )
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[minute_analysis] %s reduce 실패: %s", spec.label, exc)
             degraded = True

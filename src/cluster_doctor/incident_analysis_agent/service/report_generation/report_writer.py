@@ -15,6 +15,7 @@ from collections.abc import Callable
 from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
+from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
 from cluster_doctor.incident_analysis_agent.model.analysis_contract import LogAnalysisRequest
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
@@ -68,11 +69,11 @@ class ReportWriter:
             gaps=tuple(state.gaps),
         )
         try:
-            text = self._call_llm(
-                [{"role": "user", "content": prompt}],
-                None,
-                response_format=DraftReport,
-            )
+            with llm_label("report_draft"):
+                text = self._call_llm(
+                    [{"role": "user", "content": prompt}],
+                    response_format=DraftReport,
+                )
         except (LlmApiError, LlmResponseError) as exc:
             _logger.error("[subagent] 원인 분석 실패: %s", exc)
             state.mark_gap(f"원인 분석 호출이 실패했다: {exc}")
@@ -104,11 +105,11 @@ class ReportWriter:
     ) -> LogAnalysisReport | None:
         prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence)
         try:
-            text = self._call_llm(
-                [{"role": "user", "content": prompt}],
-                None,
-                response_format=DraftReport,
-            )
+            with llm_label("report_revision"):
+                text = self._call_llm(
+                    [{"role": "user", "content": prompt}],
+                    response_format=DraftReport,
+                )
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[subagent] revision 호출 실패: %s", exc)
             return None
@@ -153,7 +154,6 @@ def build_structured_call(
 
 def _structured_call(
     messages: list[dict],
-    max_tokens: int | None,
     *,
     provider: str,
     model: str,
@@ -165,6 +165,5 @@ def _structured_call(
         provider=provider,
         model=model,
         api_key=api_key,
-        max_tokens=max_tokens,
         response_format=response_format,
     )

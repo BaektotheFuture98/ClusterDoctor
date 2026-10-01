@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
+from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     NodeResolver,
 )
@@ -60,8 +61,6 @@ _logger = logging.getLogger(__name__)
 # 한 번의 분석에서 직접 볼 노드 수. 후보가 많다는 것은 대개 클러스터 전체가
 # 흔들렸다는 뜻이고, 그때는 노드 하나하나보다 마스터 로그 쪽이 더 말해 준다.
 MAX_NODES_PER_ANALYSIS = 2
-
-_CANDIDATE_MAX_TOKENS = 1024
 
 _CANDIDATE_PROMPT = """너는 Elasticsearch 장애 분석 파이프라인의 노드 선별 단계다.
 
@@ -121,11 +120,11 @@ def find_problem_nodes(
         evidence="\n".join(format_evidence_line(item) for item in master_evidence),
     )
     try:
-        text = call_llm(
-            [{"role": "user", "content": prompt}],
-            _CANDIDATE_MAX_TOKENS,
-            response_format=_CandidateOutput,
-        )
+        with llm_label("node_candidates"):
+            text = call_llm(
+                [{"role": "user", "content": prompt}],
+                response_format=_CandidateOutput,
+            )
     except (LlmApiError, LlmResponseError) as exc:
         _logger.warning("[node] 문제 노드 후보 선별 실패: %s", exc)
         return []

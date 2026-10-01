@@ -13,6 +13,7 @@ import re
 from collections.abc import Callable
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
+from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_analysis_agent.model.validation import (
@@ -25,7 +26,6 @@ _logger = logging.getLogger(__name__)
 # 원문 한 건이 프롬프트에서 차지할 수 있는 최대 길이. 원문 전량을 실으면
 # Claim 수만큼 비용이 곱해진다.
 _MAX_RAW_CHARS = 2000
-_MAX_TOKENS = 4096
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 
@@ -56,7 +56,8 @@ class GroundingValidator:
         evidence_map = {item.evidence_id: item for item in evidence if item.evidence_id in wanted}
         prompt = self._build_prompt(claims, evidence_map)
         try:
-            text = self._call_llm([{"role": "user", "content": prompt}], _MAX_TOKENS)
+            with llm_label("grounding_check"):
+                text = self._call_llm([{"role": "user", "content": prompt}])
         except (LlmApiError, LlmResponseError) as exc:
             _logger.warning("[grounding] 원문 대조 호출이 실패했다: %s", exc)
             return [_unverifiable(f"원문 대조 호출이 실패했다: {exc}")]
@@ -102,6 +103,7 @@ class GroundingValidator:
             f"Claims:\n{json.dumps(claims, ensure_ascii=False, indent=2)}\n\n"
             f"Evidence Raw:\n{json.dumps(raw_texts, ensure_ascii=False, indent=2)}\n\n"
             "각 Claim에 대해 PASSED 또는 MISMATCH 판정을 JSON 배열로 반환하라.\n"
+            "reason은 한국어로 쓴다.\n"
             "분석 자체가 원문과 어긋나면 kind는 'analysis_mismatch', "
             "분석은 맞지만 표현이 과하거나 틀리면 'report_mismatch'다.\n"
             '형식: [{"claim": "...", "status": "PASSED|MISMATCH", '

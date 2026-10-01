@@ -18,6 +18,13 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     RefuseDelegationMiddleware,
     restrict_harness,
 )
+from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
+    PseudonymizeMiddleware,
+)
+from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import AgentRoleLogMiddleware
+from cluster_doctor.incident_analysis_agent.agent.runtime.rate_limit_retry import (
+    RateLimitRetryMiddleware,
+)
 from cluster_doctor.incident_analysis_agent.agent.runtime.tool_batch import (
     AnalysisToolAdmissionMiddleware,
 )
@@ -281,6 +288,9 @@ def run_analysis_agent(
             AnalysisToolAdmissionMiddleware(),
             AnalysisValidationMiddleware(seams),
             HideHarnessToolsMiddleware(),
+            AgentRoleLogMiddleware("subagent"),
+            RateLimitRetryMiddleware(),
+            PseudonymizeMiddleware(),
             RefuseDelegationMiddleware(),
         ],
         system_prompt=build_subagent_prompt(
