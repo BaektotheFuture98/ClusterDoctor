@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from cluster_doctor.incident_analysis_agent.model.observations import (
     NodeMetricRow,
     Observations,
+    TimelineRow,
 )
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
@@ -74,11 +75,12 @@ def test_severity_and_confidence_are_separate_labelled_areas():
     )
     s = summary_of(html)
     assert "Observed severity" in s and "Root cause confidence" in s
-    assert "CRITICAL" in s and "HIGH" in s
     assert "●" not in s
     assert s.index("Observed severity") < s.index("Root cause confidence")
     severity = s.split("Observed severity", 1)[1].split("Root cause confidence", 1)[0]
-    assert "HIGH" not in severity
+    confidence = s.split("Root cause confidence", 1)[1]
+    assert "CRITICAL" in severity and "HIGH" not in severity
+    assert "HIGH" in confidence and "CRITICAL" not in confidence
     assert "근거 검증" not in s and "<ul>" not in s.split("주요 관측")[0]
 
 
@@ -171,3 +173,42 @@ def test_nav_has_exactly_six_items():
         "조치",
         "근거",
     ]
+
+
+def test_failed_minute_and_analysis_failure_appear_in_alert_card():
+    log = LogAnalysisReport(incident_id="I", analyzed_from=T0, analyzed_to=T0)
+    obs = Observations(timeline=(TimelineRow(minute=T0, failed=True),))
+    html = render_report(
+        to_incident_analysis_report(log, obs, []), analysis_failed=True
+    )
+    alert = html.split('class="alert-card"', 1)[1].split("</section>", 1)[0]
+    assert "분석에 실패했다" in alert
+    assert "분석하지 못한 구간" in alert
+
+
+def test_no_severity_signal_is_stated_in_words():
+    s = summary_of(render_report(build()))
+    severity = s.split("Observed severity", 1)[1].split("Root cause confidence", 1)[0]
+    assert "이상 신호 없음" in severity
+    assert 'class="sev' not in severity
+
+
+def test_headline_is_escaped_in_summary():
+    log = LogAnalysisReport(
+        incident_id="I", analyzed_from=T0, analyzed_to=T0, summary="<i>x</i>"
+    )
+    html = render_report(to_incident_analysis_report(log, Observations(), []))
+    assert "&lt;i&gt;x&lt;/i&gt;" in summary_of(html)
+    assert "<i>x</i>" not in html
+
+
+def test_nav_is_sticky_only_on_wide_viewports_and_demo_badge_is_neutral():
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_style import (
+        REPORT_CSS,
+    )
+
+    base = REPORT_CSS.split("@media (min-width:701px)", 1)[0]
+    assert "sticky" not in base
+    assert "@media (min-width:701px){.report-nav{position:sticky" in REPORT_CSS
+    badge = REPORT_CSS.split(".demo-badge{", 1)[1].split("}", 1)[0]
+    assert "warn" not in badge

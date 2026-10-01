@@ -103,7 +103,7 @@ def render_layout(
     )
     span = (
         " · ".join(
-            f'<time datetime="{start.isoformat()}/{end.isoformat()}">{esc(format_window(start, end))}</time>'
+            f'<time datetime="{start.isoformat()}">{esc(format_window(start, end))}</time>'
             for start, end in windows
         )
         or "분석 구간 미확인"
@@ -176,7 +176,7 @@ def render_layout(
         interpretations = card.interpretations
         analysis = (
             interpretations
-            if narrative and report.verification_status == "PASSED"
+            if report.verification_status == "PASSED"
             else ()
         )
         title = card.representative_event.split(" · 회복 관측:")[0].split(
