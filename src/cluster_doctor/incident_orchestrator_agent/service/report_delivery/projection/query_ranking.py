@@ -10,6 +10,9 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 )
 
 
+TOP_N = 5
+
+
 def query_type(cmd: str) -> str:
     normalized = cmd.strip().lower()
     return normalized if normalized in ("agg", "search") else "기타"
@@ -111,7 +114,11 @@ def ranking_lines(requests: tuple[QueryLogEntry, ...]) -> list[str]:
     ]
     if any(r.provenance and r.provenance.excerpt for r in requests):
         lines.append("부분 집계: 조회 건수 상한에 도달한 구간이 있습니다.")
-    for i, r in enumerate(query_ranking(requests), 1):
+    ranked = query_ranking(requests)
+    lines.append(
+        f"평균 실행 시간이 느린 상위 {min(TOP_N, len(ranked))}개 조합 (전체 {len(ranked)}개 중)"
+    )
+    for i, r in enumerate(ranked[:TOP_N], 1):
         lines.append(
             f"[{i}] keyword={list(r.keywords)} company={r.company or '미확인'} "
             f"user={r.user or '미확인'} cmd={r.cmd or '미확인'} 유형={r.query_type} "

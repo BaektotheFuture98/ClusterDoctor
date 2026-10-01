@@ -87,6 +87,7 @@ class Links(HTMLParser):
         super().__init__()
         self.ids = []
         self.links = []
+        self.nav_links = []
         self.details = []
         self.in_nav = False
 
@@ -100,9 +101,8 @@ class Links(HTMLParser):
             self.in_nav = True
         if "id" in a:
             self.ids.append(a["id"])
-        # Nav targets (#actions, #evidence) are built in later report sections.
-        if tag == "a" and not self.in_nav and a.get("href", "").startswith("#"):
-            self.links.append(a["href"][1:])
+        if tag == "a" and a.get("href", "").startswith("#"):
+            (self.nav_links if self.in_nav else self.links).append(a["href"][1:])
         if tag == "details":
             self.details.append(a)
 
@@ -123,6 +123,8 @@ def test_summary_timeline_and_visible_source_logs_precede_details():
     p.feed(html)
     assert len(p.ids) == len(set(p.ids))
     assert set(p.links) <= set(p.ids)
+    # #evidence is built in a later report section.
+    assert set(p.nav_links) - {"evidence"} <= set(p.ids)
     assert any(d.get("class") == "log-remainder" for d in p.details)
     assert all("open" not in d for d in p.details if d.get("class") == "detail-group")
     assert len(example().narrative.causes) == 2
