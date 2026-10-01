@@ -14,17 +14,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import timedelta
 
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 
 _logger = logging.getLogger(__name__)
-
-# 타임라인 시각이 근거 시각과 얼마나 벌어져도 되는가. 모델은 분 단위로 반올림해
-# 쓰는 일이 흔하고(14:03:12 → 14:03), 그것까지 불일치로 잡으면 지적이 잡음이
-# 된다. 잡음이 된 지적은 revision을 의미 없이 태운다.
-TIMESTAMP_TOLERANCE = timedelta(seconds=60)
 
 # 확정적 표현. confidence가 낮거나 근거가 얇은데 이런 말을 쓰면 지적한다.
 _DEFINITIVE_MARKERS = (
@@ -83,7 +77,6 @@ def validate_report(
     _check_nodes(report, known, known_nodes, result)
     _check_ordering(report, result)
     _check_overclaiming(report, result)
-    _check_causality(report, known, result)
 
     if result.issues:
         _logger.info("[validator] 불일치 %d건", len(result.issues))
@@ -170,7 +163,7 @@ def _check_timestamps(
         if not cited:
             continue
         if not any(
-            abs(evidence.event_time - item.at) <= TIMESTAMP_TOLERANCE
+            evidence.time_origin == "parsed" and evidence.event_time == item.at
             for evidence in cited
         ):
             observed = ", ".join(
@@ -240,42 +233,6 @@ def _check_overclaiming(report: LogAnalysisReport, result: ValidationResult) -> 
                 f"원인 후보 '{_excerpt(item.statement)}'가 확정적으로 쓰였지만"
                 f"({', '.join(definitive)}) 근거는 {refs}건이고 confidence는 "
                 f"{item.confidence or '미기재'}다. 표현을 낮춰라."
-            )
-
-
-def _check_causality(
-    report: LogAnalysisReport, known: dict[str, Evidence], result: ValidationResult
-) -> None:
-    """원인으로 든 근거가 결과보다 늦지 않은가.
-
-    원인은 결과보다 먼저 관측되어야 한다. 이것은 의미 판단이 아니라 시각 비교라
-    코드가 할 수 있고, 실제로 자주 어긋난다 — 사고가 눈에 띄는 것은 결과 쪽이라
-    모델이 그쪽 근거를 원인으로 집는다.
-    """
-    finding_times = [
-        known[ref].event_time
-        for item in report.findings
-        for ref in item.evidence_refs
-        if ref in known
-    ]
-    if not finding_times:
-        return
-    earliest_effect = min(finding_times)
-
-    for cause in report.root_causes:
-        cause_times = [
-            known[ref].event_time
-            for ref in cause.supporting_evidence_refs
-            if ref in known
-        ]
-        if not cause_times:
-            continue
-        if min(cause_times) > earliest_effect + TIMESTAMP_TOLERANCE:
-            result.issues.append(
-                f"원인 후보 '{_excerpt(cause.statement)}'의 근거가 "
-                f"{min(cause_times):%H:%M:%S}로, 문제로 지목된 관측"
-                f"({earliest_effect:%H:%M:%S})보다 늦다. 원인은 결과보다 먼저 "
-                "관측되어야 한다. 더 이른 근거를 찾거나 인과 서술을 고쳐라."
             )
 
 

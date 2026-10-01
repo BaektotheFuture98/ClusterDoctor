@@ -75,3 +75,14 @@ def test_ssh_records_mark_inherited_and_fallback_times():
     assert [r.time_origin for r in records] == ["fallback", "parsed", "inherited"]
     assert all(r.provenance == p for r in records)
     assert records[2].raw == " at stack.frame"
+
+
+def test_ssh_timestamp_keeps_fraction_and_offset():
+    records=to_records('[2026-10-01T00:00:02.123+00:00][WARN ][logger] error',fallback_time=T0)
+    assert records[0].time_origin=='parsed'
+    assert records[0].event_time==T0+timedelta(seconds=2,milliseconds=123)
+
+
+def test_ssh_timestamp_keeps_comma_fraction():
+    records=to_records('[2026-10-01T09:00:02,123][WARN ][logger] error',fallback_time=T0)
+    assert records[0].event_time==T0+timedelta(seconds=2,milliseconds=123)
