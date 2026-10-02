@@ -765,8 +765,17 @@ def _master_signals(
     selected: dict[str, list[Evidence]] = {}
     for item in evidence:
         if item.source is EvidenceSource.MASTER_LOG:
-            selected.setdefault(_master_key_from_evidence(item), []).append(item)
+            match=next((event for event in observations.master_events
+                if event.timestamp==item.event_time
+                and event.node==(item.node_name or item.node_id or '')
+                and (event.line and event.line in (item.raw or item.message))),None)
+            key=_master_key_from_event(match) if match else _master_key_from_evidence(item)
+            selected.setdefault(key, []).append(item)
 
+    # Collected master observations remain visible when LLM selection yields no evidence.
+    for event in observations.master_events:
+        if event.timestamp is not None and event.level.strip().upper() in ('ERROR','WARN','WARNING'):
+            selected.setdefault(_master_key_from_event(event), [])
     signals: list[_Signal] = []
     for key, refs in selected.items():
         raw = [

@@ -12,7 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
-from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow, SourceWindowStatus
+from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow, SourceWindowStatus, MasterEvent
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource, EvidenceProvenance
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, RootCause, ReportRecommendation, VerificationStatus
@@ -23,7 +23,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import DEMO_GAP
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 
-VARIANTS={'default':VerificationStatus.PASSED,'ssh':VerificationStatus.PASSED,'mismatch':VerificationStatus.MISMATCH,'not-verified':VerificationStatus.NOT_VERIFIED}
+VARIANTS={'default':VerificationStatus.PASSED,'ssh':VerificationStatus.PASSED,'mismatch':VerificationStatus.MISMATCH,'not-verified':VerificationStatus.NOT_VERIFIED,'ssh-not-verified':VerificationStatus.NOT_VERIFIED,'master':VerificationStatus.PASSED,'all':VerificationStatus.PASSED}
 
 
 def build_example(variant='default'):
@@ -44,12 +44,18 @@ def build_example(variant='default'):
     builder.nodes['data-32']=NodeMetricRow(node='data-32',samples=5,cpu_max=47,jvm_heap_max=78,search_queue_max=12,write_queue_max=4,search_rejected_max=8391)
     seq=count(1);evidence=required_query_evidence(tuple(requests),new_evidence_id=lambda:f'E-demo-{next(seq)}')
     query_refs=tuple(e.evidence_id for e in evidence)
-    if variant=='ssh':
+    if variant in ('ssh','ssh-not-verified','all'):
         evidence.append(Evidence(evidence_id='E-demo-ssh',event_time=start+timedelta(minutes=1,microseconds=123456),source=EvidenceSource.NODE_LOG,
             node_name='data-99',severity='Warning',message='GC overhead',raw='[2026-10-01T14:03:00.123456+09:00][WARN][JvmGcMonitorService] [data-99] GC overhead: spent [500ms] collecting in the last [1s]',
             provenance=EvidenceProvenance(method='ssh',host='192.0.2.99',file_path='/var/log/elasticsearch/demo-es.log',query_from=window.start,query_to=window.end,collected_at=window.end)))
         evidence.append(Evidence(evidence_id='E-demo-stack',event_time=start+timedelta(minutes=1),source=EvidenceSource.NODE_LOG,
             node_name='data-99',time_origin='inherited',message='stack context',raw='    at example.search.QueryPhase.execute(QueryPhase.java:42)\n    at example.search.SearchService.run(SearchService.java:87)',provenance=evidence[-1].provenance))
+    if variant in ('master','all'):
+        builder.master_logs['preview']=MasterEvent(timestamp=start+timedelta(minutes=1),node='master-demo',level='WARN',logger='cluster',line='cluster state publication timed out',rendered='cluster state publication timed out')
+    if variant=='all':
+        evidence.append(Evidence(evidence_id='E-demo-slow',event_time=start+timedelta(minutes=1,seconds=10),source=EvidenceSource.SLOWLOG,
+            message='search slowlog took[1500ms]',raw='[2026-10-01T14:03:10+09:00][WARN][index.search.slowlog.query] took[1500ms], source[{"size":500}]',
+            provenance=EvidenceProvenance(method='clickhouse',table='demo.slowlog',query_from=window.start,query_to=window.end)))
     report=LogAnalysisReport(incident_id='DEMO',analyzed_from=window.start,analyzed_to=window.end,
         summary='수집 실행 로그에서 search 1.96초와 bulk 1.94초가 관측됐습니다.',summary_evidence_refs=query_refs[:2],
         root_causes=(RootCause(statement='수집된 실행 기록만으로 지연 원인을 확정할 수 없습니다.',confidence='Low',supporting_evidence_refs=query_refs[:2]),),

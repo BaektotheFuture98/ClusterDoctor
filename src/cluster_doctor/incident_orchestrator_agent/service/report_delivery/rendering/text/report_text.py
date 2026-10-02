@@ -542,10 +542,10 @@ def scrub(text: str) -> str:
     return text.encode("utf-8", "replace").decode("utf-8")
 
 
-def render_text(report: IncidentAnalysisReport) -> str:
+def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
     """Plain fallback with the same execution facts and verification gate as HTML."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
     obs=report.observations
@@ -553,11 +553,14 @@ def render_text(report: IncidentAnalysisReport) -> str:
     out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '핵심 요약',
         f'수집 쿼리 실행 로그 {len(rows)}건',
         f'최대 실행시간 {str(rows[0].execution_seconds)+"s" if rows and rows[0].execution_seconds is not None else "미확인"}',
-        f'분석 해석 검증: {report.verification_status}']
-    narrative=report.narrative if report.verification_status=='PASSED' else None
+        ]
+    narrative=display_narrative(report,analysis_failed=analysis_failed)
     if narrative:
         out.append(narrative.headline)
         out.extend(visible_citations(narrative.headline_citations))
+    else:
+        out.extend(execution_summary(obs))
+        out.append('분석 해석을 확인하지 못해 관측 사실만 표시합니다.')
     out.append('쿼리 실행 추이')
     for p in project_query_trend(obs):
         out.append(f'{stamp(p.start)} ~ {stamp(p.end)} · {p.count if p.count is not None else "미확인"}건 · 최대 {str(p.maximum_seconds)+"s" if p.maximum_seconds is not None else "미확인"} · {p.status}')
@@ -572,9 +575,12 @@ def render_text(report: IncidentAnalysisReport) -> str:
         e=row.record
         out.append(f'{stamp(e.timestamp)} · {e.cmd} · {str(row.execution_seconds)+"s" if row.execution_seconds is not None else "미확인"} · 키워드: {" · ".join(e.keyword) or "없음"} · 대상: {row.target_host or "미확인"} · 요청 호스트: {e.host}')
         out.extend(row.conditions)
+    for _,title,lines in source_log_sections(report):
+        out.append(title)
+        out.extend(lines)
     ssh=ssh_evidence(report.evidence)
+    out.append('SSH 노드 로그')
     if ssh:
-        out.append('SSH 노드 로그')
         out.extend(evidence_text(e) for e in ssh)
     out.append('시스템 지표 · 관측 최대값')
     out.extend(system_maxima(obs.nodes))
@@ -592,7 +598,6 @@ def render_text(report: IncidentAnalysisReport) -> str:
             out.append(str(a))
             out.extend(visible_citations(getattr(a,'citations',())))
     else:out.append('검증을 완료한 원인 판단 없음')
-    out.extend(evidence_text(e) for e in report.evidence if e.source in ('slowlog','master_log'))
     for s in obs.source_statuses:
         if s.status=='failed':out.append(f'{s.source} {s.host} 수집 실패 · {stamp(s.start)}')
     return scrub('\n'.join(out).rstrip()+'\n')

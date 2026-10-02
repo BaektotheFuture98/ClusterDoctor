@@ -30,11 +30,11 @@ def test_recommendation_refs_survive_projection():
     assert report.cited_refs()=={'E-one'}
 
 
-def test_legacy_string_recommendation_is_unverified():
+def test_legacy_string_recommendation_is_sent_to_model_without_ref_requirement():
     report=domain('{"recommendations":["기존 권고"]}')
     assert report.recommendations[0].text=='기존 권고'
     assert report.recommendations[0].evidence_refs==()
-    assert validate_report(report,[E]).issues
+    assert not validate_report(report,[E]).issues
 
 
 def test_unknown_summary_ref_is_preserved_for_validation():
