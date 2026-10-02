@@ -2,6 +2,7 @@ from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import (
     Observations,
@@ -34,7 +35,7 @@ def request(i=0, *, duration="2", cmd="search", keywords=("<keyword>",)):
         e_date=20260930,
         date_range=30,
         search_count=42,
-        url="/search",
+        **request_fields("/search"),
         etc="",
         company="company",
         user="user",
@@ -84,11 +85,10 @@ def test_fetch_marks_partial_query_log_records(monkeypatch):
 
     monkeypatch.setattr(query_log, "MAX_ROWS_PER_SEGMENT_PER_SOURCE", 1)
     entry = replace(request(), keyword=("keyword",), cmd="agg")
+    skipped = {"provenance", "target_host", "index_name", "conditions"}
     data = {
-        f.name: getattr(entry, f.name)
-        for f in fields(entry)
-        if f.name not in ("provenance", "additional_fields")
-    }
+        f.name: getattr(entry, f.name) for f in fields(entry) if f.name not in skipped
+    } | {"url": "/search"}
     client = SimpleNamespace(
         query=lambda *args, **kwargs: SimpleNamespace(
             column_names=tuple(data), result_rows=[tuple(data.values())]

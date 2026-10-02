@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations, SourceWindowStatus
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource, EvidenceProvenance
@@ -12,7 +13,7 @@ T0=datetime(2026,10,1,tzinfo=UTC)
 
 def report(status='NOT_VERIFIED'):
     q=QueryLogEntry(reg_date=T0,host='client',run_time=Decimal('1.96'),success='Y',s_date=1,e_date=2,date_range=2,
-        keyword=('a','b','<script>','d','e'),url='POST http://es:9200/index/_search\n{"size":20}',cmd='search',
+        keyword=('a','b','<script>','d','e'),**request_fields('POST http://es:9200/index/_search\n{"size":20}'),cmd='search',
         service='',env='',project='',company='',user='',search_count=1,etc='',cluster='es')
     logs=tuple(replace(q,run_time=Decimal('1.96')-Decimal(n)/100, cmd='bulk' if n==1 else 'search') for n in range(12))
     e=Evidence(evidence_id='INTERNAL_ID',event_time=T0,source=EvidenceSource.NODE_LOG,node_name='node',message='warn',raw='WARN <stack>&',

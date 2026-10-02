@@ -254,7 +254,6 @@ def slow_candidates(logs: list[LogEntry], limit: int = 5) -> list[SlowCandidate]
                 request_host=entry.host,
                 target_host=view.target_host or "",
                 query_record_key=view.record_key,
-                query=entry.url,
                 index_name=view.index_name or "",
                 run_time=entry.run_time,
                 cmd=entry.cmd,
