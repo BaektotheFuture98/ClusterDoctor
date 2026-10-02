@@ -364,8 +364,14 @@ class EvidenceCollector:
             )
         except Exception as exc:
             state.mark_gap(f"마스터 로그 조회 실패 (ClickHouse): {exc}")
+            state.record_source_status(SourceWindowStatus("master_log", window.start,
+                window.end, "failed", None, datetime.now(KST), str(exc)))
             return []
 
+        state.record_source_status(SourceWindowStatus("master_log", window.start,
+            window.end,
+            "limited" if len(entries) >= master_log.MASTER_LOG_MAX_LINES else "ok",
+            len(entries), datetime.now(KST)))
         state.record_master_logs(entries)
         records = master_log.to_records(entries)
 

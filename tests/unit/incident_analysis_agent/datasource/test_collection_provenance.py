@@ -202,6 +202,21 @@ def test_data_node_ssh_investigation_keeps_collection_location():
     assert evidence.node_id == "node-id"
 
 
+def test_node_investigation_without_candidates_records_one_skipped_status():
+    result = investigate_nodes(
+        [],
+        WINDOW,
+        resolver=SimpleNamespace(resolve=lambda _: pytest.fail("resolver called")),
+        fetcher=Fetcher(),
+        call_llm=select_first,
+        new_evidence_id=lambda: "E-1",
+    )
+    (status,) = result.source_statuses
+    assert (status.source, status.status, status.row_count) == ("node_log", "skipped", None)
+    assert status.error == "마스터 로그에서 조사 대상 노드가 없다"
+    assert (status.start, status.end) == (WINDOW.start, WINDOW.end)
+
+
 def test_cluster_state_keeps_api_response_and_provenance():
     payload = {"status": "red", "unassigned_shards": 1}
     cluster = SimpleNamespace(
