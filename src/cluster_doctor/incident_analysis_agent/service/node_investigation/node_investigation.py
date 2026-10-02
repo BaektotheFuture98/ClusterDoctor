@@ -235,8 +235,6 @@ def investigate_nodes(
             continue
 
         result.investigated.append(resolved)
-        if len(text) > MAX_RAW_LOG_CHARS:
-            provenance = provenance.model_copy(update={"excerpt": True})
         records = node_log.to_records(
             text[:MAX_RAW_LOG_CHARS],
             fallback_time=window.start,

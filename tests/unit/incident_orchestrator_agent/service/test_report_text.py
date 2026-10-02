@@ -116,5 +116,5 @@ def test_timeline_card_lines_include_source_grouped_citations():
     )
     report = IncidentAnalysisReport(observations=obs, evidence=evidence)
     text = render_text(report)
-    assert "slowlog took=12s" in text and "원문 없음" in text
+    assert "slowlog took=12s" in text and "원문 없음" not in text
     assert "E-1" not in text and "E-2" not in text

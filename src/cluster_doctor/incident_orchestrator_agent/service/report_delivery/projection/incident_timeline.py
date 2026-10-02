@@ -768,7 +768,7 @@ def _master_signals(
             match=next((event for event in observations.master_events
                 if event.timestamp==item.event_time
                 and event.node==(item.node_name or item.node_id or '')
-                and (event.line and event.line in (item.raw or item.message))),None)
+                and (event.line and event.line in item.message)),None)
             key=_master_key_from_event(match) if match else _master_key_from_evidence(item)
             selected.setdefault(key, []).append(item)
 

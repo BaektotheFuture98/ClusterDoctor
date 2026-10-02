@@ -15,7 +15,7 @@ def evidence_text(e: Evidence) -> str:
     time = stamp(e.event_time) if e.time_origin == 'parsed' else ('앞선 로그 문맥 · 시각 미확인' if e.time_origin == 'inherited' else '시각 미확인')
     provenance=e.provenance
     location=' · '.join(str(x) for x in (provenance.host,provenance.file_path,provenance.table,provenance.endpoint) if x) if provenance else ''
-    return ' · '.join(x for x in (time,str(e.source),e.node_name or e.node_id or '',location,'원문 잘림' if e.raw_truncated else '',e.raw or e.message + ' (원문 없음)') if x)
+    return ' · '.join(x for x in (time,str(e.source),e.node_name or e.node_id or '',location,e.message) if x)
 
 
 def visible_citations(citations):

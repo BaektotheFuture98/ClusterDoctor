@@ -73,26 +73,12 @@ def citation_lines(citation: EvidenceCitation) -> list[str]:
             lines.append("수집 범위: 필터링된 발췌 (전체 로그가 아님)")
         if not any((p.host, p.table, p.file_path, p.endpoint)):
             lines.append("수집 위치 미확인")
-    if e.raw_truncated:
-        lines.append("일부 발췌: 길이 상한으로 원문이 잘림")
     return lines
-
-
-def raw_label(citation: EvidenceCitation) -> str:
-    e = citation.evidence
-    if e is None:
-        return "원문 미확보"
-    if not e.raw:
-        return "원문 미확보 · 근거 요약"
-    return {"log": "로그 원문", "record": "수집 레코드", "query": "쿼리 원문"}[
-        e.raw_kind
-    ]
 
 
 def citation_text(citation: EvidenceCitation) -> str:
     e = citation.evidence
-    raw = (e.raw or e.message) if e else ""
-    return "\n".join([*citation_lines(citation), raw_label(citation), raw])
+    return "\n".join([*citation_lines(citation), e.message if e else ""])
 
 
 def cite(evidence: Evidence) -> str:

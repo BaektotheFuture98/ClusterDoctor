@@ -38,8 +38,7 @@ def _fields(e: Evidence) -> list[tuple[str, str]]:
         ("Node", e.node_name or e.node_id),
         ("Event Type", e.event_type),
         ("Severity", e.severity),
-        # A message identical to raw is shown once, in the raw block.
-        ("Message", e.message if e.message != e.raw else None),
+        ("Message", e.message),
     ]
     if p:
         pairs += [
@@ -61,19 +60,6 @@ def _fields(e: Evidence) -> list[tuple[str, str]]:
     return [(k, v) for k, v in pairs if v]
 
 
-def _raw_block(e: Evidence) -> str:
-    # Only a collected raw is shown; message is a summary, never a stand-in for it.
-    if not e.raw:
-        return ""
-    kind = " raw-query" if e.raw_kind == "query" else ""
-    truncated = '<span class="truncated">잘림</span>' if e.raw_truncated else ""
-    return (
-        '<details class="raw-block"><summary>View raw log'
-        f"{truncated}</summary>"
-        f'<pre class="raw{kind}"><code>{esc(e.raw)}</code></pre></details>'
-    )
-
-
 def render_evidence_item(e: Evidence) -> str:
     node = e.node_name or e.node_id
     stamp = e.event_time.astimezone(KST).strftime("%H:%M")
@@ -92,7 +78,6 @@ def render_evidence_item(e: Evidence) -> str:
             f"<div><dt>{esc(k)}</dt><dd>{esc(v)}</dd></div>" for k, v in _fields(e)
         )
         + "</dl>"
-        + _raw_block(e)
         + "</details>"
     )
 
@@ -101,7 +86,7 @@ def render_evidence(evidence: tuple[Evidence, ...], observation_detail: str) -> 
     items = sorted(evidence, key=lambda e: (e.event_time, e.evidence_id))
     return (
         '<section id="evidence"><h2>근거</h2>'
-        '<p class="hint">수집된 근거 원문입니다. 항목을 펼치면 수집 정보와 원문을 볼 수 있습니다.</p>'
+        '<p class="hint">수집된 근거입니다. 항목을 펼치면 수집 정보를 볼 수 있습니다.</p>'
         + (
             '<div class="evidence-list">'
             + "".join(render_evidence_item(e) for e in items)

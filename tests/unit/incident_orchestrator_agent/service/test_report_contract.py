@@ -16,7 +16,7 @@ def report(status='NOT_VERIFIED'):
         keyword=('a','b','<script>','d','e'),**request_fields('POST http://es:9200/index/_search\n{"size":20}'),cmd='search',
         service='',env='',project='',company='',user='',search_count=1,etc='',cluster='es')
     logs=tuple(replace(q,run_time=Decimal('1.96')-Decimal(n)/100, cmd='bulk' if n==1 else 'search') for n in range(12))
-    e=Evidence(evidence_id='INTERNAL_ID',event_time=T0,source=EvidenceSource.NODE_LOG,node_name='node',message='warn',raw='WARN <stack>&',
+    e=Evidence(evidence_id='INTERNAL_ID',event_time=T0,source=EvidenceSource.NODE_LOG,node_name='node',message='WARN <stack>&',raw='WARN <stack>&',
         provenance=EvidenceProvenance(method='ssh',file_path='/es/log',host='es'),time_origin='fallback')
     obs=Observations(query_requests=logs,requested=((T0,T0+timedelta(minutes=1)),),source_statuses=(SourceWindowStatus('es_query_log',T0,T0+timedelta(minutes=1),'ok',12,T0),))
     return IncidentAnalysisReport(observations=obs,evidence=(e,),narrative=Narrative(headline='unverified conclusion',root_cause='unverified cause'),verification_status=status)
@@ -142,7 +142,7 @@ def test_master_observations_survive_without_selected_evidence_or_ssh():
 
 
 def test_slowlog_and_ssh_do_not_depend_on_master_records():
-    r=report();slow=r.evidence[0].model_copy(update={'source':EvidenceSource.SLOWLOG,'raw':'slow-only <raw>','message':'slow-only','time_origin':'parsed'})
+    r=report();slow=r.evidence[0].model_copy(update={'source':EvidenceSource.SLOWLOG,'raw':'slow-only <raw>','message':'slow-only <raw>','time_origin':'parsed'})
     r=replace(r,evidence=(slow,*r.evidence))
     html=render_report(r)
     assert 'slow-only &lt;raw&gt;' in html.split('id="slowlogs"')[1].split('</section>')[0]
