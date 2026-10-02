@@ -25,6 +25,7 @@ class RawRecord:
     raw_kind: Literal["log", "record", "query"] = "log"
     raw_truncated: bool = False
     time_origin: Literal["parsed", "inherited", "fallback"] = "parsed"
+    record_key: str | None = None
 
     def as_prompt_line(self) -> str:
         return f"#{self.record_id} {self.line} | time_origin={self.time_origin} at={self.event_time.isoformat()} raw_truncated={self.raw_truncated}"

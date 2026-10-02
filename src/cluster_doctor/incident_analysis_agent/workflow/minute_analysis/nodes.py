@@ -178,7 +178,7 @@ def make_reduce_to_evidence(
             record = records.get(record_id)
             if record is None:
                 continue
-            key = (record.line, record.raw, record.event_time, record.node_id, record.node_name, record.provenance)
+            key = (record.line, record.record_key, record.event_time, record.node_id, record.node_name, record.provenance)
             if key in seen_lines:
                 continue
             seen_lines.add(key)
@@ -200,6 +200,7 @@ def make_reduce_to_evidence(
                     raw_truncated=record.raw_truncated
                     or len(truncate_raw(raw)) != len(raw),
                     time_origin=record.time_origin,
+                    record_key=record.record_key,
                     selection_reason=selection_reason
                     or (picked.reason if picked else ""),
                 )

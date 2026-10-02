@@ -22,6 +22,7 @@ from cluster_doctor.incident_analysis_agent.model.evidence import (
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     QueryLogEntry,
+    query_record_key,
     record_json,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import PSEUDONYMS
@@ -105,6 +106,7 @@ def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
             raw=record_json(entry),
             raw_kind="record",
             provenance=entry.provenance,
+            record_key=query_record_key(entry),
             line=(
                 f"run_time={entry.run_time} success={entry.success} "
                 f"host={entry.host or '?'} service={entry.service or '?'} "

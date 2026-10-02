@@ -102,8 +102,14 @@ def required_query_evidence(requests: tuple[QueryLogEntry, ...], *, new_evidence
         result.append(Evidence(evidence_id=new_evidence_id(), event_time=row.record.timestamp,
             source=EvidenceSource.QUERY_LOG, message=format_log_line(row.record), raw=truncate_raw(raw),
             raw_kind='record', raw_truncated=len(raw) > MAX_RAW_LOG_CHARS,
-            provenance=row.record.provenance, selection_reason='실행시간 상위 개별 로그 (코드 선정)'))
+            record_key=row.record_key, provenance=row.record.provenance, selection_reason='실행시간 상위 개별 로그 (코드 선정)'))
     return result
+
+
+def _evidence_key(item: Evidence) -> tuple:
+    if item.record_key:
+        return (item.source, item.record_key)
+    return (item.source, item.event_time, item.message, item.provenance)
 
 
 def preserve_required_evidence(required: list[Evidence], selected: list[Evidence]) -> list[Evidence]:
@@ -112,10 +118,10 @@ def preserve_required_evidence(required: list[Evidence], selected: list[Evidence
     counts = Counter()
     used = set()
     for item in required + selected:
-        key = (item.source, item.event_time, item.raw, item.provenance)
+        key = _evidence_key(item)
         if key in used or counts[item.source] >= MAX_EVIDENCE_PER_SOURCE or len(result) >= MAX_EVIDENCE_TOTAL:
             continue
-        existing = next((e for e in selected if (e.source, e.event_time, e.raw, e.provenance) == key), item)
+        existing = next((e for e in selected if _evidence_key(e) == key), item)
         result.append(existing)
         used.add(key)
         counts[item.source] += 1

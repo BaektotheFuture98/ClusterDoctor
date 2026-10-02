@@ -14,8 +14,6 @@ from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisRepor
 from cluster_doctor.incident_analysis_agent.model.observations import Observations, SlowCandidate
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssue, VerificationIssueType
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
-from cluster_doctor.incident_analysis_agent.service.observation.query_requests import query_record_key
-from cluster_doctor.incident_analysis_agent.model.log_entries import record_json
 
 _logger = logging.getLogger(__name__)
 _MAX_BATCH_CHARS = 60_000
@@ -42,8 +40,8 @@ class GroundingValidator:
                 candidate = next((c for c in candidates if c.candidate_id == claim['candidate_id']), None)
                 if candidate:
                     claim['candidate'] = asdict(candidate)
-                    raws = {record_json(r) for r in obs.query_requests if query_record_key(r) == candidate.query_record_key}
-                    claim['evidence_refs'] = [e.evidence_id for e in evidence if e.raw in raws]
+                    claim['evidence_refs'] = [e.evidence_id for e in evidence
+                        if candidate.query_record_key and e.record_key == candidate.query_record_key]
                     if candidate.source == 'slowlog':
                         claim['evidence_refs'] = [e.evidence_id for e in evidence if e.source == 'slowlog' and e.event_time == candidate.timestamp and (e.node_name or e.node_id or '') == candidate.node]
         context = build_analysis_context(obs, [])
