@@ -343,7 +343,7 @@ flowchart TD
 | Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py` |
 | 근거 일관성 검증 | evidence 및 candidate 참조 ID 유효성을 확인하는 구조 검사 | `src/cluster_doctor/incident_analysis_agent/service/validation/consistency/report_validation.py` |
-| 원문 대조 검증 | Claim을 evidence 원문과 대조하고 불일치를 분류 | `src/cluster_doctor/incident_analysis_agent/service/validation/grounding/grounding_validator.py` |
+| 원문 대조 검증 | Claim을 수집된 evidence·observation과 대조하고 불일치를 분류 | `src/cluster_doctor/incident_analysis_agent/service/validation/grounding/grounding_validator.py` |
 | 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/incident_analysis_agent/agent/subagent.py` |
 | HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/html_file_notifier.py` |
 

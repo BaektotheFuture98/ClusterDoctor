@@ -72,7 +72,7 @@ def main(variant='default',output=None):
         asyncio.run(HtmlFileReportPublisher(directory).publish(report,gaps=(DEMO_GAP,)))
         files=list(Path(directory).glob('*.html'))
         if len(files)!=1:raise RuntimeError('Actual publisher did not create one HTML report')
-        output.write_text(files[0].read_text(),encoding='utf-8')
+        output.write_text(files[0].read_text(encoding='utf-8'),encoding='utf-8')
     output.with_suffix('.txt').write_text(render_text(report),encoding='utf-8')
     print(output.resolve())
 
