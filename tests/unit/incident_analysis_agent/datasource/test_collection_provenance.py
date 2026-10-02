@@ -213,7 +213,46 @@ def test_node_investigation_without_candidates_records_one_skipped_status():
     )
     (status,) = result.source_statuses
     assert (status.source, status.status, status.row_count) == ("node_log", "skipped", None)
-    assert status.error == "마스터 로그에서 조사 대상 노드가 없다"
+    assert status.error == "조사 대상 노드 후보 없음"
+    assert (status.start, status.end) == (WINDOW.start, WINDOW.end)
+
+
+CANDIDATE = ProblemNodeCandidate(node_id="node-id", reason="error", evidence_refs=("E-master",))
+
+
+def _investigate_with(resolve):
+    return investigate_nodes(
+        [CANDIDATE],
+        WINDOW,
+        resolver=SimpleNamespace(resolve=resolve),
+        fetcher=Fetcher(),
+        call_llm=select_first,
+        new_evidence_id=lambda: "E-1",
+    )
+
+
+def _raise_lookup(_):
+    raise OSError("lookup down")
+
+
+def _unreachable(_):
+    return ResolvedNode(node_id="node-id", node_name="n", host="", log_path="", cluster_name="prod")
+
+
+@pytest.mark.parametrize(
+    "resolve, reason",
+    [
+        (_raise_lookup, "노드 정보 조회 실패 (id=node-id): lookup down"),
+        (lambda _: None, "노드를 찾지 못했다 (id=node-id)"),
+        (_unreachable, "node-id 노드의 접속 정보가 불완전해 로그를 보지 못했다"),
+    ],
+)
+def test_unreachable_candidate_records_failed_node_log_status(resolve, reason):
+    result = _investigate_with(resolve)
+    (status,) = result.source_statuses
+    assert (status.source, status.status, status.row_count) == ("node_log", "failed", None)
+    assert status.error == reason
+    assert reason in result.gaps
     assert (status.start, status.end) == (WINDOW.start, WINDOW.end)
 
 
