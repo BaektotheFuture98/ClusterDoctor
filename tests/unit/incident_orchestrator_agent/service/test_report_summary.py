@@ -2,7 +2,7 @@ from dataclasses import replace
 import pytest
 from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import DEMO_GAP
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import DEMO_GAP
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report
 
 
