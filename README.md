@@ -69,9 +69,9 @@ Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼
 Analysis SubAgent는 승인된 window 하나를 끝까지 처리한다. evidence를 모으고 Window Report를
 작성한 뒤, 같은 DeepAgent의 `after_agent` middleware가 리포트를 검증한다.
 `validate_report`는 근거 및 candidate 참조 ID의 유효성만 확인하고,
-`GroundingValidator`가 Claim을 evidence 원문과 대조한다. 표현 불일치는 `revise_report`로
+`GroundingValidator`가 Claim을 수집된 evidence·observation과 대조한다. 표현 불일치는 `revise_report`로
 최대 2회 고치고, 분석 불일치는 같은 window를 1회 다시 분석한다. 그래도 남으면
-`MISMATCH`로, 원문을 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
+`MISMATCH`로, 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
 `COMPLETED` 종료에는 window report가 하나 이상 있어야 한다.
 
 window report는 합치지 않고 window마다 `MainAgentState.window_results`에 리포트 객체를
@@ -89,7 +89,7 @@ Analysis는 자신의 최종 State를 `WindowAnalysisResult`로 투영하고, Or
 그래야 Main Agent context가 raw log로 불어나지 않는다.
 
 각 datasource는 raw log를 1분 bucket으로 나눠 Map/Reduce로 evidence를 고른다. 모델은 번호와
-선택 이유만 돌려주며 timestamp, node, 원문은 code가 원본 record에서 옮긴다. Reduce는 root
+선택 이유만 돌려주며 timestamp, node, message는 code가 수집한 DTO에서 옮긴다. Reduce는 root
 cause를 확정하지 않는다. 모든 datasource evidence가 모인 뒤 cross-source 단계가 원인 후보를
 다룬다. 비어 있는 분은 호출하지 않고, 실패한 분은 `[분석 실패]`와 gap으로 남긴다.
 
@@ -106,7 +106,7 @@ Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `IncidentAn
 
 실제 양식은 **Elasticsearch 쿼리·노드 로그 분석**이다. 핵심 요약 → 실행 로그 건수/최대 실행시간 SVG 추이 → 주요 타임라인 → 느린 개별 실행 로그 → 마스터 노드 로그 → slowlog 로그 → SSH 노드 로그 → 시스템 지표 → 원인 판단·조치 순으로 표시한다. 개별 실행·slowlog·SSH 로그는 각각 최대 10건, 마스터 로그는 최대 120건, 타임라인은 최대 8개이며 최대 실행시간 로그는 타임라인에 반드시 포함한다. 마스터 섹션은 `observations.master_events`, slowlog·SSH 섹션은 소스별 선별 `evidence`를 읽는다. 모든 섹션은 고정되며 해당 로그가 없으면 제목 아래 본문은 비어 있다. 수집 실패·빈 결과는 내부 상태에서 구분한다. 전체 slowlog·SSH 원문 저장 범위를 확대하지 않는다.
 
-총건수는 전체 `Observations.query_requests` 길이이며 bulk/update도 포함한다. 유한하고 0 이상인 `run_time`으로 순위를 매긴다. 같은 최대 5개 키워드를 가진 실행을 합치거나 평균·키워드별 기여도를 산출하지 않는다. 요청 호스트와 URL의 Elasticsearch 대상을 구분하고, 조건은 해당 실행의 DSL에서만 가져온다. 내부 Evidence/Candidate ID와 근거 링크는 표시하지 않는다.
+총건수는 전체 `Observations.query_requests` 길이이며 bulk/update도 포함한다. 유한하고 0 이상인 `run_time`으로 순위를 매긴다. 같은 최대 5개 키워드를 가진 실행을 합치거나 평균·키워드별 기여도를 산출하지 않는다. 요청 호스트와 URL의 Elasticsearch 대상을 구분하고, 조건은 해당 실행의 DSL에서만 가져온다. 내부 Evidence/Candidate ID와 근거 링크는 표시하지 않는다. 쿼리 로그는 필요한 컬럼만 조회하고, url은 수집 시 대상 호스트·인덱스·조건으로 파싱해 저장하며 원문은 보관하지 않는다.
 
 SSH 로그에는 실제 파일 경로와 원문을 본문에 표시한다. `time_origin=parsed`만 정확한 타임라인 시각으로 사용하며 inherited/fallback은 시각 미확인 문맥이다. 수집 실패 분은 0건으로 그리지 않는다. `rejected`는 누적값이며 이번 구간의 실패나 회복으로 해석하지 않는다. 시스템 지표는 측정된 노드별 최대값을 표시한다. 조회 시점 cluster health는 과거 사고 상태로 보고서에 싣지 않는다.
 
@@ -124,7 +124,7 @@ uv run python scripts/evaluate_report_prompts.py --mode live --output reports/li
 preview는 HTML과 같은 이름의 평문을 함께 저장한다. offline의 10개 고정 응답 사례는 계산과 검증 응답 계약을 확인하며 모델 진단 정확도를 증명하지 않는다. live는 기존 `.env`의 모델로 사례별 초안/근거 검증을 각각 한 번 호출하고 결과를 별도로 기록한다. live CLI는 기본 120초의 전체 실행 예산을 적용하며 `--budget-seconds`로 조절한다(Unix). 응답 지연·호출 실패는 미완료로 기록한다. 금지 표현 탐지는 사람의 검토를 위한 표시이며 의미 평가를 대체하지 않는다.
 
 모델이 빈 draft를 주거나 report 저장이 실패해도 observation은 전달한다. HTML 파일을 쓸 수
-없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 query 원문과
+없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 쿼리 조건과
 company/user 식별자를 담을 수 있으므로 `reports/`는 Git에 넣지 않는다.
 
 LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가명으로 바꾸고 응답에서
