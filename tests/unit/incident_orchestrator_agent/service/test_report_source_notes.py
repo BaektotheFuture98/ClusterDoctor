@@ -4,7 +4,7 @@ from datetime import timedelta
 from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent, SourceWindowStatus
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
-from test_report_contract import report, T0
+from tests.unit.incident_orchestrator_agent.service.test_report_contract import report, T0
 
 END = T0 + timedelta(minutes=1)
 
@@ -37,9 +37,23 @@ def slow_evidence():
     return Evidence(evidence_id='S1', event_time=T0, source=EvidenceSource.SLOWLOG, message='slow body')
 
 
+TEXT_SECTIONS = {
+    'master-logs': ('마스터 노드 로그', 'slowlog 로그'),
+    'slowlogs': ('slowlog 로그', 'SSH 노드 로그'),
+    'ssh-logs': ('SSH 노드 로그', '시스템 지표 · 관측 최대값'),
+    'query-ranking': ('느린 개별 실행 로그', '마스터 노드 로그'),
+}
+
+
+def text_section(text, name):
+    start, end = TEXT_SECTIONS[name]
+    begin = text.index(start)
+    return text[begin:text.index(end, begin)]
+
+
 def check(r, name, message):
     assert note(message) in section(render_report(r), name), message
-    assert message in render_text(r), message
+    assert message in text_section(render_text(r), name), message
 
 
 def test_master_messages():
@@ -71,10 +85,12 @@ def ssh_empty(statuses):
 
 
 def test_ssh_messages():
-    skipped = st('node_log', 'skipped', None, '마스터 로그에서 조사 대상 노드가 없다')
+    skipped = st('node_log', 'skipped', None, '조사 대상 노드 후보 없음')
     check(ssh_empty([skipped, st('master_log', 'ok', 0)]), 'ssh-logs', '마스터 로그에서 조사 대상 노드가 없어 수집하지 않음')
     check(ssh_empty([skipped]), 'ssh-logs', '마스터 로그에서 조사 대상 노드가 없어 수집하지 않음')
     check(ssh_empty([skipped, st('master_log', 'failed', None, 'x')]), 'ssh-logs', '마스터 로그 수집 실패로 조사하지 않음')
+    window2 = SourceWindowStatus('node_log', END, END + timedelta(minutes=1), 'failed', None, T0, 'no node reachable')
+    check(ssh_empty([skipped, window2]), 'ssh-logs', 'SSH 수집 실패: no node reachable')
     check(ssh_empty([st('node_log', 'failed', None, 'ssh refused')]), 'ssh-logs', 'SSH 수집 실패: ssh refused')
     check(ssh_empty([st('node_log', 'ok', 0)]), 'ssh-logs', '해당 구간 로그 없음')
     check(ssh_empty([st('node_log', 'limited', 42)]), 'ssh-logs', '수집 42줄 중 선별된 항목 없음')
