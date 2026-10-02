@@ -62,7 +62,7 @@ def test_conditions_use_only_the_records_own_dsl():
     assert 'track_total_hits=true' in row.conditions
     bad = rank_query_requests((query(url='broken\n{'),))[0]
     assert bad.target_host is None
-    assert any('broken' in x for x in bad.conditions)
+    assert bad.conditions == ()
 
 
 def test_ambiguous_candidate_is_not_attached():

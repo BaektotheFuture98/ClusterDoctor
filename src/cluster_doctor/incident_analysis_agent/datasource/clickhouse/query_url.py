@@ -33,8 +33,6 @@ def _conditions(value: object) -> list[str]:
                 terms = re.findall(r'([\w.]+):\((.*?)\)', expression)
                 out.extend(f'{field}: {start} ~ {end}' for field, start, end in ranges)
                 out.extend(f'{field}: {len(items.split(" OR "))}개 조건' for field, items in terms)
-                if not ranges and not terms and expression:
-                    out.append('query=' + _excerpt(expression))
             else:
                 out.extend(_conditions(child))
     elif isinstance(value, list):
@@ -61,9 +59,7 @@ def request_fields(url: str) -> dict[str, object]:
         try:
             conditions = _conditions(json.loads(body))
         except (ValueError, TypeError):
-            conditions = ['원문: ' + _excerpt(url)]
-    if not conditions:
-        conditions = ['원문: ' + _excerpt(url)] if url else []
+            pass
     return {
         'target_host': target,
         'index_name': index,
