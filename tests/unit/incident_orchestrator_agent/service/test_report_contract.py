@@ -172,12 +172,13 @@ def test_optional_log_limits_and_missing_master_time_are_preserved():
     from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent
     r=report();sample=r.evidence[0]
     events=tuple(MasterEvent(timestamp=None,node='master',line=f'M-{i}') for i in range(121))
-    slow=tuple(sample.model_copy(update={'evidence_id':f'S{i}','source':EvidenceSource.SLOWLOG}) for i in range(11))
+    slow=tuple(sample.model_copy(update={'evidence_id':f'S{i}','source':EvidenceSource.SLOWLOG,'message':f'S-{i:02d}'}) for i in range(11))
     r=replace(r,evidence=slow,observations=replace(r.observations,master_events=events))
     html=render_report(r)
     master=html.split('id="master-logs"')[1].split('</section>')[0]
     sl=html.split('id="slowlogs"')[1].split('</section>')[0]
     assert master.count('<pre')==120 and sl.count('<pre')==10
+    assert all(f'S-{i:02d}' in sl for i in range(10)) and 'S-10' not in sl
     assert '시각 미확인' in master
     assert 'M-' not in html.split('id="timeline"')[1].split('</section>')[0]
     assert len(r.observations.master_events)==121 and len(r.evidence)==11
@@ -214,3 +215,16 @@ def test_selected_master_and_observed_master_are_one_timeline_event():
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import report_timeline
     items=[text for c in report_timeline(r) for text in (c.representative_event,*(i.text for i in (*c.impacts,*c.causes))) if line in text]
     assert len(items)==1
+
+
+def test_fallback_narrative_cites_evidence_matching_top_ranked_request_key():
+    from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import display_narrative
+    r=report('PASSED')
+    top=rank_query_requests(r.observations.query_requests)[0]
+    other=r.evidence[0]
+    matching=other.model_copy(update={'evidence_id':'MATCH','source':EvidenceSource.QUERY_LOG,'record_key':top.record_key})
+    r=replace(r,evidence=(other,matching),narrative=Narrative(headline='ok'))
+    cited=display_narrative(r,analysis_failed=True).headline_citations
+    assert [c.evidence_id for c in cited]==['MATCH']
+    assert display_narrative(r).headline=='ok'

@@ -189,3 +189,42 @@ def test_verdict_reason_is_retained_in_internal_log(caplog):
         issues=GroundingValidator._parse_response('[{"claim_id":"a","status":"PASSED","reason":"internal check detail"}]',expected_claim_ids={'a'},known_evidence_refs=set())
     assert issues==[]
     assert 'internal check detail' in caplog.text
+
+
+def _suspect_prompt(candidate_key_override=None):
+    from dataclasses import replace
+    from decimal import Decimal
+    from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
+    from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
+    from cluster_doctor.incident_analysis_agent.model.observations import Observations
+    from cluster_doctor.incident_analysis_agent.model.report import SuspectPick
+    from cluster_doctor.incident_analysis_agent.service.observation.compute import slow_candidates
+    from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import required_query_evidence
+    q = QueryLogEntry(reg_date=_T0, host="client", run_time=Decimal("2"), success="Y", s_date=1, e_date=2, date_range=2,
+        keyword=("a",), **request_fields("POST http://es:9200/index/_search\n{}"), cmd="search", service="", env="",
+        project="", company="", user="", search_count=1, etc="", cluster="es")
+    logs = (q, replace(q, run_time=Decimal("1")))
+    ids = iter(["Q1", "Q2"])
+    evidence = required_query_evidence(logs, new_evidence_id=lambda: next(ids))
+    candidate = replace(slow_candidates(list(logs))[0], candidate_id="C1")
+    if candidate_key_override is not None:
+        candidate = replace(candidate, query_record_key=candidate_key_override)
+    report = LogAnalysisReport(incident_id="INC-1", analyzed_from=_T0, analyzed_to=_T0,
+        suspect_picks=(SuspectPick(candidate_id="C1", reason="slowest"),))
+    validator, call_llm = _make_validator(json.dumps([{"claim_id": "suspect:0", "status": "PASSED"}]))
+    validator.validate(report, evidence, observations=Observations(), candidates=(candidate,))
+    return evidence, call_llm.call_args.args[0][0]["content"]
+
+
+def test_suspect_claim_refs_resolve_by_query_record_key():
+    evidence, prompt = _suspect_prompt()
+    top, other = evidence
+    assert top.record_key and top.record_key != other.record_key
+    assert f'"evidence_refs": ["{top.evidence_id}"]' in prompt
+    assert other.evidence_id not in prompt
+
+
+def test_suspect_claim_with_empty_record_key_gets_no_refs():
+    evidence, prompt = _suspect_prompt(candidate_key_override="")
+    assert '"evidence_refs": []' in prompt
+    assert all(e.evidence_id not in prompt for e in evidence)
