@@ -34,12 +34,30 @@ def test_entry_keeps_only_parsed_request_fields():
     assert '동부화재' not in record_json(entry)
 
 
-def test_unparsable_body_falls_back_to_short_excerpt():
+def test_unparsable_body_yields_no_conditions():
     fields = request_fields('POST http://192.0.2.32:9200/_bulk\n{"index":{}}\n{"a":1}')
 
     assert fields['target_host'] == '192.0.2.32'
     assert fields['index_name'] is None
-    assert fields['conditions'][0].startswith('원문: POST http://192.0.2.32:9200/_bulk')
+    assert fields['conditions'] == ()
+
+
+def test_keyword_only_query_string_stores_no_request_text():
+    row = {**ROW, 'url': 'GET http://192.168.1.29:9200/i/_search\n{"query":{"query_string":{"query":"화재 보험"}}}',
+           'keyword': []}
+    entry = entry_from_row(row, None)
+
+    assert entry.conditions == ()
+    assert '화재' not in record_json(entry)
+
+
+def test_query_string_field_patterns_are_summarised():
+    fields = request_fields(
+        'GET http://h:9200/i/_search\n{"query":{"query_string":{"query":'
+        '"(inl_spam:(0)) AND (in_trend:(1 OR 2 OR 3))"}}}'
+    )
+
+    assert fields['conditions'] == ('inl_spam: 1개 조건', 'in_trend: 3개 조건')
 
 
 def test_query_records_carry_record_key():
