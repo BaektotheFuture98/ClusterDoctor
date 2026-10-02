@@ -40,3 +40,14 @@ def test_unparsable_body_falls_back_to_short_excerpt():
     assert fields['target_host'] == '192.0.2.32'
     assert fields['index_name'] is None
     assert fields['conditions'][0].startswith('원문: POST http://192.0.2.32:9200/_bulk')
+
+
+def test_query_records_carry_record_key():
+    from cluster_doctor.incident_analysis_agent.datasource.clickhouse import query_log
+    from cluster_doctor.incident_analysis_agent.model.log_entries import query_record_key
+
+    entry = entry_from_row(ROW, None)
+
+    [record] = query_log.to_records([entry])
+
+    assert record.record_key == query_record_key(entry)

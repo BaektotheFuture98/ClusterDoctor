@@ -73,7 +73,7 @@ def test_parallel_minutes_share_registered_incident_identifiers():
 
 def test_identical_selection_lines_keep_distinct_raw_queries():
     start = datetime(2026, 10, 1, tzinfo=UTC)
-    records = [RawRecord(record_id=n, event_time=start, line='same five keywords', raw=f'url-{n}') for n in range(2)]
+    records = [RawRecord(record_id=n, event_time=start, line='same five keywords', raw=f'url-{n}', record_key=f'key-{n}') for n in range(2)]
     def llm(messages, response_format):
         key = 'selected' if response_format is MapOutput else 'keep'
         return json.dumps({key: [{'record_id': 0}, {'record_id': 1}]})

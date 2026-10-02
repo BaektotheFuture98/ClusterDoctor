@@ -93,6 +93,9 @@ class Evidence(BaseModel):
     time_origin: Literal["parsed", "inherited", "fallback"] = "parsed"
     # 왜 이 줄을 남겼는가. Reduce 단계가 채운다.
     selection_reason: str | None = None
+    # 쿼리 로그 근거가 가리키는 실행 한 건의 지문(``query_record_key``).
+    # ``Observations.query_requests``의 DTO와 이 값으로 연결한다. 다른 소스는 None.
+    record_key: str | None = None
 
 
 class ProblemNodeCandidate(BaseModel):

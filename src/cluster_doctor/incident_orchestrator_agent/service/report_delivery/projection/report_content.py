@@ -95,14 +95,12 @@ def display_narrative(report, *, analysis_failed=False):
     """Use the standard narrative slots even when analysis is unavailable."""
     from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative, CauseAssessment
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import citations
-    from cluster_doctor.incident_analysis_agent.model.log_entries import record_json
     if report.verification_status=='PASSED' and report.narrative and not analysis_failed:
         return report.narrative
     rows=rank_query_requests(report.observations.query_requests)
     refs=()
     if rows:
-        original=record_json(rows[0].record)
-        refs=tuple(e.evidence_id for e in report.evidence if e.raw==original)
+        refs=tuple(e.evidence_id for e in report.evidence if e.record_key==rows[0].record_key)
     source=citations(refs,report.evidence)
     return Narrative(headline=' '.join(execution_summary(report.observations)),headline_citations=source,
         causes=(CauseAssessment(statement='수집된 자료로 지연 원인을 확정할 수 없습니다.',confidence='미확인',supporting=source),))
