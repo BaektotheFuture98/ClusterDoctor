@@ -45,3 +45,9 @@ def test_revision_keeps_summary_and_action_refs_and_context():
     assert payload['summary_evidence_refs'] == ['E1']
     assert payload['recommendations'][0]['evidence_refs'] == ['E1']
     assert '{"query_execution_count":2}' in prompt
+
+
+def test_summary_prompt_separates_observation_from_causal_hypotheses():
+    from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import _ANALYSIS_RULES
+    assert 'summary에는 관측 사실만' in _ANALYSIS_RULES
+    assert 'JVM 사용률만으로 쿼리 지연' in _ANALYSIS_RULES

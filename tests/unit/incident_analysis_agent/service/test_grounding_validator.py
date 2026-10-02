@@ -114,17 +114,17 @@ def test_llm_failure_is_unverifiable_not_passed():
     assert [i.issue_type for i in issues] == [VerificationIssueType.UNVERIFIABLE]
 
 
-def test_missing_raw_is_unverifiable_without_model_call():
-    validator, call = _make_validator('[]')
-    assert validator.validate(_make_report(), [_evidence(raw=None)])[0].issue_type == VerificationIssueType.UNVERIFIABLE
-    call.assert_not_called()
+def test_missing_raw_is_judged_by_model():
+    validator, call = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
+    assert validator.validate(_make_report(), [_evidence(raw=None)]) == []
+    call.assert_called_once()
 
 
-def test_raw_beyond_2000_is_preserved_and_truncated_raw_cannot_pass():
+def test_raw_beyond_2000_is_preserved_and_truncated_raw_is_judged_by_model():
     validator, call = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
     assert validator.validate(_make_report(), [_evidence(raw='x'*3000)]) == []
     assert 'x'*3000 in call.call_args.args[0][0]['content']
-    assert validator.validate(_make_report(), [_evidence().model_copy(update={'raw_truncated':True})])[0].issue_type == VerificationIssueType.UNVERIFIABLE
+    assert validator.validate(_make_report(), [_evidence().model_copy(update={'raw_truncated':True})]) == []
 
 
 def test_empty_verdict_is_unverifiable():
@@ -168,3 +168,26 @@ def test_cross_claim_verdict_reference_is_unverifiable():
         {'claim_id':'b','status':'PASSED','affected_evidence_refs':['B']}]),
         expected_claim_ids={'a','b'},known_evidence_refs={'A','B'},claim_evidence_refs={'a':{'A'},'b':{'B'}})
     assert any(i.issue_type == VerificationIssueType.UNVERIFIABLE for i in issues)
+
+
+def test_grounding_prompt_uses_contradiction_only_without_specific_examples():
+    prompt=GroundingValidator._build_prompt([], {}, '')
+    assert '명확히 충돌하는 경우에만 MISMATCH' in prompt
+    assert '그 외에는 PASSED' in prompt
+    assert '주장에 없는' in prompt and '경계값' in prompt
+    assert '판단할 수 없으면 UNVERIFIABLE' not in prompt
+    assert '75%' not in prompt and 'RC12' not in prompt
+
+
+def test_unknown_evidence_is_sent_as_missing_not_automatic_failure():
+    validator, call=_make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
+    assert validator.validate(_make_report(), []) == []
+    assert 'missing_evidence_refs' in call.call_args.args[0][0]['content']
+
+
+def test_verdict_reason_is_retained_in_internal_log(caplog):
+    import logging
+    with caplog.at_level(logging.INFO):
+        issues=GroundingValidator._parse_response('[{"claim_id":"a","status":"PASSED","reason":"internal check detail"}]',expected_claim_ids={'a'},known_evidence_refs=set())
+    assert issues==[]
+    assert 'internal check detail' in caplog.text

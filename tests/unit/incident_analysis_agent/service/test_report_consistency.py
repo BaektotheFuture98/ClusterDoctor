@@ -15,15 +15,21 @@ def test_unrelated_findings_do_not_set_global_cause_deadline():
     assert not any('보다 늦다' in x for x in validate_report(report,[early,late]).issues)
 
 
-def test_fallback_cannot_support_an_exact_timeline_claim():
+def test_fallback_time_is_left_to_prompt_validation():
     e=Evidence(evidence_id='unknown',event_time=T0,source=EvidenceSource.NODE_LOG,message='undated',time_origin='fallback')
     report=LogAnalysisReport(incident_id='i',analyzed_from=T0,analyzed_to=T0,
         timeline=(TimelineEvent(at=T0,description='그 시각에 발생',evidence_refs=('unknown',)),))
-    assert validate_report(report,[e]).issues
+    assert not validate_report(report,[e]).issues
 
 
-def test_rounded_time_cannot_support_an_exact_timeline_claim():
+def test_rounded_time_is_left_to_prompt_validation():
     e=Evidence(evidence_id='exact',event_time=T0+timedelta(seconds=7),source=EvidenceSource.NODE_LOG,message='timed')
     report=LogAnalysisReport(incident_id='i',analyzed_from=T0,analyzed_to=T0+timedelta(minutes=1),
         timeline=(TimelineEvent(at=T0,description='잘못된 시각',evidence_refs=('exact',)),))
-    assert validate_report(report,[e]).issues
+    assert not validate_report(report,[e]).issues
+
+
+def test_confidence_and_causal_language_are_left_to_prompt_validation():
+    report=LogAnalysisReport(incident_id='i',analyzed_from=T0,analyzed_to=T0,
+        root_causes=(RootCause(statement='원인이다',confidence='High'),))
+    assert not validate_report(report,[]).issues

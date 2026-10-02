@@ -11,7 +11,7 @@ def ssh_evidence(evidence, limit=10):
 
 def render_ssh_logs(evidence: tuple[Evidence, ...], *, limit: int = 10) -> str:
     items=ssh_evidence(evidence,limit)
-    if not items:return ''
+    if not items:return '<section id="ssh-logs"><h2>SSH 노드 로그</h2></section>'
     rows=[]
     for e in items:
         time=stamp(e.event_time) if e.time_origin=='parsed' else ('앞선 로그 문맥 · 시각 미확인' if e.time_origin=='inherited' else '시각 미확인')

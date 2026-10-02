@@ -2,7 +2,7 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, is_validation_diagnostic
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
@@ -30,7 +30,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     obs=report.observations
     rows=rank_query_requests(obs.query_requests)
     maximum=f'{rows[0].execution_seconds}s' if rows and rows[0].execution_seconds is not None else '미확인'
-    narrative=report.narrative if report.verification_status=='PASSED' and not analysis_failed else None
+    narrative=display_narrative(report,analysis_failed=analysis_failed)
     windows=obs.requested or (((report.analyzed_from,report.analyzed_to),) if report.analyzed_from and report.analyzed_to else ())
     span=' · '.join(f'{stamp(start)} ~ {stamp(end)}' for start,end in windows) or '분석 구간 미확인'
     header=f'<header><p>ClusterDoctor · {esc(report.cluster)}</p><h1>Elasticsearch 쿼리·노드 로그 분석</h1><p>{esc(span)}</p><p class="hint">생성 {esc(stamp(now))}</p>'
@@ -38,13 +38,13 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     header+='</header>'
     summary='<section id="summary"><h2>핵심 요약</h2><div class="metrics">'+f'<div class="metric">수집 쿼리 실행 로그<strong>{len(rows)}건</strong></div><div class="metric">최대 실행시간<strong>{esc(maximum)}</strong></div></div>'
     if rows and rows[0].execution_seconds is not None:summary+=f'<p>가장 느린 실행: {esc(stamp(rows[0].record.timestamp))} · {esc(rows[0].record.cmd)}</p>'
-    if narrative and narrative.headline:summary+=f'<p>{esc(narrative.headline)}</p>'+quotes(narrative.headline_citations)
-    if not narrative:summary+=f'<p class="hint">분석 해석 검증: {esc(report.verification_status)}'+(' · 분석 실패' if analysis_failed else '')+'</p>'
+    if narrative and narrative.headline:summary+=f'<p class="report-headline">{esc(narrative.headline)}</p>'+quotes(narrative.headline_citations)
+    if analysis_failed:summary+='<p class="hint">분석 실패</p>'
     failures=[s for s in obs.source_statuses if s.status=='failed']
     for status in failures:summary+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
     # Existing exception-only callers still retain their collection failure notice.
     for gap in dict.fromkeys(gaps):
-        if gap != DEMO_GAP:summary+=f'<p class="hint">{esc(gap)}</p>'
+        if gap != DEMO_GAP and not is_validation_diagnostic(gap):summary+=f'<p class="hint">{esc(gap)}</p>'
     if any(row.failed for row in obs.timeline):summary+='<p class="hint">분석하지 못한 구간이 있습니다.</p>'
     summary+='</section>'
     timeline='<section id="timeline"><h2>주요 타임라인</h2>'
@@ -78,7 +78,6 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
         if not narrative.causes:causes+='<p>확인된 원인 없음</p>'
     else:causes+='<p>검증을 완료한 원인 판단 없음</p>'
     causes+='</section>'
-    other=[e for e in report.evidence if e.source in ('slowlog','master_log')]
-    originals='<section id="evidence"><h2>주요 로그 원문</h2>'+''.join(f'<pre class="quote">{esc(evidence_text(e))}</pre>' for e in sorted(other,key=lambda e:e.event_time)[:10])+'</section>' if other else ''
-    footer=f'<footer id="metadata"><p>분석 해석 검증: {esc(report.verification_status)}</p></footer>'
-    return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title><style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+header+summary+render_query_trend(project_query_trend(obs))+timeline+render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {})+render_ssh_logs(report.evidence)+metrics+causes+originals+footer+'</main></body></html>'
+    originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report))
+    footer=''
+    return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title><style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+header+summary+render_query_trend(project_query_trend(obs))+timeline+render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {})+originals+render_ssh_logs(report.evidence)+metrics+causes+footer+'</main></body></html>'

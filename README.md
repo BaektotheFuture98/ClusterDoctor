@@ -68,7 +68,7 @@ Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼
 
 Analysis SubAgent는 승인된 window 하나를 끝까지 처리한다. evidence를 모으고 Window Report를
 작성한 뒤, 같은 DeepAgent의 `after_agent` middleware가 리포트를 검증한다.
-`validate_report`가 근거 id·시각·노드·순서·과장·인과 같은 구조화 필드를 대조하고,
+`validate_report`는 근거 및 candidate 참조 ID의 유효성만 확인하고,
 `GroundingValidator`가 Claim을 evidence 원문과 대조한다. 표현 불일치는 `revise_report`로
 최대 2회 고치고, 분석 불일치는 같은 window를 1회 다시 분석한다. 그래도 남으면
 `MISMATCH`로, 원문을 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
@@ -102,17 +102,15 @@ evidence로 후보가 생겼을 때만 `NodeResolver`와 SSH를 통해 읽는다
 Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `IncidentAnalysisReport`는 code가 센
 `observations`와 모델이 쓴 `narrative`를 분리한다. 숫자와 slow-query candidate 값은 code가
 정확히 아는 값이므로 모델에게 옮겨 적게 하지 않는다. Narrative의 주장에는 evidence reference가
-붙고, Subagent의 검증은 window의 evidence와 보고서를 대조해 없는 reference,
-evidence 없는 주장, candidate/time/node 불일치, 순서, 과도한 확신, 인과 역전과 모순을
-검사하고, 주장이 원문과 맞는지도 확인한다.
+붙는다. 코드 검사는 참조 ID의 유효성만 확인한다. 수치·시각·노드·인과·확신도의 의미 판단은 검증 프롬프트가 담당한다.
 
-실제 양식은 **Elasticsearch 쿼리·노드 로그 분석**이다. 핵심 요약 → 실행 로그 건수/최대 실행시간 SVG 추이 → 주요 타임라인 → 느린 개별 실행 로그 → SSH 노드 로그 → 시스템 지표 → 원인 판단·조치 순으로 표시한다. 개별 실행은 최대 10건, SSH 로그는 최대 10건, 타임라인은 최대 8개이며 최대 실행시간 로그는 타임라인에 반드시 포함한다. 원자료는 DTO에 보존한다.
+실제 양식은 **Elasticsearch 쿼리·노드 로그 분석**이다. 핵심 요약 → 실행 로그 건수/최대 실행시간 SVG 추이 → 주요 타임라인 → 느린 개별 실행 로그 → 마스터 노드 로그 → slowlog 로그 → SSH 노드 로그 → 시스템 지표 → 원인 판단·조치 순으로 표시한다. 개별 실행·slowlog·SSH 로그는 각각 최대 10건, 마스터 로그는 최대 120건, 타임라인은 최대 8개이며 최대 실행시간 로그는 타임라인에 반드시 포함한다. 마스터 섹션은 `observations.master_events`, slowlog·SSH 섹션은 소스별 선별 `evidence`를 읽는다. 모든 섹션은 고정되며 해당 로그가 없으면 제목 아래 본문은 비어 있다. 수집 실패·빈 결과는 내부 상태에서 구분한다. 전체 slowlog·SSH 원문 저장 범위를 확대하지 않는다.
 
 총건수는 전체 `Observations.query_requests` 길이이며 bulk/update도 포함한다. 유한하고 0 이상인 `run_time`으로 순위를 매긴다. 같은 최대 5개 키워드를 가진 실행을 합치거나 평균·키워드별 기여도를 산출하지 않는다. 요청 호스트와 URL의 Elasticsearch 대상을 구분하고, 조건은 해당 실행의 DSL에서만 가져온다. 내부 Evidence/Candidate ID와 근거 링크는 표시하지 않는다.
 
 SSH 로그에는 실제 파일 경로와 원문을 본문에 표시한다. `time_origin=parsed`만 정확한 타임라인 시각으로 사용하며 inherited/fallback은 시각 미확인 문맥이다. 수집 실패 분은 0건으로 그리지 않는다. `rejected`는 누적값이며 이번 구간의 실패나 회복으로 해석하지 않는다. 시스템 지표는 측정된 노드별 최대값을 표시한다. 조회 시점 cluster health는 과거 사고 상태로 보고서에 싣지 않는다.
 
-요약·finding 제목/상세·원인/반증·권고·후보 선정 이유를 claim별 원문과 대조한다. 모든 claim_id에 완전한 판정이 있어야 통과하며 빈/누락/중복/알 수 없는 응답, 원문 미확보·절단은 검증 불가다. 가장 느린 실행 상위 5개는 코드가 분석 근거에 포함한다. 미검증 해석은 요약·원인으로 승격하지 않으며 관측값은 항상 출력한다. SVG와 원문은 인쇄 시에도 표시하고 외부 웹폰트·CDN을 사용하지 않는다.
+요약·finding 제목/상세·원인/반증·권고·후보 선정 이유를 claim별 원문과 대조한다. 원문과 명확히 충돌할 때만 `MISMATCH`, 나머지는 `PASSED`다. 근거 부족·원문 미확보·절단·인과 미입증은 자동 탈락 사유가 아니다. `PASSED`는 사실 입증이 아닌 명확한 모순 미발견을 의미한다. 모든 claim_id에 완전한 판정이 있어야 하며 호출 실패·잘못된 JSON·빈/누락/중복/알 수 없는 응답은 검증 실행 오류로 남긴다. 가장 느린 실행 상위 5개는 코드가 분석 근거에 포함한다. 검증 실행 오류가 있으면 분석을 승격하지 않고 같은 요약·원인 슬롯에 관측 기반 내용을 채운다. 내부 검증 상태·사유는 본문에 표시하지 않고 로그에 남긴다. SVG와 원문은 인쇄 시에도 표시하고 외부 웹폰트·CDN을 사용하지 않는다.
 
 합성 DTO와 고정 분석문으로 실제 publisher 결과를 확인하려면:
 
@@ -344,7 +342,7 @@ flowchart TD
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달 | `src/cluster_doctor/incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py` |
 | Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py` |
-| 근거 일관성 검증 | 없는 evidence ID, 시간 불일치, 과장된 인과 등을 검사하는 순수 정책 | `src/cluster_doctor/incident_analysis_agent/service/validation/consistency/report_validation.py` |
+| 근거 일관성 검증 | evidence 및 candidate 참조 ID 유효성을 확인하는 구조 검사 | `src/cluster_doctor/incident_analysis_agent/service/validation/consistency/report_validation.py` |
 | 원문 대조 검증 | Claim을 evidence 원문과 대조하고 불일치를 분류 | `src/cluster_doctor/incident_analysis_agent/service/validation/grounding/grounding_validator.py` |
 | 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/incident_analysis_agent/agent/subagent.py` |
 | HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/html_file_notifier.py` |
