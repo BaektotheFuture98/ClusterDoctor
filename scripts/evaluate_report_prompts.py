@@ -50,14 +50,14 @@ def inputs(case):
         node=NodeMetricRow(node='metric-node',samples=1,**case['metric'])
         builder.nodes[node.node]=node
         evidence.append(Evidence(evidence_id=f'E{next(seq)}',event_time=T0,source=EvidenceSource.NODE_METRIC,node_name=node.node,
-            message='node metric',raw=case.get('raw',json.dumps(case['metric'])),raw_kind='record',provenance=EvidenceProvenance(method='clickhouse',table='fixture.node_metric')))
+            message=case.get('raw',json.dumps(case['metric'])),provenance=EvidenceProvenance(method='clickhouse',table='fixture.node_metric')))
     if case.get('ssh'):
         ssh=case['ssh']
         evidence.append(Evidence(evidence_id=f'E{next(seq)}',event_time=T0,source=EvidenceSource.NODE_LOG,node_name=ssh['host'],
-            message=ssh['raw'],raw=ssh['raw'],time_origin=ssh['time_origin'],severity='Warning',
+            message=ssh['raw'],time_origin=ssh['time_origin'],severity='Warning',
             provenance=EvidenceProvenance(method='ssh',host=ssh['host'],file_path='/fixture/elasticsearch.log')))
     if not evidence:
-        evidence=[Evidence(evidence_id='E1',event_time=T0,source=EvidenceSource.QUERY_LOG,message='fetch failed',raw=case.get('raw'))]
+        evidence=[Evidence(evidence_id='E1',event_time=T0,source=EvidenceSource.QUERY_LOG,message=case.get('raw') or 'fetch failed')]
     return window,builder,evidence
 
 

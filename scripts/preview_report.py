@@ -47,15 +47,15 @@ def build_example(variant='default'):
     query_refs=tuple(e.evidence_id for e in evidence)
     if variant in ('ssh','ssh-not-verified','all'):
         evidence.append(Evidence(evidence_id='E-demo-ssh',event_time=start+timedelta(minutes=1,microseconds=123456),source=EvidenceSource.NODE_LOG,
-            node_name='data-99',severity='Warning',message='GC overhead',raw='[2026-10-01T14:03:00.123456+09:00][WARN][JvmGcMonitorService] [data-99] GC overhead: spent [500ms] collecting in the last [1s]',
+            node_name='data-99',severity='Warning',message='[2026-10-01T14:03:00.123456+09:00][WARN][JvmGcMonitorService] [data-99] GC overhead: spent [500ms] collecting in the last [1s]',
             provenance=EvidenceProvenance(method='ssh',host='192.0.2.99',file_path='/var/log/elasticsearch/demo-es.log',query_from=window.start,query_to=window.end,collected_at=window.end)))
         evidence.append(Evidence(evidence_id='E-demo-stack',event_time=start+timedelta(minutes=1),source=EvidenceSource.NODE_LOG,
-            node_name='data-99',time_origin='inherited',message='stack context',raw='    at example.search.QueryPhase.execute(QueryPhase.java:42)\n    at example.search.SearchService.run(SearchService.java:87)',provenance=evidence[-1].provenance))
+            node_name='data-99',time_origin='inherited',message='    at example.search.QueryPhase.execute(QueryPhase.java:42)\n    at example.search.SearchService.run(SearchService.java:87)',provenance=evidence[-1].provenance))
     if variant in ('master','all'):
         builder.master_logs['preview']=MasterEvent(timestamp=start+timedelta(minutes=1),node='master-demo',level='WARN',logger='cluster',line='cluster state publication timed out',rendered='cluster state publication timed out')
     if variant=='all':
         evidence.append(Evidence(evidence_id='E-demo-slow',event_time=start+timedelta(minutes=1,seconds=10),source=EvidenceSource.SLOWLOG,
-            message='search slowlog took[1500ms]',raw='[2026-10-01T14:03:10+09:00][WARN][index.search.slowlog.query] took[1500ms], source[{"size":500}]',
+            message='[2026-10-01T14:03:10+09:00][WARN][index.search.slowlog.query] took[1500ms], source[{"size":500}]',
             provenance=EvidenceProvenance(method='clickhouse',table='demo.slowlog',query_from=window.start,query_to=window.end)))
     report=LogAnalysisReport(incident_id='DEMO',analyzed_from=window.start,analyzed_to=window.end,
         summary='수집 실행 로그에서 search 1.96초와 bulk 1.94초가 관측됐습니다.',summary_evidence_refs=query_refs[:2],

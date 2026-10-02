@@ -30,13 +30,12 @@ def select_all(messages, response_format):
     return json.dumps({"keep": [{"record_id": 1}, {"record_id": 2}]})
 
 
-def test_same_line_from_distinct_hosts_preserves_raw_and_provenance():
+def test_same_line_from_distinct_hosts_preserves_line_and_provenance():
     records = [
         RawRecord(
             record_id=i,
             event_time=T0,
             line="selection summary",
-            raw="original <log>",
             provenance=EvidenceProvenance(
                 method="ssh",
                 host=host,
@@ -61,7 +60,6 @@ def test_same_line_from_distinct_hosts_preserves_raw_and_provenance():
     )
     assert len(result.evidence) == 2
     assert [e.provenance.host for e in result.evidence] == ["host-a", "host-b"]
-    assert all(e.raw == "original <log>" for e in result.evidence)
     assert all(e.message == "selection summary" for e in result.evidence)
 
 
@@ -74,7 +72,7 @@ def test_ssh_records_mark_inherited_and_fallback_times():
     )
     assert [r.time_origin for r in records] == ["fallback", "parsed", "inherited"]
     assert all(r.provenance == p for r in records)
-    assert records[2].raw == " at stack.frame"
+    assert records[2].line == " at stack.frame"
 
 
 def test_ssh_timestamp_keeps_fraction_and_offset():

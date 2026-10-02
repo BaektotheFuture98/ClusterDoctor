@@ -5,7 +5,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse import query_log
-from cluster_doctor.incident_analysis_agent.model.log_entries import record_json
+from cluster_doctor.incident_analysis_agent.model.log_entries import query_record_key, record_json
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
@@ -67,7 +67,7 @@ def test_select_declared_columns_maps_names_and_drops_raw_url():
     record = query_log.to_records([entry])[0]
     assert record.event_time == T0 and record.severity == "ERROR"
     assert record.node_name is None
-    assert json.loads(record.raw) == raw
+    assert record.record_key == query_record_key(entry)
 
 
 def test_keywords_are_stored_as_first_five():

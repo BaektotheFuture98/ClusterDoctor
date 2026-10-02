@@ -120,7 +120,7 @@ def build_reduce_prompt(
             if record is None:
                 continue
             rows.append(
-                f"#{record.record_id} [{record.event_time.isoformat()}] time_origin={record.time_origin} raw_truncated={record.raw_truncated}"
+                f"#{record.record_id} [{record.event_time.isoformat()}] time_origin={record.time_origin}"
                 f"{' ' + item.event_type if item.event_type else ''} {record.line}"
             )
         if rows:

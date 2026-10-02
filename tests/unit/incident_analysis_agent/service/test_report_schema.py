@@ -7,7 +7,7 @@ from cluster_doctor.incident_analysis_agent.service.validation.consistency.repor
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
 
 T0=datetime(2026,10,1,tzinfo=UTC)
-E=Evidence(evidence_id='E-one',event_time=T0,source=EvidenceSource.QUERY_LOG,message='query',raw='original')
+E=Evidence(evidence_id='E-one',event_time=T0,source=EvidenceSource.QUERY_LOG,message='query')
 
 
 def domain(payload):

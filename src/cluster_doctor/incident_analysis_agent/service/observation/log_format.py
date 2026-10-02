@@ -103,7 +103,7 @@ def format_evidence_line(evidence: Evidence) -> str:
     parts = [
         f"[{evidence.evidence_id}]",
         evidence.event_time.isoformat(),
-        f"time_origin={evidence.time_origin} raw_truncated={evidence.raw_truncated}",
+        f"time_origin={evidence.time_origin}",
     ]
     parts.append(str(evidence.source))
     if evidence.severity:
