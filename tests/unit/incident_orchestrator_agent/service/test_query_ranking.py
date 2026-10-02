@@ -126,3 +126,10 @@ def test_table_has_ten_individual_rows_no_average_or_internal_ids():
     assert '<th>실행시간</th>' in html and '12s' in html
     assert 'Avg' not in html and '<th>ID</th>' not in html
     assert '&lt;keyword&gt;' in html
+
+
+def test_row_without_extracted_conditions_shows_placeholder():
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
+    entry=request(0)
+    assert entry.conditions==()
+    assert '조건 미추출' in render_query_ranking((entry,))

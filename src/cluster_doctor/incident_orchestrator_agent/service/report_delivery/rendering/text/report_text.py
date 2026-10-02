@@ -574,7 +574,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     for row in rows[:10]:
         e=row.record
         out.append(f'{stamp(e.timestamp)} · {e.cmd} · {str(row.execution_seconds)+"s" if row.execution_seconds is not None else "미확인"} · 키워드: {" · ".join(e.keyword) or "없음"} · 대상: {row.target_host or "미확인"} · 요청 호스트: {e.host}')
-        out.extend(row.conditions)
+        out.extend(row.conditions or ('조건 미추출',))
     for _,title,lines in source_log_sections(report):
         out.append(title)
         out.extend(lines)

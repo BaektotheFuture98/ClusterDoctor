@@ -11,7 +11,7 @@ def render_query_ranking(requests, candidates=(), picks=None):
         entry=row.record
         keyword=' · '.join(entry.keyword) or '저장된 키워드 없음'
         if entry.keyword_omitted:keyword+=f' (+{entry.keyword_omitted}개 생략)'
-        condition='\n'.join(row.conditions) or '조건 미확인'
+        condition='\n'.join(row.conditions) or '조건 미추출'
         condition+=f'\ns_date={entry.s_date} e_date={entry.e_date} date_range={entry.date_range}\ncompany={entry.company} user={entry.user}'
         if entry.provenance:
             condition+=f'\n출처: {entry.provenance.table or entry.provenance.endpoint or entry.provenance.method}'
