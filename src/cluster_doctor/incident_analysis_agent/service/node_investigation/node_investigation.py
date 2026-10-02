@@ -171,6 +171,11 @@ def find_problem_nodes(
     return candidates
 
 
+def _unreached_status(window: TimeRange, reason: str, host: str = "") -> SourceWindowStatus:
+    return SourceWindowStatus("node_log", window.start, window.end,
+        "failed", None, datetime.now(KST), reason, host=host)
+
+
 def investigate_nodes(
     candidates: list[ProblemNodeCandidate],
     window: TimeRange,
@@ -192,7 +197,7 @@ def investigate_nodes(
     if not candidates:
         _logger.info("[node] 문제 노드 후보가 없다 — 노드 조사를 건너뛴다")
         result.source_statuses.append(SourceWindowStatus("node_log", window.start, window.end,
-            "skipped", None, datetime.now(KST), "마스터 로그에서 조사 대상 노드가 없다"))
+            "skipped", None, datetime.now(KST), "조사 대상 노드 후보 없음"))
         return result
 
     for candidate in candidates:
@@ -200,16 +205,20 @@ def investigate_nodes(
             resolved = resolver.resolve(candidate.node_id)
         except Exception as exc:
             _logger.warning("[node] %s 조회 실패: %s", candidate.node_id, exc)
-            result.gaps.append(f"노드 정보 조회 실패 (id={candidate.node_id}): {exc}")
+            reason = f"노드 정보 조회 실패 (id={candidate.node_id}): {exc}"
+            result.gaps.append(reason)
+            result.source_statuses.append(_unreached_status(window, reason))
             continue
 
         if resolved is None:
-            result.gaps.append(f"노드를 찾지 못했다 (id={candidate.node_id})")
+            reason = f"노드를 찾지 못했다 (id={candidate.node_id})"
+            result.gaps.append(reason)
+            result.source_statuses.append(_unreached_status(window, reason))
             continue
         if not resolved.is_reachable():
-            result.gaps.append(
-                f"{candidate.node_id} 노드의 접속 정보가 불완전해 로그를 보지 못했다"
-            )
+            reason = f"{candidate.node_id} 노드의 접속 정보가 불완전해 로그를 보지 못했다"
+            result.gaps.append(reason)
+            result.source_statuses.append(_unreached_status(window, reason, resolved.host))
             continue
 
         try:
