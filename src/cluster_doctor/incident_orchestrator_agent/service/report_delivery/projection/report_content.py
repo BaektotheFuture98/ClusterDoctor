@@ -11,6 +11,10 @@ def stamp(moment):
     return moment.astimezone(KST).isoformat(sep=' ') + ' KST'
 
 
+def minute_stamp(moment):
+    return moment.astimezone(KST).strftime('%Y-%m-%d %H:%M') + ' KST'
+
+
 def evidence_text(e: Evidence) -> str:
     time = stamp(e.event_time) if e.time_origin == 'parsed' else ('앞선 로그 문맥 · 시각 미확인' if e.time_origin == 'inherited' else '시각 미확인')
     provenance=e.provenance

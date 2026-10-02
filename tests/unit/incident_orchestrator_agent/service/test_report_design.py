@@ -1,8 +1,9 @@
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import TimelineCard
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection import report_content
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html import report_layout
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative
@@ -91,7 +92,21 @@ def test_timeline_markup_matches_dot_and_line_css(monkeypatch):
     assert 'class="timeline-event timeline-event-warning"' in articles[1]
     assert 'class="timeline-event"' in articles[2] and 'timeline-event-' not in articles[2]
     for card,article in zip(cards,articles):
-        assert f'<div class="event-time"><time datetime="{card.start.isoformat()}">{stamp(card.start)}</time>' in article
-    assert f'<time datetime="{cards[0].end.isoformat()}">마지막 관측 {stamp(cards[0].end)}</time>' in articles[0]
+        assert f'<div class="event-time"><time datetime="{card.start.isoformat()}">{minute_stamp(card.start)}</time>' in article
+    assert f'<time datetime="{cards[0].end.isoformat()}">마지막 관측 {minute_stamp(cards[0].end)}</time>' in articles[0]
     assert '마지막 관측' not in articles[1]+articles[2]
     assert '<br>마지막 관측' not in section
+
+
+def test_timeline_times_show_minute_precision_in_html_and_text(monkeypatch):
+    start=datetime.fromisoformat('2026-10-02T09:28:53.123456+09:00')
+    card=TimelineCard(start=start,end=start,severity='Info',representative_event='evt')
+    monkeypatch.setattr(report_layout,'report_timeline',lambda _report:(card,))
+    monkeypatch.setattr(report_content,'report_timeline',lambda _report:(card,))
+    section=render_report(example()).split('id="timeline"',1)[1].split('</section>',1)[0]
+    assert '<div class="event-time"><time datetime="2026-10-02T09:28:53.123456+09:00">2026-10-02 09:28 KST</time>' in section
+    visible=section.replace('2026-10-02T09:28:53.123456+09:00','')
+    assert '09:28:53' not in visible and '.123456' not in visible
+    text=render_text(example())
+    assert '2026-10-02 09:28 KST · evt' in text
+    assert '09:28:53' not in text.split('주요 타임라인',1)[1].split('evt',1)[0]
