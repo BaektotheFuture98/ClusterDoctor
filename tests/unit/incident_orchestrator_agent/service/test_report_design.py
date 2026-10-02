@@ -1,6 +1,9 @@
 from dataclasses import replace
 from datetime import timedelta
 from html.parser import HTMLParser
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import TimelineCard
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html import report_layout
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
@@ -45,7 +48,7 @@ def test_timeline_is_bounded_and_contains_absolute_maximum():
     evidence=tuple(Evidence(evidence_id=f'E{n}',event_time=T0+timedelta(seconds=n+1),source=EvidenceSource.NODE_LOG,severity='Critical',message=f'failure{n}') for n in range(30))
     html=render_report(replace(r,evidence=evidence))
     section=html.split('id="timeline"',1)[1].split('</section>',1)[0]
-    assert section.count('class="timeline-event"')<=8
+    assert section.count('<article class="timeline-event')<=8
     assert '최대 실행시간 1.96s' in section
     assert 'E29' not in html
 
@@ -71,3 +74,24 @@ def test_print_css_keeps_svg_raw_and_headers():
     assert '@media print' in html and 'svg{display:block!important}' in html
     assert 'thead{display:table-header-group}' in html and 'break-inside:avoid' in html
     assert 'white-space:pre-wrap' in html and 'overflow-wrap:anywhere' in html
+
+
+def test_timeline_markup_matches_dot_and_line_css(monkeypatch):
+    cards=(
+        TimelineCard(start=T0,end=T0+timedelta(minutes=2),severity='Critical',representative_event='crit'),
+        TimelineCard(start=T0+timedelta(minutes=5),end=T0+timedelta(minutes=5),severity='Warning',representative_event='warn'),
+        TimelineCard(start=T0+timedelta(minutes=9),end=T0+timedelta(minutes=9),severity='Info',representative_event='info'),
+    )
+    monkeypatch.setattr(report_layout,'report_timeline',lambda _report:cards)
+    section=render_report(example()).split('id="timeline"',1)[1].split('</section>',1)[0]
+    assert '<div class="incident-timeline">' in section
+    articles=section.split('<article')[1:]
+    assert len(articles)==3
+    assert 'class="timeline-event timeline-event-critical"' in articles[0]
+    assert 'class="timeline-event timeline-event-warning"' in articles[1]
+    assert 'class="timeline-event"' in articles[2] and 'timeline-event-' not in articles[2]
+    for card,article in zip(cards,articles):
+        assert f'<div class="event-time"><time datetime="{card.start.isoformat()}">{stamp(card.start)}</time>' in article
+    assert f'<time datetime="{cards[0].end.isoformat()}">마지막 관측 {stamp(cards[0].end)}</time>' in articles[0]
+    assert '마지막 관측' not in articles[1]+articles[2]
+    assert '<br>마지막 관측' not in section

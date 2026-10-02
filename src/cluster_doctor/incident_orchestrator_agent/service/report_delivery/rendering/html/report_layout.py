@@ -17,9 +17,9 @@ section{background:white;border:1px solid #dde4ef;border-radius:12px;padding:24p
 h1{font-size:28px}h2{font-size:21px}.metrics{display:flex;gap:32px;flex-wrap:wrap}.metric strong{display:block;font-size:28px;color:#1555aa}
 table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}th,td{padding:10px;border-bottom:1px solid #dde4ef;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}th{background:#eef3fb}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,monospace;margin:0}svg{width:100%;height:auto}svg text{font-size:12px;fill:#35506b}.hint{color:#52657b}
-.timeline-event{display:grid;grid-template-columns:240px 1fr;gap:20px;border-bottom:1px solid #e1e7ef;padding:14px 0}.timeline-event h3{margin:0 0 8px}.quote{background:#f5f7fb;padding:12px;border-left:3px solid #adc8ee;margin:10px 0}
-@media(max-width:700px){.wrap{padding:12px}section{padding:14px}.timeline-event{display:block}table{font-size:11px}}
-@media print{body{background:white}.wrap{max-width:none;padding:0}section{border-radius:0;box-shadow:none}svg{display:block!important}thead{display:table-header-group}tr,.timeline-event,.quote{break-inside:avoid}pre{overflow:visible}a{text-decoration:none}}
+.timeline-event h3{margin:0 0 8px}.quote{background:#f5f7fb;padding:12px;border-left:3px solid #adc8ee;margin:10px 0}
+@media(max-width:700px){.wrap{padding:12px}section{padding:14px}table{font-size:11px}}
+@media print{body{background:white}.wrap{max-width:none;padding:0}section{border-radius:0;box-shadow:none}svg{display:block!important}thead{display:table-header-group}tr,.quote{break-inside:avoid}pre{overflow:visible}a{text-decoration:none}}
 '''
 
 
@@ -48,15 +48,16 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
         if gap != DEMO_GAP and not is_validation_diagnostic(gap):summary+=f'<p class="hint">{esc(gap)}</p>'
     if any(row.failed for row in obs.timeline):summary+='<p class="hint">분석하지 못한 구간이 있습니다.</p>'
     summary+='</section>'
-    timeline='<section id="timeline"><h2>주요 타임라인</h2>'
+    timeline='<section id="timeline"><h2>주요 타임라인</h2><div class="incident-timeline">'
     for card in report_timeline(report):
-        timeline+=f'<article class="timeline-event"><div>{esc(stamp(card.start))}'+(f'<br>마지막 관측 {esc(stamp(card.end))}' if card.end!=card.start else '')+'</div><div>'+f'<h3>{esc(card.representative_event)}</h3>'
+        severity_class={'Critical':' timeline-event-critical','Warning':' timeline-event-warning'}.get(card.severity,'')
+        timeline+=f'<article class="timeline-event{severity_class}"><div class="event-time"><time datetime="{esc(card.start.isoformat())}">{esc(stamp(card.start))}</time>'+(f'<time datetime="{esc(card.end.isoformat())}">마지막 관측 {esc(stamp(card.end))}</time>' if card.end!=card.start else '')+'</div><div>'+f'<h3>{esc(card.representative_event)}</h3>'
         for item in (*card.impacts,*card.causes):timeline+=f'<p>{esc(item.text)}</p>'
         if narrative:
             for item in card.interpretations:timeline+=f'<p class="analysis-note">{esc(item.text)}</p>'
         timeline+=quotes(timeline_sources(card,ssh_evidence(report.evidence)))
         timeline+='</div></article>'
-    timeline+='</section>'
+    timeline+='</div></section>'
     metrics='<section id="system-metrics"><h2>시스템 지표 · 관측 최대값</h2>'
     nodes=tuple(n for n in obs.nodes if n.samples > 0)
     if nodes:
