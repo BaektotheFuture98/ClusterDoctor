@@ -545,7 +545,8 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
     """Plain fallback with the same execution facts and verification gate as HTML."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, source_log_notes
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
     obs=report.observations
@@ -575,13 +576,17 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
         e=row.record
         out.append(f'{stamp(e.timestamp)} · {e.cmd} · {str(row.execution_seconds)+"s" if row.execution_seconds is not None else "미확인"} · 키워드: {" · ".join(e.keyword) or "없음"} · 대상: {row.target_host or "미확인"} · 요청 호스트: {e.host}')
         out.extend(row.conditions or ('조건 미추출',))
-    for _,title,lines in source_log_sections(report):
+    if not rows:out.append(query_log_note(obs))
+    notes=source_log_notes(report)
+    for id_,title,lines in source_log_sections(report):
         out.append(title)
+        if id_ in notes:out.append(notes[id_])
         out.extend(lines)
     ssh=ssh_evidence(report.evidence)
     out.append('SSH 노드 로그')
     if ssh:
         out.extend(evidence_text(e) for e in ssh)
+    else:out.append(ssh_note(obs))
     out.append('시스템 지표 · 관측 최대값')
     out.extend(system_maxima(obs.nodes))
     for n in sorted((n for n in obs.nodes if n.samples > 0),key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:

@@ -5,6 +5,7 @@ from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import project_timeline, TimelineCard, TimelineItem
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, slowlog_note
 
 
 def stamp(moment):
@@ -121,6 +122,15 @@ def source_log_sections(report):
         for e in report.observations.master_events[:MASTER_DISPLAY_LIMIT])
     slow=tuple(evidence_text(e) for e in sorted((e for e in report.evidence if e.source=='slowlog'),key=lambda e:e.event_time)[:SOURCE_DISPLAY_LIMIT])
     return (('master-logs','마스터 노드 로그',master),('slowlogs','slowlog 로그',slow))
+
+
+def source_log_notes(report):
+    """Empty-section explanations keyed by section id; only for sections with no items."""
+    sections={id_:lines for id_,_,lines in source_log_sections(report)}
+    notes={}
+    if not sections['master-logs']:notes['master-logs']=master_note(report.observations)
+    if not sections['slowlogs']:notes['slowlogs']=slowlog_note(report.observations)
+    return notes
 
 
 def is_validation_diagnostic(text):

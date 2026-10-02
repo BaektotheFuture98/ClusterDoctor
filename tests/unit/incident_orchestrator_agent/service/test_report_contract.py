@@ -45,7 +45,7 @@ def test_absent_ssh_does_not_render_empty_table():
     assert 'id="ssh-logs"' in html
     section=html.split('id="ssh-logs"')[1].split('</section>')[0]
     assert '<table' not in section
-    assert section.endswith('</h2>')
+    assert section.endswith('</h2><p class="hint">수집 상태 미확인</p>')
 
 
 def test_global_maximum_nodes_survive_detail_table_limit():
@@ -123,7 +123,7 @@ def test_optional_source_sections_are_fixed_and_empty_without_records():
     assert [html.index(f'id="{s}"') for s in sections]==sorted(html.index(f'id="{s}"') for s in sections)
     for name in ('master-logs','slowlogs','ssh-logs'):
         body=html.split(f'id="{name}"')[1].split('</section>')[0].split('</h2>')[1]
-        assert body==''
+        assert body=='<p class="hint">수집 상태 미확인</p>'
     text=render_text(r)
     assert text.index('마스터 노드 로그') < text.index('slowlog 로그') < text.index('SSH 노드 로그')
     assert '로그 없음' not in text
@@ -138,7 +138,7 @@ def test_master_observations_survive_without_selected_evidence_or_ssh():
     assert 'master-only &lt;raw&gt;&amp;' in html.split('id="master-logs"')[1].split('</section>')[0]
     assert 'master-only' in html.split('id="timeline"')[1].split('</section>')[0]
     assert 'master-only <raw>&' in render_text(r)
-    assert html.split('id="ssh-logs"')[1].split('</section>')[0].endswith('</h2>')
+    assert html.split('id="ssh-logs"')[1].split('</section>')[0].endswith('</h2><p class="hint">수집 상태 미확인</p>')
 
 
 def test_slowlog_and_ssh_do_not_depend_on_master_records():
@@ -147,7 +147,7 @@ def test_slowlog_and_ssh_do_not_depend_on_master_records():
     html=render_report(r)
     assert 'slow-only &lt;raw&gt;' in html.split('id="slowlogs"')[1].split('</section>')[0]
     assert 'WARN &lt;stack&gt;&amp;' in html.split('id="ssh-logs"')[1].split('</section>')[0]
-    assert html.split('id="master-logs"')[1].split('</section>')[0].endswith('</h2>')
+    assert html.split('id="master-logs"')[1].split('</section>')[0].endswith('</h2><p class="hint">수집 상태 미확인</p>')
 
 
 def test_all_optional_source_combinations_keep_slots_and_own_records():
@@ -189,7 +189,7 @@ def test_failed_collection_keeps_empty_source_slot_and_original_status():
     status=SourceWindowStatus('node_log',T0,T0+timedelta(minutes=1),'failed',None,T0,host='data-node')
     r=replace(r,observations=replace(r.observations,source_statuses=(status,)))
     html=render_report(r)
-    assert html.split('id="ssh-logs"')[1].split('</section>')[0].endswith('</h2>')
+    assert html.split('id="ssh-logs"')[1].split('</section>')[0].endswith('</h2><p class="hint">SSH 수집 실패</p>')
     assert r.observations.source_statuses[0].status=='failed'
     assert 'data-node 수집 실패' in html
 

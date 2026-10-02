@@ -1,5 +1,6 @@
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import ssh_note
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 
 
@@ -9,9 +10,11 @@ def ssh_evidence(evidence, limit=10):
     return tuple(sorted(items,key=lambda e:(e.time_origin!='parsed',-severity.get(e.severity or '',0),e.event_time))[:limit])
 
 
-def render_ssh_logs(evidence: tuple[Evidence, ...], *, limit: int = 10) -> str:
+def render_ssh_logs(evidence: tuple[Evidence, ...], *, limit: int = 10, observations=None) -> str:
     items=ssh_evidence(evidence,limit)
-    if not items:return '<section id="ssh-logs"><h2>SSH 노드 로그</h2></section>'
+    if not items:
+        note=f'<p class="hint">{esc(ssh_note(observations))}</p>' if observations is not None else ''
+        return f'<section id="ssh-logs"><h2>SSH 노드 로그</h2>{note}</section>'
     rows=[]
     for e in items:
         time=stamp(e.event_time) if e.time_origin=='parsed' else ('앞선 로그 문맥 · 시각 미확인' if e.time_origin=='inherited' else '시각 미확인')
