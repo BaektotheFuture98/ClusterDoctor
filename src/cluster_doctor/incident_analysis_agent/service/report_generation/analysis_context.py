@@ -33,7 +33,7 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
     }
     def encode():
         return json.dumps(data, ensure_ascii=False, default=str)
-    # Protect the complete JSON budget, not only raw snippets. All source DTOs
+    # Protect the complete JSON budget. All source DTOs
     # remain intact; compaction is explicitly visible to the model.
     omissions = data['context_omissions']
     nodes = [row for row in observations.nodes if row.samples > 0]

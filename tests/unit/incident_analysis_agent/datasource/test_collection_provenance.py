@@ -101,7 +101,8 @@ def test_clickhouse_fetch_retains_table_window_and_record(module, row):
     if module is node_metric:
         evidence = module.to_evidence([entry], new_evidence_id=lambda: "E-1")[0]
         assert evidence.provenance == p
-        assert not hasattr(evidence, "raw")
+        assert evidence.node_name == "data-03"
+        assert "search_rejected=1" in evidence.message
     else:
         record = module.to_records([entry])[0]
         assert record.provenance == p
