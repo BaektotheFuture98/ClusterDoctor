@@ -14,6 +14,7 @@
 소스별 묶기가 조용히 어긋난다.
 """
 
+import hashlib
 import json
 from dataclasses import dataclass, field, fields
 from datetime import datetime
@@ -42,10 +43,8 @@ def record_json(entry: LogEntry) -> str:
     values = {
         f.name: getattr(entry, f.name)
         for f in fields(entry)
-        if f.name not in ("provenance", "additional_fields")
+        if f.name != "provenance"
     }
-    if isinstance(entry, QueryLogEntry):
-        values.update(entry.additional_fields)
     return json.dumps(
         values,
         ensure_ascii=False,
@@ -126,7 +125,11 @@ class QueryLogEntry(LogEntry):
     e_date: int
     date_range: int
     keyword: tuple[str, ...]
-    url: str
+    # url 컬럼은 저장하지 않는다. 수집 시 요청 대상과 DSL 조건만 뽑는다
+    # (datasource/clickhouse/query_url.py).
+    target_host: str | None
+    index_name: str | None
+    conditions: tuple[str, ...]
     cmd: str
     service: str
     env: str
@@ -139,7 +142,6 @@ class QueryLogEntry(LogEntry):
     # 테이블 컬럼이 아니다. 수집 시 keyword를 앞 5개로 자르면서 버린 개수를
     # 담는 계산 값이다. 0이면 잘리지 않았다.
     keyword_omitted: int = field(default=0, kw_only=True)
-    additional_fields: dict[str, object] = field(default_factory=dict, kw_only=True)
 
     @property
     def timestamp(self) -> datetime:
@@ -179,3 +181,9 @@ class SlowlogEntry(LogEntry):
     # 식별자 체계라 아직 필드로 분리하지 않는다.
     opaque_id: str = ""
     query: str = ""
+
+
+def query_record_key(record: QueryLogEntry) -> str:
+    # A fetched-record fingerprint for unambiguous attribution, never a query identity.
+    canonical = json.dumps(json.loads(record_json(record)), ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()

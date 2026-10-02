@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow, SourceWindowStatus, MasterEvent
@@ -31,11 +32,11 @@ def build_example(variant='default'):
     provenance=EvidenceProvenance(method='clickhouse',table='demo.es_query_log',query_from=window.start,query_to=window.end,collected_at=window.end)
     base=QueryLogEntry(reg_date=start+timedelta(seconds=12,microseconds=345000),host='192.0.2.11',run_time=Decimal('1.96'),success='Y',
         s_date=20260928,e_date=20261001,date_range=4,keyword=('반도체','수출','환율','전망','기업'),keyword_omitted=7,
-        url='POST http://192.0.2.32:9200/news/_search\n{"size":20,"query":{"range":{"in_date":{"gte":20260928,"lte":20261001}}}}',
+        **request_fields('POST http://192.0.2.32:9200/news/_search\n{"size":20,"query":{"range":{"in_date":{"gte":20260928,"lte":20261001}}}}'),
         cmd='search',service='web',env='demo',project='demo',company='예시 회사',user='예시 사용자',search_count=20,etc='',cluster='demo-es',provenance=provenance)
     requests=[base,replace(base,reg_date=start+timedelta(seconds=25),run_time=Decimal('1.94'),cmd='bulk',keyword=(),keyword_omitted=0,
-        url='POST http://192.0.2.32:9200/_bulk\n{"index":{"_index":"news"}}'),
-        replace(base,reg_date=start+timedelta(minutes=1,seconds=17),run_time=Decimal('1.51'),url='POST http://192.0.2.33:9200/archive/_search\n{"size":500,"track_total_hits":true}')]
+        **request_fields('POST http://192.0.2.32:9200/_bulk\n{"index":{"_index":"news"}}')),
+        replace(base,reg_date=start+timedelta(minutes=1,seconds=17),run_time=Decimal('1.51'),**request_fields('POST http://192.0.2.33:9200/archive/_search\n{"size":500,"track_total_hits":true}'))]
     requests += [replace(base,reg_date=start+timedelta(minutes=m,seconds=30),run_time=Decimal(value),keyword=('환율',),keyword_omitted=0) for m,value in ((1,'0.82'),(2,'0.54'),(4,'0.78'))]
     builder=ObservationBuilder(window);builder.record_log_observations(requests)
     for minute in range(5):

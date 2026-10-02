@@ -34,13 +34,14 @@ def source_row():
     }
 
 
-def test_select_all_maps_names_and_preserves_every_column():
-    data = source_row() | {"new_column": {"nested": [1, 2]}}
+def test_select_declared_columns_maps_names_and_drops_raw_url():
+    data = source_row()
     names = tuple(reversed(tuple(data)))
 
     def query(sql, parameters):
-        assert "SELECT * FROM db.log" in sql
-        assert "WHERE reg_date" in sql
+        assert "SELECT *" not in sql
+        assert "`url`" in sql and "`reg_date`" in sql
+        assert "FROM db.log WHERE reg_date" in sql
         return SimpleNamespace(
             column_names=names, result_rows=[tuple(data[n] for n in names)]
         )
@@ -51,14 +52,17 @@ def test_select_all_maps_names_and_preserves_every_column():
     dto_fields = {f.name for f in fields(entry)}
     assert "reg_date" in dto_fields and "timestamp" not in dto_fields
     assert "keyword" in dto_fields and "keywords" not in dto_fields
+    assert "url" not in dto_fields and "additional_fields" not in dto_fields
     assert entry.reg_date == T0 and entry.timestamp == T0
     assert entry.success == "N" and entry.is_success is False
     assert entry.keyword == ("a", "b")
     raw = json.loads(record_json(entry))
-    assert set(raw) - {"keyword_omitted"} == set(data)
+    assert set(raw) == (set(data) - {"url"}) | {
+        "keyword_omitted", "target_host", "index_name", "conditions"
+    }
     assert raw["keyword_omitted"] == 0
     assert raw["date_range"] == 30 and raw["s_date"] == 20260901
-    assert raw["etc"] == data["etc"] and raw["new_column"] == data["new_column"]
+    assert raw["etc"] == data["etc"]
     assert raw["success"] == "N"
     record = query_log.to_records([entry])[0]
     assert record.event_time == T0 and record.severity == "ERROR"

@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.service.observation.compute import slow_candidates, timeline_row
 
@@ -11,7 +12,7 @@ T0 = datetime(2026, 10, 1, tzinfo=UTC)
 def query(*, runtime='1.96', url='POST http://192.168.1.32:9200/index/_search', host='211.188.49.31'):
     return QueryLogEntry(reg_date=T0, host=host, run_time=Decimal(runtime), success='Y',
         s_date=20260928, e_date=20261001, date_range=4, keyword=('a','b','c','d','e'),
-        url=url, cmd='search', service='web', env='prod', project='project', company='company',
+        **request_fields(url), cmd='search', service='web', env='prod', project='project', company='company',
         user='user', search_count=20, etc='', cluster='es', keyword_omitted=7)
 
 

@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from cluster_doctor.incident_analysis_agent.model.analysis_contract import LogAnalysisRequest
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource, EvidenceProvenance
 from cluster_doctor.incident_analysis_agent.model.observations import NodeMetricRow, SourceWindowStatus
@@ -39,7 +40,7 @@ def inputs(case):
     for n,row in enumerate(case.get('requests',[])):
         requests.append(QueryLogEntry(reg_date=T0+timedelta(seconds=n),host='client-host',run_time=Decimal(row.get('run_time','1.96')),
             success='Y',s_date=20260928,e_date=20261001,date_range=4,keyword=tuple(row.get('keyword',['a','b','c','d','e'])),
-            keyword_omitted=7,url=row.get('url','POST http://192.0.2.32:9200/a/_search'),cmd=row.get('cmd','search'),
+            keyword_omitted=7,**request_fields(row.get('url','POST http://192.0.2.32:9200/a/_search')),cmd=row.get('cmd','search'),
             service='web',env='fixture',project='fixture',company='fixture',user='fixture',search_count=20,etc='',cluster='fixture',provenance=provenance))
     builder.record_log_observations(requests)
     builder.record_source_status(SourceWindowStatus('es_query_log',window.start,window.end,'failed' if case.get('failed') else 'ok',None if case.get('failed') else len(requests),T0))

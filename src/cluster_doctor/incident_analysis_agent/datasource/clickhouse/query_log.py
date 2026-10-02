@@ -6,12 +6,14 @@ slowlog와 달리 **성공한 요청도 들어온다.** 그래서 이쪽에서�
 
 from __future__ import annotations
 
-from dataclasses import fields
 from datetime import UTC, datetime
 
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
     MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     query_segment,
+)
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import (
+    request_fields,
 )
 from cluster_doctor.incident_analysis_agent.model.evidence import (
     EvidenceProvenance,
@@ -54,9 +56,17 @@ SPEC = AnalysisSpec(
 MAX_STORED_KEYWORDS = 5
 
 
+_COLUMNS = (
+    "reg_date", "host", "run_time", "success", "s_date", "e_date", "date_range",
+    "keyword", "url", "cmd", "service", "env", "project", "company", "user",
+    "search_count", "etc", "cluster",
+)
+
+
 def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
+    columns = ", ".join(f"`{name}`" for name in _COLUMNS)
     sql = (
-        f"SELECT * FROM {table} "
+        f"SELECT {columns} FROM {table} "
         "WHERE reg_date >= %(from_)s AND reg_date < %(to)s "
         f"LIMIT {MAX_ROWS_PER_SEGMENT_PER_SOURCE}"
     )
@@ -69,30 +79,22 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
         query_to=tr.end,
         excerpt=len(rows) >= MAX_ROWS_PER_SEGMENT_PER_SOURCE,
     )
-    known = {f.name for f in fields(QueryLogEntry)} - {
-        "provenance",
-        "additional_fields",
-        "keyword_omitted",
-    }
-    entries = []
-    for row in rows:
-        values = {name: row[name] for name in known}
-        keywords = tuple(values["keyword"])
-        values["keyword"] = keywords[:MAX_STORED_KEYWORDS]
-        values["keyword_omitted"] = max(0, len(keywords) - MAX_STORED_KEYWORDS)
-        PSEUDONYMS.register("company", values.get("company"))
-        PSEUDONYMS.register("user", values.get("user"))
-        entries.append(
-            QueryLogEntry(
-                **values,
-                provenance=provenance,
-                additional_fields={
-                    name: value for name, value in row.items() if name not in known
-                },
-            )
-        )
-    return entries
+    return [entry_from_row(row, provenance) for row in rows]
 
+
+def entry_from_row(row: dict, provenance: EvidenceProvenance | None) -> QueryLogEntry:
+    """조회한 행 하나를 DTO로. 키워드는 앞 5개만, url은 파싱한 값만 남긴다."""
+    values = {name: row[name] for name in _COLUMNS if name not in ("keyword", "url")}
+    keywords = tuple(row["keyword"])
+    PSEUDONYMS.register("company", values.get("company"))
+    PSEUDONYMS.register("user", values.get("user"))
+    return QueryLogEntry(
+        **values,
+        keyword=keywords[:MAX_STORED_KEYWORDS],
+        keyword_omitted=max(0, len(keywords) - MAX_STORED_KEYWORDS),
+        **request_fields(row["url"] or ""),
+        provenance=provenance,
+    )
 
 def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
     ordered = sorted(entries, key=lambda entry: entry.timestamp)
