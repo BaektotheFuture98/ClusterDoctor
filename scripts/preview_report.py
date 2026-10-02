@@ -21,7 +21,7 @@ from cluster_doctor.incident_analysis_agent.service.observation.builder import O
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import required_query_evidence
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import HtmlFileReportPublisher
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.summary_view import DEMO_GAP
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import DEMO_GAP
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 
 VARIANTS={'default':VerificationStatus.PASSED,'ssh':VerificationStatus.PASSED,'mismatch':VerificationStatus.MISMATCH,'not-verified':VerificationStatus.NOT_VERIFIED,'ssh-not-verified':VerificationStatus.NOT_VERIFIED,'master':VerificationStatus.PASSED,'all':VerificationStatus.PASSED}
