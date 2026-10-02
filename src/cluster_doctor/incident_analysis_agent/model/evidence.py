@@ -5,11 +5,10 @@
 당한 실패가 그것이다(``observations.py`` 모듈 docstring). 그래서 근거는
 **필드로** 나른다.
 
-``raw``가 요점이다. 원문 전량을 프롬프트에 싣지는 않으면서도 검증이 필요할 때
-다시 볼 수 있어야 한다 — 리포트 검증이 "이 주장이 실제 로그 줄과 맞는가"를 보려면
-원문에 닿아야 한다. Evidence 한 건과 원문은 언제나 1:1이므로(수집 지점 셋
-모두 그 자리에서 만든 Evidence 하나에만 쓴다) 별도 참조 저장소 없이 이 필드에
-직접 담는다.
+근거는 수집된 DTO에서 코드가 렌더링한 ``message``와 수집 위치만 나른다. DTO를
+문자열로 다시 직렬화한 사본은 두지 않는다. 보고서와 검증은 DTO
+(``Observations``)를 기준으로 하고, 쿼리 로그 근거는 ``record_key``로 그 실행을
+가리킨다.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ class EvidenceSource(StrEnum):
 class EvidenceProvenance(BaseModel):
     """Collection-time location, never authored by the model."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     method: Literal["ssh", "clickhouse", "elasticsearch_api"]
     collected_at: datetime | None = None
@@ -62,13 +61,11 @@ class Evidence(BaseModel):
 
     ``message``는 Cross-source 프롬프트(``format_evidence_line``)와 운영자
     리포트 인용(``evidence_citation.cite``)이 함께 읽는, 코드가 렌더링한 한
-    줄이다. 소스가 파일 원문이면(SSH ``node_log``) 원문 그대로이고, 그 외에는
-    구조화된 필드에서 조립한 서술이다. 원문은 ``raw``에 별도로 보존한다. 로그는 실제 로그 줄이고, 메트릭과
-    쿼리 실행 기록은 조회된 필드의 직렬화 값이다. 검증기와 리포트가 이 값을
-    함께 읽으며 ``raw_kind``로 원문 형태를 구분한다.
+    줄이다. 소스가 파일 원문이면(SSH ``node_log``) 원문 줄 그대로이고, 그 외에는
+    구조화된 필드에서 조립한 서술이다.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     evidence_id: str
 
@@ -85,11 +82,7 @@ class Evidence(BaseModel):
     # 조립한 서술이다. 프롬프트와 운영자 리포트가 함께 읽는다.
     message: str
 
-    # 이 근거를 만든 원문. 비어 있으면 그 근거는 인용으로 검증할 수 없다.
-    raw: str | None = None
     provenance: EvidenceProvenance | None = None
-    raw_kind: Literal["log", "record", "query"] = "log"
-    raw_truncated: bool = False
     time_origin: Literal["parsed", "inherited", "fallback"] = "parsed"
     # 왜 이 줄을 남겼는가. Reduce 단계가 채운다.
     selection_reason: str | None = None
@@ -106,7 +99,7 @@ class ProblemNodeCandidate(BaseModel):
     그것이다.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     node_id: str
     reason: str = ""

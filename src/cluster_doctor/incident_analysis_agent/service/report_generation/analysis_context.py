@@ -5,11 +5,11 @@ from dataclasses import asdict
 import json
 
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry, record_json
+from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_log_line
-from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import MAX_EVIDENCE_PER_SOURCE, MAX_EVIDENCE_TOTAL, MAX_RAW_LOG_CHARS, truncate_raw
+from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import MAX_EVIDENCE_PER_SOURCE, MAX_EVIDENCE_TOTAL, MAX_RAW_LOG_CHARS
 
 
 def build_analysis_context(observations: Observations, evidence: list[Evidence]) -> str:
@@ -27,9 +27,9 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
         'source_statuses': [asdict(status) for status in observations.source_statuses],
         'node_metrics': [asdict(row) for row in observations.nodes],
         'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.isoformat(),
-            source=e.source, time_origin=e.time_origin, raw_truncated=e.raw_truncated,
+            source=e.source, time_origin=e.time_origin,
             provenance=e.provenance.model_dump(mode='json') if e.provenance else None,
-            message=e.message[:400], raw=None, context_raw_truncated=bool(e.raw)) for e in evidence],
+            message=e.message[:400]) for e in evidence],
     }
     def encode():
         return json.dumps(data, ensure_ascii=False, default=str)
@@ -80,30 +80,15 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
             break
         max(ties, key=len).pop()
         omissions['maximum_node_names'] = omissions.get('maximum_node_names', 0) + 1
-    originals = {e.evidence_id: e for e in evidence}
-    for index, view in enumerate(data['evidence']):
-        original = originals.get(view['evidence_id'])
-        if not original or not original.raw:
-            continue
-        remaining = max(0, MAX_RAW_LOG_CHARS - len(encode()) - 100)
-        allowance = min(6000, remaining // max(1, len(data['evidence']) - index))
-        excerpt = original.raw[:allowance]
-        while excerpt and len(json.dumps(excerpt, ensure_ascii=False)) > allowance:
-            excerpt = excerpt[:max(0,len(excerpt)//2)]
-        view['raw'] = excerpt or None
-        view['context_raw_truncated'] = len(excerpt) < len(original.raw)
     return encode()
 
 
 def required_query_evidence(requests: tuple[QueryLogEntry, ...], *, new_evidence_id: Callable[[], str], limit: int = 5) -> list[Evidence]:
-    result = []
-    for row in rank_query_requests(requests)[:limit]:
-        raw = record_json(row.record)
-        result.append(Evidence(evidence_id=new_evidence_id(), event_time=row.record.timestamp,
-            source=EvidenceSource.QUERY_LOG, message=format_log_line(row.record), raw=truncate_raw(raw),
-            raw_kind='record', raw_truncated=len(raw) > MAX_RAW_LOG_CHARS,
-            record_key=row.record_key, provenance=row.record.provenance, selection_reason='실행시간 상위 개별 로그 (코드 선정)'))
-    return result
+    return [Evidence(evidence_id=new_evidence_id(), event_time=row.record.timestamp,
+            source=EvidenceSource.QUERY_LOG, message=format_log_line(row.record),
+            record_key=row.record_key, provenance=row.record.provenance,
+            selection_reason='실행시간 상위 개별 로그 (코드 선정)')
+        for row in rank_query_requests(requests)[:limit]]
 
 
 def _evidence_key(item: Evidence) -> tuple:

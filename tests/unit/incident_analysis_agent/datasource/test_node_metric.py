@@ -43,18 +43,13 @@ def test_below_threshold_produces_no_evidence():
     assert evidence == []
 
 
-def test_raw_preserves_fetched_metric_record_separately_from_summary():
+def test_evidence_message_is_rendered_from_the_metric_record():
     evidence = to_evidence(
         [_entry(jvm_heap_used_percent=90)], new_evidence_id=_new_evidence_id()
     )
     assert len(evidence) == 1
-    import json
-
-    raw = json.loads(evidence[0].raw)
-    assert raw["jvm_heap_used_percent"] == 90
-    assert raw["node_ip"] == "10.0.0.1"
     assert "기준 85%" in evidence[0].message
-    assert evidence[0].raw_kind == "record"
+    assert evidence[0].node_name == "es-data-1"
 
 
 def test_only_highest_sample_per_node_and_rule_is_kept():

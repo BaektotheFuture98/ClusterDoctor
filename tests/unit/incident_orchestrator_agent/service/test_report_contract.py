@@ -16,7 +16,7 @@ def report(status='NOT_VERIFIED'):
         keyword=('a','b','<script>','d','e'),**request_fields('POST http://es:9200/index/_search\n{"size":20}'),cmd='search',
         service='',env='',project='',company='',user='',search_count=1,etc='',cluster='es')
     logs=tuple(replace(q,run_time=Decimal('1.96')-Decimal(n)/100, cmd='bulk' if n==1 else 'search') for n in range(12))
-    e=Evidence(evidence_id='INTERNAL_ID',event_time=T0,source=EvidenceSource.NODE_LOG,node_name='node',message='WARN <stack>&',raw='WARN <stack>&',
+    e=Evidence(evidence_id='INTERNAL_ID',event_time=T0,source=EvidenceSource.NODE_LOG,node_name='node',message='WARN <stack>&',
         provenance=EvidenceProvenance(method='ssh',file_path='/es/log',host='es'),time_origin='fallback')
     obs=Observations(query_requests=logs,requested=((T0,T0+timedelta(minutes=1)),),source_statuses=(SourceWindowStatus('es_query_log',T0,T0+timedelta(minutes=1),'ok',12,T0),))
     return IncidentAnalysisReport(observations=obs,evidence=(e,),narrative=Narrative(headline='unverified conclusion',root_cause='unverified cause'),verification_status=status)
@@ -61,7 +61,7 @@ def test_global_maximum_nodes_survive_detail_table_limit():
 def test_grouped_timeline_preserves_all_supporting_raw_logs_beyond_ssh_limit():
     r=report('PASSED');sample=r.evidence[0]
     evidence=tuple(sample.model_copy(update={'evidence_id':f'E{i}','event_time':T0+timedelta(seconds=i),
-        'event_type':'gc','time_origin':'parsed','message':f'GC unique-{i}','raw':f'GC unique-{i}'}) for i in range(11))
+        'event_type':'gc','time_origin':'parsed','message':f'GC unique-{i}'}) for i in range(11))
     r=replace(r,evidence=evidence)
     for rendered in (render_report(r),render_text(r)):
         assert 'unique-10' in rendered
@@ -142,7 +142,7 @@ def test_master_observations_survive_without_selected_evidence_or_ssh():
 
 
 def test_slowlog_and_ssh_do_not_depend_on_master_records():
-    r=report();slow=r.evidence[0].model_copy(update={'source':EvidenceSource.SLOWLOG,'raw':'slow-only <raw>','message':'slow-only <raw>','time_origin':'parsed'})
+    r=report();slow=r.evidence[0].model_copy(update={'source':EvidenceSource.SLOWLOG,'message':'slow-only <raw>','time_origin':'parsed'})
     r=replace(r,evidence=(slow,*r.evidence))
     html=render_report(r)
     assert 'slow-only &lt;raw&gt;' in html.split('id="slowlogs"')[1].split('</section>')[0]
@@ -155,7 +155,7 @@ def test_all_optional_source_combinations_keep_slots_and_own_records():
     from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent
     for has_master,has_slow,has_ssh in product((False,True),repeat=3):
         r=report();ssh=r.evidence[0]
-        slow=ssh.model_copy(update={'source':EvidenceSource.SLOWLOG,'raw':'slow-combination','message':'slow-combination'})
+        slow=ssh.model_copy(update={'source':EvidenceSource.SLOWLOG,'message':'slow-combination'})
         master=MasterEvent(timestamp=T0,node='master',level='WARN',line='master-combination')
         r=replace(r,evidence=tuple(([slow] if has_slow else [])+([ssh] if has_ssh else [])),
             observations=replace(r.observations,master_events=(master,) if has_master else ()))
@@ -172,7 +172,7 @@ def test_optional_log_limits_and_missing_master_time_are_preserved():
     from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent
     r=report();sample=r.evidence[0]
     events=tuple(MasterEvent(timestamp=None,node='master',line=f'M-{i}') for i in range(121))
-    slow=tuple(sample.model_copy(update={'evidence_id':f'S{i}','source':EvidenceSource.SLOWLOG,'raw':f'S-{i}'}) for i in range(11))
+    slow=tuple(sample.model_copy(update={'evidence_id':f'S{i}','source':EvidenceSource.SLOWLOG}) for i in range(11))
     r=replace(r,evidence=slow,observations=replace(r.observations,master_events=events))
     html=render_report(r)
     master=html.split('id="master-logs"')[1].split('</section>')[0]
@@ -209,7 +209,7 @@ def test_selected_master_and_observed_master_are_one_timeline_event():
     from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent
     r=report();line='cluster state publication timed out'
     master=MasterEvent(timestamp=T0,node='master',level='WARN',logger='cluster',line=line)
-    evidence=Evidence(evidence_id='selected-master',event_time=T0,source=EvidenceSource.MASTER_LOG,node_name='master',message=line,raw=line,event_type='cluster_publication',severity='Warning')
+    evidence=Evidence(evidence_id='selected-master',event_time=T0,source=EvidenceSource.MASTER_LOG,node_name='master',message=line,event_type='cluster_publication',severity='Warning')
     r=replace(r,evidence=(evidence,),observations=replace(r.observations,master_events=(master,)))
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import report_timeline
     items=[text for c in report_timeline(r) for text in (c.representative_event,*(i.text for i in (*c.impacts,*c.causes))) if line in text]

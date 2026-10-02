@@ -20,7 +20,6 @@ from cluster_doctor.incident_analysis_agent.model.evidence import (
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
     SlowlogEntry,
-    record_json,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import PSEUDONYMS
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
@@ -106,8 +105,6 @@ def to_records(entries: list[SlowlogEntry]) -> list[RawRecord]:
         RawRecord(
             record_id=index,
             event_time=entry.timestamp,
-            raw=record_json(entry),
-            raw_kind="record",
             provenance=entry.provenance,
             line=(
                 f"took={entry.took or '?'} index={entry.index_name or '?'} "

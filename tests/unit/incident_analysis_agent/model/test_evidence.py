@@ -27,7 +27,7 @@ def test_optional_fields_default_to_none():
     assert evidence.node_name is None
     assert evidence.event_type is None
     assert evidence.severity is None
-    assert evidence.raw is None
+    assert evidence.record_key is None
     assert evidence.selection_reason is None
 
 

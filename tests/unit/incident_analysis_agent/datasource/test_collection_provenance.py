@@ -101,11 +101,11 @@ def test_clickhouse_fetch_retains_table_window_and_record(module, row):
     if module is node_metric:
         evidence = module.to_evidence([entry], new_evidence_id=lambda: "E-1")[0]
         assert evidence.provenance == p
-        assert json.loads(evidence.raw)["node_ip"] == "10.0.1.23"
+        assert not hasattr(evidence, "raw")
     else:
         record = module.to_records([entry])[0]
         assert record.provenance == p
-        assert "original" in record.raw and record.raw_kind == "record"
+        assert "original" in record.line
 
 
 def test_clickhouse_master_keeps_original_file_and_line():
@@ -124,7 +124,7 @@ def test_clickhouse_master_keeps_original_file_and_line():
         Client(row), "slow", "query", "metric", "actual_db.node_logs"
     )
     record = master_log.to_records(adapter.fetch_node_logs(T0, WINDOW.end))[0]
-    assert record.raw == "original <line>"
+    assert "original <line>" in record.line
     assert record.provenance.file_path == "/original/es.log"
     assert record.provenance.host == "10.0.1.1"
     assert record.provenance.table == "actual_db.node_logs"
@@ -218,4 +218,4 @@ def test_cluster_state_keeps_api_response_and_provenance():
     evidence = collector._collect_cluster_health(ObservationBuilder(WINDOW))[0]
     assert evidence.provenance.method == "elasticsearch_api"
     assert "/_cluster/health" in evidence.provenance.endpoint
-    assert json.loads(evidence.raw)["health"] == payload
+    assert f"unassigned_shards={payload['unassigned_shards']}" in evidence.message

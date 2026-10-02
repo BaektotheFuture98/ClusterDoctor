@@ -34,7 +34,7 @@ def test_parsed_and_fallback_ssh_times_differ():
 
 def test_ssh_full_stack_and_fractional_time_are_preserved():
     r=example();raw='\n'.join(f'frame-{n} <tag>&' for n in range(30))
-    e=r.evidence[0].model_copy(update={'raw':raw,'message':raw,'event_time':T0+timedelta(microseconds=123456),'time_origin':'parsed'})
+    e=r.evidence[0].model_copy(update={'message':raw,'event_time':T0+timedelta(microseconds=123456),'time_origin':'parsed'})
     html=render_report(replace(r,evidence=(e,)))
     assert 'frame-29 &lt;tag&gt;&amp;' in html and '.123456' in html
     assert 'frame-29 <tag>&' in render_text(replace(r,evidence=(e,)))
@@ -42,7 +42,7 @@ def test_ssh_full_stack_and_fractional_time_are_preserved():
 
 def test_timeline_is_bounded_and_contains_absolute_maximum():
     r=example()
-    evidence=tuple(Evidence(evidence_id=f'E{n}',event_time=T0+timedelta(seconds=n+1),source=EvidenceSource.NODE_LOG,severity='Critical',message=f'failure{n}',raw=f'failure{n}') for n in range(30))
+    evidence=tuple(Evidence(evidence_id=f'E{n}',event_time=T0+timedelta(seconds=n+1),source=EvidenceSource.NODE_LOG,severity='Critical',message=f'failure{n}') for n in range(30))
     html=render_report(replace(r,evidence=evidence))
     section=html.split('id="timeline"',1)[1].split('</section>',1)[0]
     assert section.count('class="timeline-event"')<=8

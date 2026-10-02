@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -325,7 +324,6 @@ class EvidenceCollector:
             f"active_shards={payload.get('active_shards', 0)} "
             f"nodes={payload.get('number_of_nodes', 0)}"
         )
-        raw_payload = {"health": payload}
         endpoint = "/_cluster/health"
         try:
             explained = self._cluster.explain_allocation()
@@ -334,10 +332,7 @@ class EvidenceCollector:
             _logger.info("[collector] allocation explain 없음/실패: %s", exc)
         else:
             message += f" | allocation explain: {truncate_raw(str(explained), 2000)}"
-            raw_payload["allocation_explain"] = explained
             endpoint += " + /_cluster/allocation/explain"
-
-        raw = json.dumps(raw_payload, ensure_ascii=False, default=str, indent=2)
 
         return [
             Evidence(
@@ -347,9 +342,6 @@ class EvidenceCollector:
                 event_type="cluster_not_green",
                 severity="Critical" if status == "red" else "Warning",
                 message=message,
-                raw=truncate_raw(raw),
-                raw_kind="record",
-                raw_truncated=len(truncate_raw(raw)) != len(raw),
                 provenance=EvidenceProvenance(
                     method="elasticsearch_api", collected_at=now, endpoint=endpoint
                 ),

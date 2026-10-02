@@ -17,9 +17,6 @@ from collections.abc import Callable
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
-    truncate_raw,
-)
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     MinuteBucket,
     MinuteResult,
@@ -182,7 +179,6 @@ def make_reduce_to_evidence(
             if key in seen_lines:
                 continue
             seen_lines.add(key)
-            raw = record.raw if record.raw is not None else record.line
             picked = selections.get(record_id)
             evidence.append(
                 Evidence(
@@ -194,11 +190,7 @@ def make_reduce_to_evidence(
                     event_type=(picked.event_type if picked else "") or None,
                     severity=record.severity,
                     message=record.line,
-                    raw=truncate_raw(raw),
                     provenance=record.provenance,
-                    raw_kind=record.raw_kind,
-                    raw_truncated=record.raw_truncated
-                    or len(truncate_raw(raw)) != len(raw),
                     time_origin=record.time_origin,
                     record_key=record.record_key,
                     selection_reason=selection_reason

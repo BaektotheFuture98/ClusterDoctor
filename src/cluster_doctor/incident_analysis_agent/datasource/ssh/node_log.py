@@ -104,7 +104,6 @@ def to_records(
     *,
     fallback_time: datetime,
     provenance: EvidenceProvenance | None = None,
-    raw_truncated: bool = False,
 ) -> list[RawRecord]:
     """SSH로 읽은 로그 원문을 선별 레코드로.
 
@@ -137,9 +136,7 @@ def to_records(
                 event_time=current_time,
                 line=line,
                 severity=current_level,
-                raw=raw_line,
                 provenance=provenance,
-                raw_truncated=raw_truncated,
                 time_origin=time_origin,
             )
         )

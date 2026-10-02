@@ -21,13 +21,12 @@ from cluster_doctor.incident_analysis_agent.service.validation.grounding.groundi
 _T0 = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
 
 
-def _evidence(raw: str | None = "cpu_usage=10%") -> Evidence:
+def _evidence(message: str = "cpu_usage=10%") -> Evidence:
     return Evidence(
         evidence_id="E-INC-1-1",
         event_time=_T0,
         source=EvidenceSource.NODE_METRIC,
-        message="cpu normal",
-        raw=raw,
+        message=message,
     )
 
 
@@ -114,17 +113,16 @@ def test_llm_failure_is_unverifiable_not_passed():
     assert [i.issue_type for i in issues] == [VerificationIssueType.UNVERIFIABLE]
 
 
-def test_missing_raw_is_judged_by_model():
+def test_evidence_without_message_is_judged_by_model():
     validator, call = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
-    assert validator.validate(_make_report(), [_evidence(raw=None)]) == []
+    assert validator.validate(_make_report(), [_evidence(message="")]) == []
     call.assert_called_once()
 
 
-def test_raw_beyond_2000_is_preserved_and_truncated_raw_is_judged_by_model():
+def test_long_evidence_message_is_sent_to_model_intact():
     validator, call = _make_validator('[{"claim_id":"timeline:0","status":"PASSED"}]')
-    assert validator.validate(_make_report(), [_evidence(raw='x'*3000)]) == []
+    assert validator.validate(_make_report(), [_evidence(message='x'*3000)]) == []
     assert 'x'*3000 in call.call_args.args[0][0]['content']
-    assert validator.validate(_make_report(), [_evidence().model_copy(update={'raw_truncated':True})]) == []
 
 
 def test_empty_verdict_is_unverifiable():

@@ -66,7 +66,6 @@ def test_adjacent_events_keep_their_own_time_and_evidence():
             event_type=kind,
             severity="Warning",
             message=kind,
-            raw=kind,
         )
         for i, kind in enumerate(("queue", "rejection", "gc"))
     )

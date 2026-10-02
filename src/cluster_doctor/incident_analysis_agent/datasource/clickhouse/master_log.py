@@ -73,7 +73,6 @@ def to_records(entries: list[NodeLogEntry]) -> list[RawRecord]:
         RawRecord(
             record_id=index,
             event_time=entry.timestamp,
-            raw=entry.line,
             provenance=entry.provenance,
             line=format_log_line(entry),
             node_name=entry.node or None,

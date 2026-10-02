@@ -239,7 +239,6 @@ def investigate_nodes(
             text[:MAX_RAW_LOG_CHARS],
             fallback_time=window.start,
             provenance=provenance,
-            raw_truncated=len(text) > MAX_RAW_LOG_CHARS,
         )
         analysis = run_analysis(
             node_log.SPEC,
