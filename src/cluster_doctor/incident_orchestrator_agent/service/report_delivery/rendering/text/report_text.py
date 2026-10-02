@@ -545,7 +545,7 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
     """Plain fallback with the same execution facts and verification gate as HTML."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
     obs=report.observations
@@ -566,7 +566,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
         out.append(f'{stamp(p.start)} ~ {stamp(p.end)} · {p.count if p.count is not None else "미확인"}건 · 최대 {str(p.maximum_seconds)+"s" if p.maximum_seconds is not None else "미확인"} · {p.status}')
     out.append('주요 타임라인')
     for card in report_timeline(report):
-        out.append(f'{stamp(card.start)} · {card.representative_event}')
+        out.append(f'{minute_stamp(card.start)} · {card.representative_event}')
         out.extend(item.text for item in (*card.impacts,*card.causes))
         if narrative:out.extend(item.text for item in card.interpretations)
         out.extend(visible_citations(timeline_sources(card,ssh_evidence(report.evidence))))

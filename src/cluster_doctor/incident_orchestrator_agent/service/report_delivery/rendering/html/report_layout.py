@@ -2,7 +2,7 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, is_validation_diagnostic
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, is_validation_diagnostic
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
@@ -51,7 +51,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     timeline='<section id="timeline"><h2>주요 타임라인</h2><div class="incident-timeline">'
     for card in report_timeline(report):
         severity_class={'Critical':' timeline-event-critical','Warning':' timeline-event-warning'}.get(card.severity,'')
-        timeline+=f'<article class="timeline-event{severity_class}"><div class="event-time"><time datetime="{esc(card.start.isoformat())}">{esc(stamp(card.start))}</time>'+(f'<time datetime="{esc(card.end.isoformat())}">마지막 관측 {esc(stamp(card.end))}</time>' if card.end!=card.start else '')+'</div><div>'+f'<h3>{esc(card.representative_event)}</h3>'
+        timeline+=f'<article class="timeline-event{severity_class}"><div class="event-time"><time datetime="{esc(card.start.isoformat())}">{esc(minute_stamp(card.start))}</time>'+(f'<time datetime="{esc(card.end.isoformat())}">마지막 관측 {esc(minute_stamp(card.end))}</time>' if card.end!=card.start else '')+'</div><div>'+f'<h3>{esc(card.representative_event)}</h3>'
         for item in (*card.impacts,*card.causes):timeline+=f'<p>{esc(item.text)}</p>'
         if narrative:
             for item in card.interpretations:timeline+=f'<p class="analysis-note">{esc(item.text)}</p>'
