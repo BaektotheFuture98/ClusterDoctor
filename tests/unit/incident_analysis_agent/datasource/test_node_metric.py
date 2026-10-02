@@ -48,6 +48,7 @@ def test_evidence_message_is_rendered_from_the_metric_record():
         [_entry(jvm_heap_used_percent=90)], new_evidence_id=_new_evidence_id()
     )
     assert len(evidence) == 1
+    assert "jvm_heap=90%" in evidence[0].message
     assert "기준 85%" in evidence[0].message
     assert evidence[0].node_name == "es-data-1"
 
