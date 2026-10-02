@@ -185,5 +185,6 @@ class SlowlogEntry(LogEntry):
 
 def query_record_key(record: QueryLogEntry) -> str:
     # A fetched-record fingerprint for unambiguous attribution, never a query identity.
+    # It hashes the parsed fields stored on the DTO, so rows identical in every stored field share a key.
     canonical = json.dumps(json.loads(record_json(record)), ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()

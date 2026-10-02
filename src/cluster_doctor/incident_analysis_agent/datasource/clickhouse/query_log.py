@@ -96,6 +96,7 @@ def entry_from_row(row: dict, provenance: EvidenceProvenance | None) -> QueryLog
         provenance=provenance,
     )
 
+
 def to_records(entries: list[QueryLogEntry]) -> list[RawRecord]:
     ordered = sorted(entries, key=lambda entry: entry.timestamp)
     return [
