@@ -4,11 +4,11 @@ from typing import Literal
 
 from cluster_doctor.incident_analysis_agent.model.observations import SourceWindowStatus
 
+QUERY_LOG_MISSING = '쿼리 실행 로그가 수집되지 않았습니다. 수집 상태를 확인하세요'
+
+
 def _failed(prefix, reason):
     return f'{prefix}: {reason}' if reason else prefix
-
-
-QUERY_LOG_MISSING = '쿼리 실행 로그가 수집되지 않았습니다. 수집 상태를 확인하세요'
 
 
 @dataclass(frozen=True)

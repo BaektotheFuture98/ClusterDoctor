@@ -116,7 +116,7 @@ def test_fallback_has_same_summary_and_cause_slots_as_standard_report():
     assert '<h3>' in causes and '확신도:' in causes and '판단 근거' in causes
 
 
-def test_optional_source_sections_are_fixed_and_empty_without_records():
+def test_optional_source_sections_keep_order_and_show_unknown_status_hint():
     r=replace(report(),evidence=())
     html=render_report(r)
     sections=['summary','query-trend','timeline','query-ranking','master-logs','slowlogs','ssh-logs','system-metrics','causes']
