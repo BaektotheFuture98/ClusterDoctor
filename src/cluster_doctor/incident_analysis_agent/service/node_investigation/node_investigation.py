@@ -191,6 +191,8 @@ def investigate_nodes(
     result = NodeInvestigationResult()
     if not candidates:
         _logger.info("[node] 문제 노드 후보가 없다 — 노드 조사를 건너뛴다")
+        result.source_statuses.append(SourceWindowStatus("node_log", window.start, window.end,
+            "skipped", None, datetime.now(KST), "마스터 로그에서 조사 대상 노드가 없다"))
         return result
 
     for candidate in candidates:

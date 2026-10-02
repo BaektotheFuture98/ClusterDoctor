@@ -122,7 +122,7 @@ class SourceWindowStatus:
     source: str
     start: datetime
     end: datetime
-    status: Literal["ok", "failed", "limited"]
+    status: Literal["ok", "failed", "limited", "skipped"]
     row_count: int | None
     collected_at: datetime
     error: str = ""
