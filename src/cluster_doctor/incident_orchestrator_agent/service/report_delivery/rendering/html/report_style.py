@@ -115,18 +115,13 @@ border-left:2px solid var(--line-strong)}
 padding:2px 0}
 .evidence-fields dt{color:var(--ink-2)}
 .evidence-fields dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere}
-.raw-block{margin:0 0 16px 16px}
-.truncated{margin-left:8px;padding:0 6px;border:1px solid var(--warn);border-radius:4px;
-color:var(--warn);font-size:11px;font-weight:600}
 pre.raw{margin:0 0 12px;padding:12px 16px;background:var(--surface-2);
 border:1px solid var(--line);border-left:2px solid var(--line-strong);border-radius:4px;
 font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;
 overflow-wrap:anywhere}
 pre.raw code{font:inherit}
-pre.raw-query{white-space:pre;overflow-wrap:normal;overflow-x:auto}
-.evidence-item summary,.detail-group summary,.raw-block summary{cursor:pointer}
-.raw-block summary,.detail-group summary{color:var(--ink-2);padding:8px 0}
-.raw-block summary{font-size:12px}
+.evidence-item summary,.detail-group summary{cursor:pointer}
+.detail-group summary{color:var(--ink-2);padding:8px 0}
 .detail-group{border-bottom:1px solid var(--line)}
 .detail-group summary{font-size:13px}
 .observation-detail{margin-top:24px;border-top:1px solid var(--line)}
@@ -177,7 +172,6 @@ summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-of
 .timeline-event{display:block;padding:20px 0}.timeline-event::before{left:-20px;top:28px}
 .event-time{margin-bottom:8px}.event-time time{display:inline}
 .evidence-fields div,.meta-list div{display:block}
-.raw-block{margin-left:0}
 .cause-assessment{padding:16px}.evidence-line{display:block}.evidence-line a{display:block}
 .key-observations{grid-template-columns:minmax(0,1fr)}.incident-summary{padding:16px}
 .report-nav{gap:8px 16px}}
@@ -195,7 +189,6 @@ details::details-content{content-visibility:visible;display:block}
 .incident-timeline::before,.timeline-event::before{display:none}
 .timeline-event{display:block;padding:16px 0}
 .event-time{margin-bottom:8px}
-pre.raw-query{white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible}
 .query-ranking-table{min-width:0}.query-table-scroll{overflow:visible}
 .query-ranking-table th,.query-ranking-table td{padding:4px 8px;font-size:11px}}
 """

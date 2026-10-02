@@ -16,5 +16,5 @@ def render_ssh_logs(evidence: tuple[Evidence, ...], *, limit: int = 10) -> str:
     for e in items:
         time=stamp(e.event_time) if e.time_origin=='parsed' else ('앞선 로그 문맥 · 시각 미확인' if e.time_origin=='inherited' else '시각 미확인')
         rows.append('<tr>'+''.join(f'<td>{esc(v)}</td>' for v in (time,e.node_name or e.node_id or e.provenance.host or '미확인',e.severity or '미확인'))+
-            f'<td><pre>{esc(e.raw or e.message)}</pre>{"<p>원문 잘림</p>" if e.raw_truncated else ""}</td><td>{esc(e.provenance.file_path or "경로 미확인")}</td></tr>')
+            f'<td><pre>{esc(e.message)}</pre></td><td>{esc(e.provenance.file_path or "경로 미확인")}</td></tr>')
     return '<section id="ssh-logs"><h2>SSH 노드 로그</h2><table><thead><tr><th>로그 시각</th><th>ES 노드</th><th>레벨</th><th>원문</th><th>파일 경로</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></section>'
