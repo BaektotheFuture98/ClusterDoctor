@@ -62,7 +62,7 @@ def inputs(case):
 
 
 def evaluate(*,mode='offline',cases_path=DEFAULT_CASES,env_file=None):
-    cases=json.loads(Path(cases_path).read_text())
+    cases=json.loads(Path(cases_path).read_text(encoding='utf-8'))
     call=None
     if mode=='live':
         from cluster_doctor.bootstrap.configuration.settings import Settings
@@ -119,11 +119,11 @@ def main():
     try:result=evaluate(mode=args.mode,cases_path=args.cases,env_file=args.env_file)
     except EvaluationDeadline:
         result={'mode':'live','live_model_evaluation':'incomplete','reason':'Evaluation wall-clock budget exceeded; model accuracy is unverified.'}
-        args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(result,ensure_ascii=False,indent=2));raise SystemExit(1)
+        args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(encoding='utf-8',data=json.dumps(result,ensure_ascii=False,indent=2));raise SystemExit(1)
     except Exception as exc:
         result={'mode':args.mode,'live_model_evaluation':'failed' if args.mode=='live' else 'not_run','error_type':type(exc).__name__}
-        args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(result,ensure_ascii=False,indent=2));raise SystemExit(1)
+        args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(encoding='utf-8',data=json.dumps(result,ensure_ascii=False,indent=2));raise SystemExit(1)
     if hasattr(signal,'SIGALRM'):signal.alarm(0)
-    args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(result,ensure_ascii=False,indent=2,default=str));print(args.output.resolve())
+    args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(encoding='utf-8',data=json.dumps(result,ensure_ascii=False,indent=2,default=str));print(args.output.resolve())
 
 if __name__=='__main__':main()
