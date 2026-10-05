@@ -1,4 +1,4 @@
-"""Batch and settle slowlog triggers before starting analysis."""
+"""Accept problem-log signals, settle their arrival window, and request analysis."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from cluster_doctor.kafka_consumer.trigger_settling.service.inflow import (
     InflowTracker,
-    SlowlogTrigger,
+    ProblemLogSignal,
 )
 from cluster_doctor.incident_orchestrator_agent.model.incident import (
     Incident,
@@ -34,20 +34,20 @@ MAX_TOTAL_WAIT_SECONDS = 300
 
 @dataclass(frozen=True)
 class _Arrival:
-    """정착 대기 큐에 넣는 트리거와 실제 수신 시각.
+    """정착 대기 큐에 넣는 문제성 로그 신호와 실제 수신 시각.
 
     로그 발생 시각과 수신 시각을 보존해 유입 추적의 기준을 구분한다.
     """
 
-    trigger: SlowlogTrigger
+    trigger: ProblemLogSignal
     received_at: datetime
 
 
-class SlowlogIntake:
-    """유입 큐에서 slowlog를 묶어 정착시키고, 정착되면 그 자리에서 분석까지 돈다.
+class ProblemLogProcessor:
+    """문제성 로그 신호를 큐에 모아 유입이 정착되면 분석을 요청한다.
 
     정착과 분석은 하나의 순차 루프다 — 한 Incident의 분석이 끝나야 다음
-    트리거의 정착 판단을 시작한다. 그 사이 새로 들어오는 트리거는 큐에
+    신호의 정착 판단을 시작한다. 그 사이 새로 들어오는 신호는 큐에
     쌓일 뿐이다(겹치는 Incident는 순차로 처리한다).
     """
 
@@ -60,7 +60,7 @@ class SlowlogIntake:
         max_settling_wait_seconds: float = MAX_TOTAL_WAIT_SECONDS,
         max_pending: int = 0,
     ) -> None:
-        self._analyze = analyze_incident
+        self._analysis_service = analyze_incident
         self._cluster = cluster
         self._quiet_period_seconds = quiet_period_seconds
         self._max_settling_wait_seconds = max_settling_wait_seconds
@@ -73,16 +73,17 @@ class SlowlogIntake:
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
-    async def handle(self, trigger: SlowlogTrigger | datetime) -> None:
+    async def submit(self, problem_log_signal: ProblemLogSignal | datetime) -> None:
+        """Enqueue a signal; analysis runs in the background processing loop."""
         if self._closed:
-            raise RuntimeError("slowlog intake is closed")
-        if isinstance(trigger, datetime):
-            trigger = SlowlogTrigger(timestamp=trigger)
-        arrival = _Arrival(trigger=trigger, received_at=datetime.now(UTC))
+            raise RuntimeError("problem log processor is closed")
+        if isinstance(problem_log_signal, datetime):
+            problem_log_signal = ProblemLogSignal(timestamp=problem_log_signal)
+        arrival = _Arrival(trigger=problem_log_signal, received_at=datetime.now(UTC))
         try:
             self._pending.put_nowait(arrival)
         except queue.Full:
-            _logger.warning("pending slowlog queue is full; dropping one trigger")
+            _logger.warning("pending problem log queue is full; dropping one signal")
             return
         if self._task is not None:
             return
@@ -99,7 +100,7 @@ class SlowlogIntake:
                     cluster=self._cluster,
                     trigger_time=first.trigger.timestamp,
                     kafka_receive_time=first.received_at,
-                    trigger_type=TriggerType.SLOWLOG,
+                    trigger_type=TriggerType.PROBLEM_LOG,
                 )
                 if self._closed:
                     return
@@ -111,7 +112,7 @@ class SlowlogIntake:
                 )
                 self._in_flight_analysis = True
                 try:
-                    await self._analyze.handle(command)
+                    await self._analysis_service.handle(command)
                 except Exception:
                     _logger.exception(
                         "incident analysis failed; settling loop will continue"
@@ -119,7 +120,7 @@ class SlowlogIntake:
                 finally:
                     self._in_flight_analysis = False
         except Exception:
-            _logger.exception("slowlog intake failed while settling triggers")
+            _logger.exception("problem log processor failed while settling signals")
         finally:
             if self._task is current:
                 self._task = None

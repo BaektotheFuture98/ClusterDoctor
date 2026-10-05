@@ -26,7 +26,7 @@ class RunManualAnalysis:
     def __init__(
         self, *, analyze_incident: AnalyzeIncident, cluster: str = "elasticsearch"
     ) -> None:
-        self._analyze = analyze_incident
+        self._analysis_service = analyze_incident
         self._cluster = cluster
 
     async def handle(
@@ -46,7 +46,7 @@ class RunManualAnalysis:
             kafka_receive_time=datetime.now(UTC),
             trigger_type=TriggerType.MANUAL,
         )
-        return await self._analyze.handle(
+        return await self._analysis_service.handle(
             StartIncident(incident, observed_start, observed_end, 0),
             cancellation=cancellation,
         )

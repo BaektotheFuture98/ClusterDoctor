@@ -108,7 +108,7 @@ def adapter(monkeypatch, fake):
     monkeypatch.setattr(consumer_module, "_HEALTH_CHECK_TIMEOUT_SECONDS", 0.02, raising=False)
     monkeypatch.setattr(consumer_module, "_CONSUMER_STOP_TIMEOUT_SECONDS", 0.02, raising=False)
     result = consumer_module.KafkaConsumerAdapter(
-        intake=None, bootstrap_servers="localhost:9092", topic="slowlog", group_id="test",
+        problem_log_processor=None, bootstrap_servers="localhost:9092", topic="slowlog", group_id="test",
         failure_timeout_seconds=0.05,
     )
     return result
@@ -276,7 +276,7 @@ async def library_consumer(monkeypatch, *, leader, cached_leader=None, unreachab
     monkeypatch.setattr(consumer_module, "_HEALTH_CHECK_INTERVAL_SECONDS", 0.005)
     monkeypatch.setattr(consumer_module, "_HEALTH_CHECK_TIMEOUT_SECONDS", 0.015)
     consumer = consumer_module.KafkaConsumerAdapter(
-        intake=None, bootstrap_servers="unused:9092", topic="slowlog",
+        problem_log_processor=None, bootstrap_servers="unused:9092", topic="slowlog",
         group_id="test", failure_timeout_seconds=0.04,
     )
     raw = consumer._consumer
@@ -372,12 +372,12 @@ async def test_watchdog_preserves_message_delivery(monkeypatch):
     received = []
     delivered = asyncio.Event()
 
-    async def handle(trigger):
-        received.append(trigger.timestamp)
+    async def submit(problem_log_signal):
+        received.append(problem_log_signal.timestamp)
         delivered.set()
 
     consumer = adapter(monkeypatch, fake)
-    consumer._intake = SimpleNamespace(handle=handle)
+    consumer._problem_log_processor = SimpleNamespace(submit=submit)
     task = asyncio.create_task(consumer.run())
     try:
         await asyncio.wait_for(delivered.wait(), timeout=0.3)

@@ -1,6 +1,6 @@
 """Kafka consumer 어댑터.
 
-Kafka 메시지를 SlowlogTrigger로 변환해 SlowlogIntake에 전달한다.
+Kafka 메시지를 ProblemLogSignal로 변환해 ProblemLogProcessor에 전달한다.
 메시지 파싱에 실패해도 consumer를 죽이지 않고 경고만 남긴다.
 """
 
@@ -13,8 +13,8 @@ from aiokafka import AIOKafkaConsumer, ConsumerRebalanceListener, TopicPartition
 from aiokafka.errors import KafkaError
 
 from cluster_doctor.exceptions import KafkaUnavailableError
-from cluster_doctor.kafka_consumer.trigger_settling.service.inflow import SlowlogTrigger
-from cluster_doctor.kafka_consumer.trigger_settling.service.intake import SlowlogIntake
+from cluster_doctor.kafka_consumer.trigger_settling.service.inflow import ProblemLogSignal
+from cluster_doctor.kafka_consumer.trigger_settling.service.problem_log_processor import ProblemLogProcessor
 
 _logger = logging.getLogger(__name__)
 _HEALTH_CHECK_INTERVAL_SECONDS = 10.0
@@ -41,7 +41,7 @@ class _AssignmentState(ConsumerRebalanceListener):
 class KafkaConsumerAdapter:
     def __init__(
         self,
-        intake: SlowlogIntake,
+        problem_log_processor: ProblemLogProcessor,
         bootstrap_servers: str,
         topic: str,
         group_id: str,
@@ -50,7 +50,7 @@ class KafkaConsumerAdapter:
         if failure_timeout_seconds <= 0:
             raise ValueError("failure_timeout_seconds must be positive")
         self._failure_timeout_seconds = failure_timeout_seconds
-        self._intake = intake
+        self._problem_log_processor = problem_log_processor
         self._topic = topic
         self._assignment = _AssignmentState()
         self._consumer = AIOKafkaConsumer(
@@ -173,20 +173,20 @@ class KafkaConsumerAdapter:
                 data = {}
 
             try:
-                log_entry = _parse_message(data)
+                problem_log_signal = _parse_message(data)
             except Exception as exc:
                 _logger.warning(
                     "partition=%d offset=%d 파싱 실패, 수신 시각으로 폴백: %s",
                     msg.partition, msg.offset, exc,
                 )
-                log_entry = SlowlogTrigger(timestamp=datetime.now(timezone.utc))
-            await self._intake.handle(log_entry)
+                problem_log_signal = ProblemLogSignal(timestamp=datetime.now(timezone.utc))
+            await self._problem_log_processor.submit(problem_log_signal)
 
 
-def _parse_message(data: dict) -> SlowlogTrigger:
+def _parse_message(data: dict) -> ProblemLogSignal:
     """Kafka 메시지에서 발생 시각만 뽑는다.
 
-    이 항목은 ``SlowlogIntake``가 유입 정착 범위를 계산하는 데만 쓴다. 상세
+    이 항목은 ``ProblemLogProcessor``가 유입 정착 범위를 계산하는 데만 쓴다. 상세
     분석은 ClickHouse를 조회해서 하므로 여기서 나머지 필드를 채울 이유가 없다.
 
     돌려주는 시각은 반드시 timezone-aware다. naive가 하나라도 섞이면
@@ -212,4 +212,4 @@ def _parse_message(data: dict) -> SlowlogTrigger:
         # 쪽이 아니라 명시적인 쪽을 고른다.
         timestamp = timestamp.replace(tzinfo=timezone.utc)
 
-    return SlowlogTrigger(timestamp=timestamp)
+    return ProblemLogSignal(timestamp=timestamp)

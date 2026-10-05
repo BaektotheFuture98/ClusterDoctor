@@ -35,9 +35,12 @@ from _timeargs import KST
 # import 시점에 configure_logging()이 돌아 stderr와 LOG_DIR/app.log에 로그가 붙는다.
 import cluster_doctor.main  # noqa: F401
 
-from cluster_doctor.bootstrap.configuration.settings import get_settings
-from cluster_doctor.bootstrap.dependency.wiring import build_manual_analysis
-from cluster_doctor.bootstrap.lifecycle.app_lifecycle import close_clickhouse_client
+from cluster_doctor.bootstrap.configuration.settings import Settings, get_settings
+from cluster_doctor.bootstrap.dependency.wiring import (
+    build_manual_analysis,
+    build_runtime_resources,
+)
+from cluster_doctor.bootstrap.lifecycle.app_lifecycle import RuntimeResources
 from cluster_doctor.incident_orchestrator_agent.service.manual_analysis.manual_analysis import (
     RunManualAnalysis,
 )
@@ -211,10 +214,17 @@ def _snapshot_reports(report_dir: Path) -> set:
 
 def run(moments: list) -> int:
     settings = get_settings()
+    with build_runtime_resources(settings) as runtime_resources:
+        return _run_analysis(moments, settings, runtime_resources)
+
+
+def _run_analysis(
+    moments: list, settings: Settings, runtime_resources: RuntimeResources
+) -> int:
     report_dir = Path(settings.report_dir)
     before = _snapshot_reports(report_dir)
 
-    manual_analysis: RunManualAnalysis = build_manual_analysis(settings)
+    manual_analysis: RunManualAnalysis = build_manual_analysis(settings, runtime_resources)
 
     started = time.monotonic()
     try:
@@ -312,8 +322,6 @@ def main() -> int:
         print("\n중단했다.")
         _print_measurements()
         return 130
-    finally:
-        close_clickhouse_client()
 
 
 if __name__ == "__main__":
