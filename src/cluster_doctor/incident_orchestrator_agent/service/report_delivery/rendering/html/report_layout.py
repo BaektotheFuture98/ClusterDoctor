@@ -73,11 +73,18 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     metrics+='</section>'
     causes='<section id="causes"><h2>원인 판단·조치</h2>'
     if narrative:
-        for cause in narrative.causes:
+        for index, cause in enumerate(narrative.causes):
             causes+=f'<h3>{esc(cause.statement)}</h3><p>확신도: {esc(cause.confidence or "미확인")}</p><p>판단 근거</p>'+quotes(cause.supporting)
+            if cause.mechanism: causes+=f'<p>판단 설명: {esc(cause.mechanism)}</p>'
+            if cause.uncertainties: causes+='<p>미확인 사항</p><ul>'+''.join(f'<li>{esc(v)}</li>' for v in cause.uncertainties)+'</ul>'
+            for action in narrative.recommendations:
+                if getattr(action, 'cause_index', None)==index:
+                    causes+=f'<p>확인·조치: {esc(str(action))}</p>'+quotes(getattr(action,'citations',()))
             if cause.contradicting:causes+='<p>반증</p>'+quotes(cause.contradicting)
         for finding in narrative.findings:causes+=f'<h3>{esc(finding.title)}</h3><p>{esc(finding.detail)}</p>'+quotes(finding.citations)
-        for action in narrative.recommendations:causes+=f'<p>확인·조치: {esc(str(action))}</p>'+quotes(getattr(action,'citations',()))
+        for action in narrative.recommendations:
+            if getattr(action, 'cause_index', None) is None or getattr(action, 'cause_index', 0)>=len(narrative.causes):
+                causes+=f'<p>확인·조치: {esc(str(action))}</p>'+quotes(getattr(action,'citations',()))
         if not narrative.causes:causes+='<p>확인된 원인 없음</p>'
     else:causes+='<p>검증을 완료한 원인 판단 없음</p>'
     causes+='</section>'

@@ -24,6 +24,8 @@ class CauseAssessment:
     confidence: str = ""
     supporting: tuple[EvidenceCitation, ...] = ()
     contradicting: tuple[EvidenceCitation, ...] = ()
+    mechanism: str = ""
+    uncertainties: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,7 @@ class Finding:
 class Recommendation:
     text: str
     citations: tuple[EvidenceCitation, ...] = ()
+    cause_index: int | None = None
 
     def __str__(self) -> str:
         return self.text

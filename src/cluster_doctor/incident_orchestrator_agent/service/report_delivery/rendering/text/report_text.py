@@ -593,13 +593,20 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
         out.append(f'{n.node} · CPU={n.cpu_max}% JVM heap={n.jvm_heap_max}% search_queue={n.search_queue_max} write_queue={n.write_queue_max} search_rejected 누적={n.search_rejected_max} write_rejected 누적={n.write_rejected_max}')
     out.append('원인 판단·조치')
     if narrative:
-        for c in narrative.causes:
+        for index, c in enumerate(narrative.causes):
             out.append(f'{c.statement} · 확신도 {c.confidence}')
             out.extend('판단 근거: '+s for s in visible_citations(c.supporting))
             out.extend('반증: '+s for s in visible_citations(c.contradicting))
+            if c.mechanism: out.append('판단 설명: '+c.mechanism)
+            out.extend('미확인 사항: '+v for v in c.uncertainties)
+            for a in narrative.recommendations:
+                if getattr(a,'cause_index',None)==index:
+                    out.extend((str(a),*visible_citations(getattr(a,'citations',()))))
         for f in narrative.findings:
             out.extend((f.title,f.detail,*visible_citations(f.citations)))
         for a in narrative.recommendations:
+            if getattr(a,'cause_index',None) is not None and a.cause_index < len(narrative.causes):
+                continue
             out.append(str(a))
             out.extend(visible_citations(getattr(a,'citations',())))
     else:out.append('검증을 완료한 원인 판단 없음')

@@ -2,37 +2,42 @@
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import datetime
 import json
 
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_log_line
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import MAX_EVIDENCE_PER_SOURCE, MAX_EVIDENCE_TOTAL, MAX_RAW_LOG_CHARS
 
 
-def build_analysis_context(observations: Observations, evidence: list[Evidence]) -> str:
+def build_analysis_context(observations: Observations, evidence: list[Evidence], *, max_chars: int = MAX_RAW_LOG_CHARS) -> str:
     ranked = rank_query_requests(observations.query_requests)
     data = {
+        'report_timezone': 'Asia/Seoul',
         'query_execution_count': len(ranked),
         'maximum_execution_seconds': str(ranked[0].execution_seconds) if ranked and ranked[0].execution_seconds is not None else None,
         'execution_unit': 'seconds',
         'context_omissions': {},
-        'slow_executions': [dict(record_key=row.record_key, event_time=row.record.timestamp.isoformat(),
+        'slow_executions': [dict(record_key=row.record_key, event_time=row.record.timestamp.astimezone(KST).isoformat(),
             execution_seconds=str(row.execution_seconds) if row.execution_seconds is not None else None,
             cmd=row.record.cmd, request_host=row.record.host, target_host=row.target_host,
             index_name=row.index_name, conditions=row.conditions, keywords=row.record.keyword,
             keyword_omitted=row.record.keyword_omitted) for row in ranked[:10]],
+        'minute_observations': [asdict(row) for row in observations.timeline],
         'source_statuses': [asdict(status) for status in observations.source_statuses],
         'node_metrics': [asdict(row) for row in observations.nodes],
-        'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.isoformat(),
+        'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.astimezone(KST).isoformat(),
             source=e.source, time_origin=e.time_origin,
             provenance=e.provenance.model_dump(mode='json') if e.provenance else None,
             message=e.message[:400]) for e in evidence],
     }
     def encode():
-        return json.dumps(data, ensure_ascii=False, default=str)
+        return json.dumps(data, ensure_ascii=False,
+            default=lambda value: value.astimezone(KST).isoformat() if isinstance(value, datetime) else str(value))
     # Protect the complete JSON budget. All source DTOs
     # remain intact; compaction is explicitly visible to the model.
     omissions = data['context_omissions']
@@ -43,7 +48,7 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
         for field in ('cpu_max', 'jvm_heap_max', 'search_queue_max', 'write_queue_max',
                       'search_rejected_max', 'write_rejected_max')
     } if nodes else {}
-    if len(encode()) > MAX_RAW_LOG_CHARS:
+    if len(encode()) > max_chars:
         if len(data['node_metrics']) > 10:
             omissions['node_metrics'] = len(data['node_metrics']) - 10
             data['node_metrics'] = data['node_metrics'][:10]
@@ -60,7 +65,7 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
         if isinstance(value, (list, tuple)):
             return [compact(child) for child in value]
         return value
-    if len(encode()) > MAX_RAW_LOG_CHARS:
+    if len(encode()) > max_chars:
         for key in ('slow_executions', 'source_statuses', 'node_metric_maxima', 'evidence'):
             data[key] = compact(data[key])
         for row in data['slow_executions']:
@@ -69,11 +74,11 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence])
                 row['conditions'] = row['conditions'][:20]
     # Drop optional context rows only when compaction is still insufficient.
     # Exact count/maxima above survive; absent metadata never means normal/zero.
-    for field in ('node_metrics', 'evidence', 'source_statuses', 'slow_executions'):
-        while data[field] and len(encode()) > MAX_RAW_LOG_CHARS - 100:
+    for field in ('node_metrics', 'evidence', 'source_statuses', 'slow_executions', 'minute_observations'):
+        while data[field] and len(encode()) > max_chars - 100:
             data[field].pop()
             omissions[field] = omissions.get(field, 0) + 1
-    while len(encode()) > MAX_RAW_LOG_CHARS - 100:
+    while len(encode()) > max_chars - 100:
         # A cluster can have enormous tie lists; values remain code-computed.
         ties = [entry['nodes'] for entry in data['node_metric_maxima'].values() if entry['nodes']]
         if not ties:

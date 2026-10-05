@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from langchain_core.messages import HumanMessage
 
@@ -172,7 +172,8 @@ class _DeepAgentIncidentAnalyzer:
         """Incident 하나의 분석을 끝까지 진행한다. 예외를 올리지 않는다.
 
         호출부와 mutable State를 공유하지 않는다. 예외가 나도 마지막
-        커밋된 snapshot에서 확보한 근거와 리포트를 반환한다.
+        커밋된 snapshot의 근거를 보존한다. 최종 리포트는 누적 근거로
+        종합하며, 종합 실패 시 구간 리포트를 대신 반환하지 않는다.
         """
         incident = request.incident
 
@@ -210,7 +211,31 @@ class _DeepAgentIncidentAnalyzer:
                 "closing_reason": f"Agent 실행이 {type(exc).__name__}로 끝났다",
             }
 
-        return self._result_from(final_state)
+        result = self._result_from(final_state)
+        windows = final_state.get("window_results", ())
+        if not windows or result.status is IncidentStatus.CANCELLED:
+            return result
+        from cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis import synthesize_incident
+        try:
+            report = synthesize_incident(
+                seams=self._seams, incident=incident,
+                window_reports=[w.report for w in windows],
+                observations=result.observations, evidence=list(result.evidence),
+            )
+        except Exception:
+            _logger.exception("사건 종합 분석 실패")
+            # Do not present the last window as if it explained the full incident.
+            return replace(result, report=None, failed=True, status=IncidentStatus.FAILED,
+                           reason="사건 종합 분석을 생성하지 못했다.",
+                           gaps=(*result.gaps, "사건 종합 분석을 생성하지 못했다."))
+        mismatch = report.verification_status is VerificationStatus.MISMATCH
+        # A corrected final judgment supersedes a window's earlier mismatch.
+        # Actual workflow/analysis failures still remain failures.
+        failed = (result.status is IncidentStatus.FAILED
+                  or final_state.get("latest_analysis_status") is LogAnalysisStatus.FAILED
+                  or mismatch)
+        return replace(result, report=report, failed=failed,
+                       gaps=tuple(dict.fromkeys((*result.gaps, *report.verification_issues))))
 
     # ── 조립 ─────────────────────────────────────────────────────────
     def _compile(self, incident: Incident):
@@ -267,9 +292,7 @@ class _DeepAgentIncidentAnalyzer:
                 is VerificationStatus.MISMATCH
             ),
             gaps=tuple(dict.fromkeys((*state["accumulated_gaps"], *verification_gaps))),
-            report=state["window_results"][-1].report
-            if state["window_results"]
-            else None,
+            report=None,  # Only incident-wide synthesis can supply the final narrative.
             observations=state["observations"],
             evidence=tuple(state["evidence"]),
             analysis_calls=state["analysis_call_count"],
