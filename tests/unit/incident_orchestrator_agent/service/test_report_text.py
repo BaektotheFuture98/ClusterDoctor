@@ -110,11 +110,11 @@ def test_timeline_card_lines_include_source_grouped_citations():
             evidence_id="E-2",
             event_time=minute,
             source=EvidenceSource.NODE_METRIC,
-            event_type="node_metric_rejected",
-            message="search rejected 1",
+            event_type="node_metric_heap",
+            message="heap 78%",
         ),
     )
     report = IncidentAnalysisReport(observations=obs, evidence=evidence)
     text = render_text(report)
-    assert "slowlog took=12s" in text and "search rejected 1" in text and "원문 없음" not in text
+    assert "slowlog took=12s" in text and "heap 78%" in text and "원문 없음" not in text
     assert "E-1" not in text and "E-2" not in text

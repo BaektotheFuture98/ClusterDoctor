@@ -76,11 +76,30 @@ def project_timeline(
 ) -> tuple[TimelineCard, ...]:
     """특징적인 사건을 시작 시각별로 투영한다. 반복 신호의 구간은 유지한다."""
     rows = tuple(sorted(observations.timeline, key=lambda row: row.minute))
-    evidence = tuple(sorted((item for item in evidence if item.time_origin == "parsed"), key=lambda item: item.event_time))
+    excluded_refs = {
+        item.evidence_id for item in evidence
+        if item.source is EvidenceSource.NODE_METRIC
+        and "rejected" in (item.event_type or "")
+    }
+    annotations = tuple(
+        item for item in annotations
+        if not excluded_refs.intersection(item.evidence_refs)
+    )
+    # 누적 거절 카운터는 사건이 아니다. 실제 NODE_LOG 거절 오류는 유지한다.
+    evidence = tuple(sorted(
+        (
+            item for item in evidence
+            if item.time_origin == "parsed"
+            and not (
+                item.source is EvidenceSource.NODE_METRIC
+                and "rejected" in (item.event_type or "")
+            )
+        ),
+        key=lambda item: item.event_time,
+    ))
 
     signals: list[_Signal] = []
     signals += _slowlog_signals(rows, evidence)
-    signals += _rejected_signals(rows, evidence)
     signals += _failed_signals(rows)
     signals += _latency_peak_signals(rows, evidence)
     signals += _volume_spike_signals(rows, evidence)
@@ -200,13 +219,6 @@ def _next_row(rows: tuple[TimelineRow, ...], moment: datetime) -> TimelineRow | 
     return next((row for row in rows if row.minute == wanted), None)
 
 
-def _previous_row(
-    rows: tuple[TimelineRow, ...], moment: datetime
-) -> TimelineRow | None:
-    wanted = moment - _ONE_MINUTE
-    return next((row for row in rows if row.minute == wanted), None)
-
-
 def _slowlog_signals(
     rows: tuple[TimelineRow, ...], evidence: tuple[Evidence, ...]
 ) -> list[_Signal]:
@@ -250,77 +262,6 @@ def _slowlog_signals(
                         group[0].minute,
                         group[-1].minute,
                         sources=(EvidenceSource.SLOWLOG,),
-                    ),
-                ),
-            )
-        )
-    return signals
-
-
-def _rejected_signals(
-    rows: tuple[TimelineRow, ...], evidence: tuple[Evidence, ...]
-) -> list[_Signal]:
-    signals: list[_Signal] = []
-    for group in _groups(
-        rows,
-        lambda row: row.search_rejected_max > 0 or row.write_rejected_max > 0,
-    ):
-        previous = _previous_row(rows, group[0].minute)
-        if previous is not None and (
-            previous.failed or previous.counts.get("node_metric", 0) <= 0
-        ):
-            previous = None
-        search_start = (
-            previous.search_rejected_max
-            if previous is not None
-            else group[0].search_rejected_max
-        )
-        write_start = (
-            previous.write_rejected_max
-            if previous is not None
-            else group[0].write_rejected_max
-        )
-        search_end = group[-1].search_rejected_max
-        write_end = group[-1].write_rejected_max
-        text = (
-            f"search rejected 누적값 {search_start}→{search_end} "
-            f"(최고 {max(row.search_rejected_max for row in group)}), "
-            f"write rejected 누적값 {write_start}→{write_end} "
-            f"(최고 {max(row.write_rejected_max for row in group)}) — "
-            "누적 카운터이며 실제 증가량으로 단정할 수 없음"
-        )
-        end = group[-1].minute
-        following = _next_row(rows, end)
-        if (
-            following is not None
-            and not following.failed
-            and following.counts.get("node_metric", 0) > 0
-            and following.search_rejected_max == 0
-            and following.write_rejected_max == 0
-        ):
-            end = following.minute
-            text += " · 다음 관측: 다음 분 누적 rejected 값 0"
-        elif (
-            following is None
-            or following.failed
-            or following.counts.get("node_metric", 0) == 0
-        ):
-            text += " · 마지막 관측"
-
-        signals.append(
-            _Signal(
-                start=group[0].minute,
-                end=end,
-                severity="Info",
-                category="impact",
-                item=TimelineItem(
-                    text,
-                    _refs_between(
-                        evidence,
-                        group[0].minute,
-                        group[-1].minute,
-                        sources=(EvidenceSource.NODE_METRIC,),
-                        event_type="node_metric_rejected",
                     ),
                 ),
             )
@@ -641,9 +582,7 @@ def _cause_signals(
         severity = ""
         if item.source is EvidenceSource.NODE_METRIC:
             kind = item.event_type or ""
-            if kind == "node_metric_rejected" or "rejected" in kind:
-                severity = "Info"
-            elif kind in ("node_metric_heap", "node_metric_queue") or any(
+            if kind in ("node_metric_heap", "node_metric_queue") or any(
                 marker in kind for marker in ("heap", "queue")
             ):
                 severity = "Warning"

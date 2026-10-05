@@ -36,8 +36,8 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state impor
 _MAP = "map_minute"
 _REDUCE = "reduce"
 
-# 분별 호출의 동시 실행 수. 올리면 429가 빨라진다.
-MAX_CONCURRENCY = 5
+# 그래프 작업 동시 실행 수. 실제 LLM 요청은 공통 transport의 15개 제한을 공유한다.
+MAX_CONCURRENCY = 15
 
 
 def run_analysis(

@@ -17,6 +17,9 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
+from threading import Lock
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -119,7 +122,12 @@ class EvidenceCollector:
         call_llm: Callable[..., str],
         metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS,
     ) -> None:
-        self._new_evidence_id = new_evidence_id
+        id_lock = Lock()
+        def synchronized_id() -> str:
+            with id_lock:
+                return new_evidence_id()
+        self._new_evidence_id = synchronized_id
+        self._failed_minutes_lock = Lock()
         self._fetch_logs = fetch_logs
         self._fetch_node_logs = fetch_node_logs
         self._cluster = cluster
@@ -139,21 +147,37 @@ class EvidenceCollector:
         self._failed_minutes = set()
 
         collected.evidence.extend(self._collect_cluster_health(state))
-        slowlog_buckets, query_log_buckets, metric_entries = self._fetch_and_bucket(
-            window, state
-        )
-        collected.evidence.extend(
-            self._run_analysis(slowlog.SPEC, slowlog_buckets, state).evidence
-        )
-        collected.evidence.extend(
-            self._run_analysis(query_log.SPEC, query_log_buckets, state).evidence
-        )
-        collected.evidence.extend(self._node_metric_evidence(metric_entries))
+        # Each branch owns its builder; only the coordinator merges observations.
+        master_state = ObservationBuilder(window)
+        slow_state = ObservationBuilder(window)
+        query_state = ObservationBuilder(window)
 
-        master = self._collect_master(window, state)
+        def master_branch():
+            master = self._collect_master(window, master_state)
+            investigation = self._investigate_nodes(master, window, master_state)
+            return master, investigation
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            master_future = executor.submit(copy_context().run, master_branch)
+            slowlog_buckets, query_log_buckets, metric_entries = self._fetch_and_bucket(
+                window, state
+            )
+            slow_future = executor.submit(copy_context().run, self._run_analysis,
+                slowlog.SPEC, slowlog_buckets, slow_state)
+            query_future = executor.submit(copy_context().run, self._run_analysis,
+                query_log.SPEC, query_log_buckets, query_state)
+            collected.evidence.extend(slow_future.result().evidence)
+            collected.evidence.extend(query_future.result().evidence)
+            collected.evidence.extend(self._node_metric_evidence(metric_entries))
+            master, investigation = master_future.result()
+
+        for branch in (slow_state, query_state, master_state):
+            state.gaps.extend(branch.gaps)
+            for status in branch.source_statuses:
+                state.record_source_status(status)
+            state.master_logs.update(branch.master_logs)
+            state.degraded |= branch.degraded
         collected.evidence.extend(master)
-
-        investigation = self._investigate_nodes(master, window, state)
         collected.evidence.extend(investigation.evidence)
         collected.investigated_nodes = [
             node.node_name or node.node_id for node in investigation.investigated
@@ -178,7 +202,7 @@ class EvidenceCollector:
     def _fetch_and_bucket(
         self, window: TimeRange, state: ObservationBuilder
     ) -> tuple[list[MinuteBucket], list[MinuteBucket], list[NodeMetricEntry]]:
-        """분마다 세 소스를 병렬 조회하고 성공 레코드를 datasource별로 변환한다.
+        """최대 5개 분을 병렬 조회하고, 결과는 시간순으로 집계한다.
 
         실패는 소스·구간별 gap으로 기록한다. 쿼리 요청은 관측값에 보존하며,
         선별 입력은 분 단위 버킷으로 변환한다.
@@ -196,55 +220,59 @@ class EvidenceCollector:
         query_next_id = 1
         any_success = False
 
-        for minute_range in split_by_minute(window):
-            label = minute_range.start.strftime("%H:%M")
-            try:
-                result = self._fetch_logs(minute_range)
-            except Exception as exc:
-                _logger.warning("[collector] %s 로그 조회 실패: %s", label, exc)
-                state.mark_gap(
-                    f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({label}분): {exc}"
-                )
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            pending = [
+                (span, executor.submit(copy_context().run, self._fetch_logs, span))
+                for span in split_by_minute(window)
+            ]
+            for minute_range, future in pending:
+                label = minute_range.start.strftime("%H:%M")
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    _logger.warning("[collector] %s 로그 조회 실패: %s", label, exc)
+                    state.mark_gap(
+                        f"slowlog/쿼리 로그/노드 메트릭 조회 실패 ({label}분): {exc}"
+                    )
+                    for source in ("slowlog", "es_query_log", "node_metric"):
+                        state.record_source_status(SourceWindowStatus(source, minute_range.start,
+                            minute_range.end, "failed", None, datetime.now(KST), str(exc)))
+                    continue
+
+                # 정상 조회가 0건인 경우도 성공이다. 데이터 부재와 조회 실패를 구분한다.
+                any_success |= len(result.failures) < 3
+                for failure in result.failures:
+                    state.mark_gap(
+                        f"{failure.source} 조회 실패 "
+                        f"({failure.window.start.astimezone(KST).isoformat()} ~ "
+                        f"{failure.window.end.astimezone(KST).isoformat()}): {failure.error}"
+                    )
+                entries = list(result.entries)
+                failures = {failure.source: failure for failure in result.failures}
                 for source in ("slowlog", "es_query_log", "node_metric"):
+                    source_entries = [entry for entry in entries if entry.source == source]
+                    failure = failures.get(source)
+                    limited = any(entry.provenance and entry.provenance.excerpt for entry in source_entries)
                     state.record_source_status(SourceWindowStatus(source, minute_range.start,
-                        minute_range.end, "failed", None, datetime.now(KST), str(exc)))
-                continue
+                        minute_range.end, "failed" if failure else ("limited" if limited else "ok"),
+                        None if failure else len(source_entries), datetime.now(KST),
+                        failure.error if failure else ""))
+                state.record_log_observations(entries)
+                minute = minute_range.start.replace(second=0, microsecond=0)
 
-            # 정상 조회가 0건인 경우도 성공이다. 데이터 부재와 조회 실패를 구분한다.
-            any_success |= len(result.failures) < 3
-            for failure in result.failures:
-                state.mark_gap(
-                    f"{failure.source} 조회 실패 "
-                    f"({failure.window.start.astimezone(KST).isoformat()} ~ "
-                    f"{failure.window.end.astimezone(KST).isoformat()}): {failure.error}"
-                )
-            entries = list(result.entries)
-            failures = {failure.source: failure for failure in result.failures}
-            for source in ("slowlog", "es_query_log", "node_metric"):
-                source_entries = [entry for entry in entries if entry.source == source]
-                failure = failures.get(source)
-                limited = any(entry.provenance and entry.provenance.excerpt for entry in source_entries)
-                state.record_source_status(SourceWindowStatus(source, minute_range.start,
-                    minute_range.end, "failed" if failure else ("limited" if limited else "ok"),
-                    None if failure else len(source_entries), datetime.now(KST),
-                    failure.error if failure else ""))
-            state.record_log_observations(entries)
-            minute = minute_range.start.replace(second=0, microsecond=0)
+                slow_items = [e for e in entries if isinstance(e, SlowlogEntry)]
+                if slow_items:
+                    records = _shift_ids(slowlog.to_records(slow_items), slow_next_id)
+                    slow_next_id += len(records)
+                    slowlog_buckets.append(MinuteBucket(minute=minute, records=records))
 
-            slow_items = [e for e in entries if isinstance(e, SlowlogEntry)]
-            if slow_items:
-                records = _shift_ids(slowlog.to_records(slow_items), slow_next_id)
-                slow_next_id += len(records)
-                slowlog_buckets.append(MinuteBucket(minute=minute, records=records))
+                query_items = [e for e in entries if isinstance(e, QueryLogEntry)]
+                if query_items:
+                    records = _shift_ids(query_log.to_records(query_items), query_next_id)
+                    query_next_id += len(records)
+                    query_log_buckets.append(MinuteBucket(minute=minute, records=records))
 
-            query_items = [e for e in entries if isinstance(e, QueryLogEntry)]
-            if query_items:
-                records = _shift_ids(query_log.to_records(query_items), query_next_id)
-                query_next_id += len(records)
-                query_log_buckets.append(MinuteBucket(minute=minute, records=records))
-
-            metric_entries.extend(e for e in entries if isinstance(e, NodeMetricEntry))
-
+                metric_entries.extend(e for e in entries if isinstance(e, NodeMetricEntry))
         if not any_success:
             state.degraded = True
 
@@ -273,7 +301,8 @@ class EvidenceCollector:
             state.mark_gap(f"{spec.label} 선별이 오류로 중단됐다: {exc}")
             return AnalysisResult(evidence=[])
 
-        self._failed_minutes.update(result.failed_minutes_at)
+        with self._failed_minutes_lock:
+            self._failed_minutes.update(result.failed_minutes_at)
         if result.fully_failed:
             state.mark_gap(
                 f"{spec.label}의 모든 분({result.analyzed_minutes}개) 선별이 실패했다."
