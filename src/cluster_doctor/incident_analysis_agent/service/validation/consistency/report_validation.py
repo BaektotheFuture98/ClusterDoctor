@@ -14,6 +14,8 @@ def validate_report(report: LogAnalysisReport, evidence: list[Evidence], *, cand
     result=ValidationResult()
     _check_unknown_refs(report,{item.evidence_id:item for item in evidence},result)
     _check_candidate_ids(report,candidate_ids or set(),result)
+    if any(a.cause_index is not None and a.cause_index >= len(report.root_causes) for a in report.recommendations):
+        result.issues.append("조치의 cause_index가 실제 원인 후보 범위를 벗어났다.")
     return result
 
 

@@ -106,12 +106,14 @@ def to_incident_analysis_report(
             ),
             unverified=report.unresolved_questions,
             suspect_picks=report.suspect_picks,
-            recommendations=tuple(Recommendation(text=item.text, citations=citations(item.evidence_refs, tuple(evidence)))
+            recommendations=tuple(Recommendation(text=item.text, cause_index=item.cause_index, citations=citations(item.evidence_refs, tuple(evidence)))
                 for item in report.recommendations),
             causes=tuple(
                 CauseAssessment(
                     statement=cause.statement,
                     confidence=cause.confidence,
+                    mechanism=cause.mechanism,
+                    uncertainties=cause.uncertainties,
                     supporting=citations(
                         cause.supporting_evidence_refs, tuple(evidence)
                     ),

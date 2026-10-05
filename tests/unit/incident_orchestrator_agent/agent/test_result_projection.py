@@ -51,6 +51,7 @@ def test_projection_preserves_previous_issues_and_latest_mismatch_failure():
     }
     result = _DeepAgentIncidentAnalyzer._result_from(None, state)
     assert result.failed
+    assert result.report is None  # Incident narrative is assembled after state projection.
     assert any("old issue" in gap for gap in result.gaps)
     assert any("new issue" in gap for gap in result.gaps)
 

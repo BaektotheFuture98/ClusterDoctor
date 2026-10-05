@@ -63,3 +63,14 @@ def test_complete_context_bounds_metadata_and_marks_omissions():
     assert data['query_execution_count']==1 and data['maximum_execution_seconds']=='1.96'
     assert data['context_omissions'] and len(data['evidence'])<=80
     assert len(obs.nodes)==107 and all(e.message=='m'*400 for e in evidence)
+
+
+def test_context_exposes_kst_instants_without_changing_evidence():
+    from datetime import datetime, timezone
+    from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
+    instant=datetime(2026,10,5,8,18,30,tzinfo=timezone.utc)
+    evidence=Evidence(evidence_id='E1',event_time=instant,source=EvidenceSource.NODE_LOG,message='UTC 원문')
+    data=json.loads(build_analysis_context(Observations(),[evidence]))
+    assert data['report_timezone']=='Asia/Seoul'
+    assert data['evidence'][0]['event_time']=='2026-10-05T17:18:30+09:00'
+    assert evidence.event_time==instant and evidence.message=='UTC 원문'

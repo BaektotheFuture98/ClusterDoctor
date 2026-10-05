@@ -88,6 +88,9 @@ class GroundingValidator:
             add(f'finding:{n}:title', f.title, f.evidence_refs)
             add(f'finding:{n}:detail', f.detail, f.evidence_refs, severity=f.severity)
         for n, c in enumerate(report.root_causes):
+            add(f'cause:{n}:mechanism', c.mechanism, c.supporting_evidence_refs, counter_evidence_refs=list(c.counter_evidence_refs))
+            for j, text in enumerate(c.uncertainties):
+                add(f'cause:{n}:uncertainty:{j}', text, c.supporting_evidence_refs)
             add(f'cause:{n}', c.statement, c.supporting_evidence_refs,
                 counter_evidence_refs=list(c.counter_evidence_refs), confidence=c.confidence)
         for n, a in enumerate(report.recommendations):

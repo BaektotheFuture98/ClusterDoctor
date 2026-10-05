@@ -13,8 +13,9 @@
 같은 제약도 쓰지 않는다 — 초과가 곧 ``ValidationError``이고, 그것이 재시도
 루프가 된다. 이 저장소는 429를 최우선 제약으로 다뤄 재시도를 0으로 두는 곳이다.
 
-같은 이유로 **모든 필드에 기본값이 있다.** required 필드 하나가 빠져도 같은
-재시도 루프가 된다.
+구간 초안의 필드에는 기본값이 있다. 사건 종합 응답은 아래
+``IncidentDraftReport``의 필수 항목을 명시적으로 받아, 누락된 분석을 빈
+성공 보고서로 처리하지 않는다. 파싱 실패만으로 재호출하지 않는다.
 """
 
 from __future__ import annotations
@@ -98,6 +99,8 @@ class DraftCause(BaseModel):
 
     statement: str = Field(default="", description="가장 유력한 원인 하나. 한두 문장.")
     confidence: str = Field(default="", description="High / Medium / Low.")
+    mechanism: str = Field(default="", description="관측이 시사하는 병목과 지연을 설명하는 경로. 미확인 연결은 확정하지 않는다.")
+    uncertainties: list[str] = Field(default_factory=list, description="해당 가설에서 확인되지 않은 연결 또는 조건.")
     supporting_evidence_refs: list[str] = Field(
         default=[], description="이 결론을 뒷받침하는 Evidence id."
     )
@@ -139,6 +142,7 @@ class DraftWindowSuggestion(BaseModel):
 
 
 class DraftRecommendation(BaseModel):
+    cause_index: int | None = Field(default=None, ge=0, description="대응하는 root_causes의 0부터 시작하는 인덱스. 공통 조사는 null.")
     text: str = Field(default="", description="근거와 연결된 확인 절차 또는 조치.")
     evidence_refs: list[str] = Field(default_factory=list)
 
@@ -234,13 +238,15 @@ class DraftReport(BaseModel):
                 RootCause(
                     statement=item.statement,
                     confidence=item.confidence,
+                    mechanism=item.mechanism,
+                    uncertainties=tuple(item.uncertainties),
                     supporting_evidence_refs=tuple(item.supporting_evidence_refs),
                     counter_evidence_refs=tuple(item.counter_evidence_refs),
                 )
                 for item in self.root_causes
             ),
             unresolved_questions=tuple(self.unresolved_questions),
-            recommendations=tuple(ReportRecommendation(text=item.text, evidence_refs=tuple(item.evidence_refs))
+            recommendations=tuple(ReportRecommendation(text=item.text, evidence_refs=tuple(item.evidence_refs), cause_index=item.cause_index)
                 for item in self.recommendations),
             suspect_picks=tuple(
                 SuspectPick(candidate_id=item.candidate_id, reason=item.reason)
@@ -293,6 +299,15 @@ class DraftReport(BaseModel):
                     exc,
                 )
         return windows
+
+
+class IncidentDraftReport(DraftReport):
+    """Require deliberate incident judgments; empty arrays remain valid when warranted."""
+    summary: str
+    findings: list[DraftFinding]
+    root_causes: list[DraftCause]
+    recommendations: list[DraftRecommendation]
+    unresolved_questions: list[str]
 
 
 def parse_draft(text: str) -> DraftReport:

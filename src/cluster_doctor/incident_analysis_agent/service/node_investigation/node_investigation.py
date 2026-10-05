@@ -29,8 +29,6 @@ from datetime import datetime
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import SourceWindowStatus
 
-from pydantic import BaseModel, Field
-
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
@@ -78,21 +76,12 @@ _CANDIDATE_PROMPT = """너는 Elasticsearch 장애 분석 파이프라인의 노
 - 최대 {limit}개까지만 고른다.
 - 원인을 추론하지 않는다. "이 노드를 더 봐야 하는가"만 판단한다.
 
-응답은 JSON 하나로만 한다.
+응답은 {{"candidates":[{{"node_id":"근거에 등장한 노드", "reason":"확인 이유 한 문장", "evidence_refs":["실제 근거 id"]}}]}} 형식의 JSON 객체 하나로만 한다.
+후보가 없으면 {{"candidates":[]}}를 반환한다. 설명을 반복하지 않고 JSON을 완성한 뒤 종료한다.
 
 --- 마스터 로그 근거 ---
 {evidence}
 """
-
-
-class _Candidate(BaseModel):
-    node_id: str = ""
-    reason: str = ""
-    evidence_refs: list[str] = Field(default_factory=list)
-
-
-class _CandidateOutput(BaseModel):
-    candidates: list[_Candidate] = Field(default_factory=list)
 
 
 @dataclass
@@ -127,7 +116,7 @@ def find_problem_nodes(
         with llm_label("node_candidates"):
             text = call_llm(
                 [{"role": "user", "content": prompt}],
-                response_format=_CandidateOutput,
+                response_format={"type": "json_object"},
             )
     except (LlmApiError, LlmResponseError) as exc:
         _logger.warning("[node] 문제 노드 후보 선별 실패: %s", exc)
