@@ -1,4 +1,4 @@
-"""slowlog 유입이 멎기를 기다리고, 관측된 유입 구간을 만든다.
+"""문제성 로그 신호의 유입이 멎기를 기다리고, 관측된 유입 구간을 만든다.
 
 대기를 런타임 코드가 맡는 이유는 그것이 판단이 아니라 제어이기 때문이다 —
 얼마나 기다릴지는 예산 문제이고, 예산을 프롬프트 문장으로 두면 강제되지 않는다.
@@ -25,8 +25,8 @@ SETTLED_ZERO_STREAK = 2
 
 
 @dataclass(frozen=True)
-class SlowlogTrigger:
-    """A framework-free slowlog arrival used by the trigger-settling service."""
+class ProblemLogSignal:
+    """Occurrence time of a problem-log signal used to determine an analysis window."""
 
     timestamp: datetime
 
@@ -38,11 +38,11 @@ def base_time(log_time: datetime, kafka_receive_time: datetime) -> tuple[datetim
     그 값이 모델의 주장이 아니라 관측된 사실이 된다.
     """
     if log_time > kafka_receive_time:
-        # clock skew. slowlog가 수신보다 미래일 수는 없다.
+        # clock skew. 문제성 로그의 발생 시각이 수신 시각보다 미래일 수는 없다.
         return kafka_receive_time, "kafka_receive_time (clock skew)"
     if kafka_receive_time - log_time > PIPELINE_DELAY_LIMIT:
         return kafka_receive_time, "kafka_receive_time (파이프라인 지연 30분 초과)"
-    return log_time, "slowlog_timestamp"
+    return log_time, "problem_log_timestamp"
 
 
 @dataclass
@@ -50,8 +50,8 @@ class InflowTracker:
     """관측된 유입의 양 끝과 정착 여부.
 
     ``first_seen``의 초기값이 기준 시각인 이유: 큐에서 꺼낸 것이 하나도 없어도
-    분석할 구간은 있어야 한다. 트리거가 걸렸다는 것 자체가 그 시각에 slowlog가
-    있었다는 뜻이다.
+    분석할 구간은 있어야 한다. 신호를 받았다는 것 자체가 그 시각에 문제성 로그가
+    발생했다는 뜻이다.
     """
 
     first_seen: datetime
@@ -71,10 +71,10 @@ class InflowTracker:
     def settled(self) -> bool:
         return self.zero_streak >= SETTLED_ZERO_STREAK
 
-    def observe(self, entries: list[SlowlogTrigger], *, now: datetime) -> int:
+    def observe(self, entries: list[ProblemLogSignal], *, now: datetime) -> int:
         """큐에서 꺼낸 항목을 반영하고 건수를 돌려준다.
 
-        **미래 시각을 눌러 쓴다.** slowlog가 미래에 발생할 수는 없다. 노드 시계가
+        **미래 시각을 눌러 쓴다.** 문제성 로그가 미래에 발생할 수는 없다. 노드 시계가
         앞서 있으면 timestamp가 지금보다 뒤인 값으로 들어오고, 그대로 쓰면
         ``last_seen``이 미래가 된다. ``first_seen``은 clock skew를 잡아
         수신 시각으로 눌러 둔 값이라 기준이 서로 달라지고, 유입 구간이
@@ -89,13 +89,13 @@ class InflowTracker:
         ahead = sum(1 for entry in entries if entry.timestamp > now)
         if ahead:
             _logger.warning(
-                "[inflow] 발생 시각이 현재보다 미래인 slowlog %d건 — "
+                "[inflow] 발생 시각이 현재보다 미래인 문제성 로그 신호 %d건 — "
                 "clock skew로 보고 현재 시각으로 눌러 쓴다",
                 ahead,
             )
 
         self.zero_streak = 0
-        # 재트리거로 실행된 경우 기준 시각이 실제 발생보다 늦을 수 있어,
+        # 후속 신호로 실행된 경우 기준 시각이 실제 발생보다 늦을 수 있어,
         # 관측된 것이 더 이르면 그쪽으로 당긴다.
         self.first_seen = min(self.first_seen, times[0])
         self.last_seen = max(self.last_seen, times[-1])

@@ -1,33 +1,33 @@
 # ClusterDoctor
 
-ClusterDoctor는 Kafka의 Elasticsearch slowlog 트리거를 받아 유입이 멎기를 기다린 뒤,
+ClusterDoctor는 `KAFKA_TOPIC`에 지정된 Kafka 토픽에서 문제성 로그 신호를 받아 유입이 멎기를 기다린 뒤,
 인시던트 하나를 진단해 HTML 보고서 한 장을 만든다. 요청을 받는 HTTP 서비스가 아니라 계속
 실행되는 Kafka consumer이며, HTTP analysis endpoint는 없다.
 
 ## 동작과 아키텍처
 
 ```text
-ES slowlog → Filebeat → Elasticsearch data stream → Kafka source connector
-                                                   ├→ ClusterDoctor trigger
-                                                   └→ ClickHouse slowlog_v2
+slowlog·master log error → 외부 수집·전송 → Kafka(KAFKA_TOPIC) → ClusterDoctor
+상세 로그·메트릭         → 외부 적재      → ClickHouse         → 분석 시 조회
 ```
 
-같은 connector output이 두 갈래로 가므로, 트리거가 도착할 때 ClickHouse에는 대체로 분석할
-데이터가 들어와 있다. Kafka 수신부터 최종 보고서까지의 흐름은 다음과 같다.
+slowlog와 master log error를 같은 지정 토픽에 넣는다. 수신 코드는 로그 종류를 필터링하지 않고
+메시지에서 발생 시각을 읽어 `ProblemLogSignal`을 만든다. 상세 분석은 ClickHouse를 조회하므로
+분석할 원본 로그도 해당 테이블에 적재되어 있어야 한다. Kafka 수신부터 최종 보고서까지의 흐름은 다음과 같다.
 
 ```text
 KafkaConsumerAdapter
-  → SlowlogIntake: quiet-period settling
+  → ProblemLogProcessor: quiet-period settling
   → StartIncident
   → AnalyzeIncident: state, timeout/cancellation, delivery, cleanup
   → IncidentAnalyzer port: DeepAgents composite adapter
   → application report finalization and HTML publication
 ```
 
-`SlowlogIntake`는 도착분을 큐 하나에 쌓아 두고, 30초 간격으로 유입을 확인해 연속
+`ProblemLogProcessor`는 도착분을 큐 하나에 쌓아 두고, 30초 간격으로 유입을 확인해 연속
 두 번 신규 항목이 없을 때 Incident를 만들어 그 자리에서 바로 분석까지 순차로 돈다
 (누적 대기는 최대 5분). 정착과 분석은 하나의 루프라서, 한 Incident의 분석이 끝나야
-다음 트리거의 정착 판단을 시작한다 — 그 사이 들어온 새 이벤트는 큐에 쌓일 뿐이다.
+다음 신호의 정착 판단을 시작한다 — 그 사이 들어온 새 이벤트는 큐에 쌓일 뿐이다.
 새 이벤트를 분석 중인 Incident에 자동 합치거나 기존 Incident를 다시 실행하지 않는다.
 
 코드는 "실행 주체 → 목적 → 구현 기술" 순으로 배치되어 있다. 어떤 계층에 있는지가
@@ -42,14 +42,14 @@ src/cluster_doctor/
 └── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증
 ```
 
-`kafka_consumer`는 `SlowlogIntake`를 직접 주입받는다. 실행 State는 각 Agent의
+`kafka_consumer`는 `ProblemLogProcessor`를 직접 주입받는다. 실행 State는 각 Agent의
 `agent/state.py`, 공유 데이터 계약은 owner의 `model/`, LLM schema는 해당
 service/workflow에 둔다. Orchestrator가 Analysis 실행을 조립하며 Analysis는
 Orchestrator에 의존하지 않는다. `bootstrap`은 공개 조립 함수로 구현체를 연결한다.
 
 ### Agent 구조
 
-- Kafka inbound는 record를 `SlowlogTrigger`로 파싱해 `SlowlogIntake`에 넘긴다.
+- Kafka inbound는 record를 `ProblemLogSignal`로 파싱해 `ProblemLogProcessor`에 넘긴다.
   `aiokafka` 의존성은 `kafka_consumer/consumer/kafka`에만 있다.
 - `incident_analysis_agent/datasource`가 ClickHouse(`clickhouse/client.py`),
   Elasticsearch(`elasticsearch/cluster_health.py`, `node_resolver.py`),
@@ -136,7 +136,7 @@ LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가
 ## 요구 사항
 
 - Python 3.13 이상과 [uv](https://docs.astral.sh/uv/)
-- slowlog topic을 전달하는 Kafka
+- `KAFKA_TOPIC`으로 지정한 토픽에 문제성 로그를 전달하는 Kafka
 - slowlog, query log, node metric, node log table을 가진 ClickHouse
 - cluster health 조회용 Elasticsearch
 - Gemini 또는 NVIDIA NIM API key 하나
@@ -144,9 +144,9 @@ LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가
 
 ## 설정
 
-환경 변수 또는 project root `.env`를 `src/cluster_doctor/config/settings.py`가 읽는다.
+환경 변수 또는 project root `.env`를 `src/cluster_doctor/bootstrap/configuration/settings.py`가 읽는다.
 `.env.example`을 `.env`로 복사하고 실제 key는 commit하지 않는다. 필수 설정이 없으면 첫
-slowlog까지 기다리지 않고 기동 시점에 실패하며, 오류는 secret value를 출력하지 않는다.
+첫 문제성 로그 신호까지 기다리지 않고 기동 시점에 실패하며, 오류는 secret value를 출력하지 않는다.
 
 | 변수 | 기본값 | 설명 |
 |---|---:|---|
@@ -197,7 +197,7 @@ consumer가 담당하는 partition leader 장애로 종료하지 않는다. 리�
 | analysis window | 10분 | `incident_analysis_agent/model/time_range.py` |
 | incident analysis budget | 60분, 12회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | main agent cycle / rejected decision | 16회 / 3회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
-| settling wait | 30초 quiet period, 300초 total | `kafka_consumer/trigger_settling/service/intake.py` |
+| settling wait | 30초 quiet period, 300초 total | `kafka_consumer/trigger_settling/service/problem_log_processor.py` |
 | incident timeout | 30분 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | evidence | source당 25, 전체 80 | `incident_analysis_agent/service/evidence_collection/limits.py` |
 | raw prompt text | 60,000자 | `incident_analysis_agent/service/evidence_collection/limits.py` |
@@ -234,7 +234,7 @@ Kafka consumer는 block하며 log는 stderr와 `LOG_DIR/app.log`, report는 `REP
 없으면 자동 생성하며, 실행 계정에 쓰기 권한이 있어야 한다.
 보고서는 `.env`의 `REPORT_DIR=/var/lib/clusterdoctor/reports`로 경로를 지정한다.
 미지정하거나 빈 값이면 기존처럼 작업 디렉터리의 `reports/`에 저장한다.
-실제 slowlog를 기다리지 않는 trigger 확인에는 다음을 쓴다.
+실제 문제성 로그 발생을 기다리지 않고 분석 시작 신호를 확인할 때는 다음을 쓴다.
 
 ```bash
 uv run python scripts/produce_test_message.py --at "2026-09-16T04:22:00" --count 3
@@ -242,7 +242,7 @@ uv run python scripts/produce_test_message.py --at "2026-09-16T04:22:00" --count
 
 ### Docker Compose 통합 실행
 
-실제 Gemini 또는 NVIDIA NIM API를 호출하는 로컬 통합 실행이다. Kafka trigger 수신,
+실제 Gemini 또는 NVIDIA NIM API를 호출하는 로컬 통합 실행이다. Kafka 문제성 로그 신호 수신,
 ClickHouse 조회, Elasticsearch cluster health 조회, LLM 분석, HTML 보고서 생성을 한 번에
 확인한다. Docker에서는 Kafka·ClickHouse·Elasticsearch만 실행하고, ClusterDoctor는
 로컬 가상환경에서 실행한다. `.env`에 LLM API key와 아래 연결 설정을 넣는다.
@@ -265,7 +265,7 @@ docker compose up -d
 .venv/bin/python -m cluster_doctor.main
 ```
 
-`Kafka consumer started`가 보이면 다른 터미널에서 trigger를 보낸다. consumer의 `auto_offset_reset=latest` 때문에 consumer 기동 전에 보낸
+`Kafka consumer started`가 보이면 다른 터미널에서 신호를 보낸다. consumer의 `auto_offset_reset=latest` 때문에 consumer 기동 전에 보낸
 메시지는 읽지 않는다.
 
 ```bash
@@ -307,10 +307,10 @@ uv run python scripts/run_analysis.py --at "2026-09-16T04:22:00" --span 6m
 
 ```mermaid
 flowchart TD
-    A[main.py] --> B[build_slowlog_intake<br/>build_kafka_consumer]
+    A[main.py] --> B[build_problem_log_processor<br/>build_kafka_consumer]
     B --> C[KafkaConsumerAdapter.run]
-    C --> D[Kafka message JSON 파싱<br/>SlowlogTrigger]
-    D --> E[SlowlogIntake.handle]
+    C --> D[Kafka message JSON 파싱<br/>ProblemLogSignal]
+    D --> E[ProblemLogProcessor.submit]
     E --> F[유입 정착 settle]
     F --> G[Incident 생성<br/>StartIncident]
     G --> H[AnalyzeIncident.handle]
@@ -337,8 +337,8 @@ flowchart TD
 |---|---|---|
 | 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
 | 의존성 조립 | 서비스와 ClickHouse·ES·SSH·LLM·report 구현 연결 | `src/cluster_doctor/bootstrap/dependency/wiring.py` |
-| Kafka 수신 | JSON에서 event time을 읽어 `SlowlogTrigger`로 변환 | `src/cluster_doctor/kafka_consumer/consumer/kafka/consumer.py` |
-| Incident 묶기·대기 | quiet period 정착과 순차 분석 루프 | `src/cluster_doctor/kafka_consumer/trigger_settling/service/intake.py` |
+| Kafka 수신 | JSON에서 event time을 읽어 `ProblemLogSignal`로 변환 | `src/cluster_doctor/kafka_consumer/consumer/kafka/consumer.py` |
+| Incident 묶기·대기 | quiet period 정착과 순차 분석 루프 | `src/cluster_doctor/kafka_consumer/trigger_settling/service/problem_log_processor.py` |
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달 | `src/cluster_doctor/incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py` |
 | Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py` |
@@ -396,8 +396,8 @@ asset만 제거하고, `litellm/proxy/` 전체는 실제 `completion()` 경로�
   막아도 busy window가 quota를 넘는다.
 - 모델 narrative field는 실행마다 비어 있을 수 있다. 구조는 빈 narrative에도 observation과
   gap을 전달하지만, 모델 판단의 근본 해결은 아니다.
-- 대기 큐는 메모리 기반이다. 프로세스 종료 시 대기 중인 트리거를 영속 복구하지 않으며,
-  실패한 Incident를 자동 재실행하지 않는다. 큐가 가득 차면 새 트리거를 기다리지 않고 버린다.
+- 대기 큐는 메모리 기반이다. 프로세스 종료 시 대기 중인 문제성 로그 신호를 영속 복구하지 않으며,
+  실패한 Incident를 자동 재실행하지 않는다. 큐가 가득 차면 새 신호를 기다리지 않고 버린다.
 - master log 0건과 아직 ingest되지 않음을 구별하지 못한다. 마스터 로그는 ClickHouse에서만
   조회하며, 조회 실패는 gap으로 표시한다. 마스터 노드로 SSH 폴백하지 않는다.
 - data-node log는 SSH credential과 network reachability에 의존한다. Elasticsearch `_nodes`가

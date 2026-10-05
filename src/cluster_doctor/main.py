@@ -6,9 +6,9 @@ from pathlib import Path
 from cluster_doctor.bootstrap.configuration.settings import LoggingSettings, get_settings
 from cluster_doctor.bootstrap.dependency.wiring import (
     build_kafka_consumer,
-    build_slowlog_intake,
+    build_runtime_resources,
+    build_problem_log_processor,
 )
-from cluster_doctor.bootstrap.lifecycle.app_lifecycle import close_clickhouse_client
 from cluster_doctor.exceptions import KafkaUnavailableError
 from cluster_doctor.log_context import IncidentIdLogFilter
 
@@ -45,27 +45,26 @@ configure_logging()
 
 async def main() -> None:
     settings = get_settings()
-    intake = build_slowlog_intake(settings)
-    consumer = build_kafka_consumer(intake, settings)
-
-    try:
-        await consumer.run()
-    except KafkaUnavailableError as exc:
-        logging.getLogger(__name__).critical("%s; terminating process with exit code 1", exc)
-        logging.shutdown()
-        # Consumer cleanup has already been attempted. Normal shutdown waits
-        # for analysis threads, so it cannot enforce this fatal outage policy.
-        # Exit the whole process, discarding pending/in-flight analysis.
-        os._exit(1)
-    finally:
+    with build_runtime_resources(settings) as runtime_resources:
+        problem_log_processor = build_problem_log_processor(settings, runtime_resources)
         try:
-            await intake.close()
+            kafka_consumer = build_kafka_consumer(problem_log_processor, settings)
+            try:
+                await kafka_consumer.run()
+            except KafkaUnavailableError as exc:
+                logging.getLogger(__name__).critical("%s; terminating process with exit code 1", exc)
+                logging.shutdown()
+                # Consumer cleanup has already been attempted. Normal shutdown waits
+                # for analysis threads, so it cannot enforce this fatal outage policy.
+                # Exit the whole process, discarding pending/in-flight analysis.
+                os._exit(1)
         finally:
-            close_clickhouse_client()
+            await problem_log_processor.close()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        logging.getLogger(__name__).info("Received keyboard interrupt, shutting down...")
         pass
