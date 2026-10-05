@@ -30,8 +30,8 @@ def test_project_timeline_groups_card_citations_by_source():
             evidence_id="E-2",
             event_time=_MINUTE,
             source=EvidenceSource.NODE_METRIC,
-            event_type="node_metric_rejected",
-            message="search rejected 1",
+            event_type="node_metric_heap",
+            message="heap 78%",
         ),
     )
 
@@ -145,3 +145,33 @@ def test_parsed_log_keeps_exact_seconds():
 def test_warn_level_remains_warning_in_timeline():
     e=Evidence(evidence_id='warn-level',event_time=_MINUTE,source=EvidenceSource.NODE_LOG,severity='WARN',message='warning')
     assert project_timeline(Observations(),(e,))[0].severity=='Warning'
+
+
+def test_cumulative_rejected_metrics_are_not_timeline_events():
+    observations = Observations(timeline=(TimelineRow(
+        minute=_MINUTE, counts={"node_metric": 1}, search_rejected_max=100,
+    ),))
+    counter = Evidence(evidence_id="counter", event_time=_MINUTE,
+        source=EvidenceSource.NODE_METRIC, event_type="node_metric_rejected",
+        message="search_rejected=100 (누적 카운터)")
+    error = Evidence(evidence_id="error", event_time=_MINUTE,
+        source=EvidenceSource.NODE_LOG, event_type="rejected_execution",
+        severity="ERROR", message="실제 검색 요청 거절 오류")
+    cards = project_timeline(observations, (counter, error))
+    assert "search_rejected" not in texts(cards)
+    assert "누적값" not in texts(cards)
+    assert "실제 검색 요청 거절 오류" in texts(cards)
+    assert all("counter" not in card.evidence_refs for card in cards)
+
+
+def test_mixed_counter_annotation_is_not_rendered():
+    from cluster_doctor.incident_orchestrator_agent.model.incident_report import TimelineAnnotation
+    counter = Evidence(evidence_id="counter", event_time=_MINUTE,
+        source=EvidenceSource.NODE_METRIC, event_type="node_metric_rejected", message="counter")
+    slow = Evidence(evidence_id="slow", event_time=_MINUTE,
+        source=EvidenceSource.SLOWLOG, message="slowlog took=12s")
+    annotation = TimelineAnnotation(at=_MINUTE, description="search rejected 누적값 100",
+        evidence_refs=("counter", "slow"))
+    cards = project_timeline(Observations(timeline=(TimelineRow(minute=_MINUTE, counts={"slowlog": 1}),)), (counter, slow), (annotation,), verification_status="PASSED")
+    assert "누적값" not in texts(cards)
+    assert "slowlog" in texts(cards)
