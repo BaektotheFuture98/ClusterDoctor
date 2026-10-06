@@ -21,18 +21,6 @@ MAX_EVIDENCE_TOTAL = 80
 MAX_RAW_LOG_CHARS = 60_000
 
 
-def clamp_evidence(items: list, limit: int, *, what: str) -> list:
-    """Evidence 수를 상한으로 자르고 잘렸다는 사실을 남긴다.
-
-    조용히 자르지 않는 이유: Cross-source 단계는 받은 목록이 전부라고 믿고
-    추론한다. 잘린 것을 모르면 "그 시각에는 아무 일도 없었다"가 된다.
-    """
-    if len(items) <= limit:
-        return items
-    _logger.warning("[guardrail] %s Evidence %d건을 상한 %d건으로 자른다", what, len(items), limit)
-    return items[:limit]
-
-
 def truncate_raw(text: str, limit: int = MAX_RAW_LOG_CHARS) -> str:
     """프롬프트에 실을 원문을 상한으로 자른다. 잘린 사실을 본문에 적는다."""
     if len(text) <= limit:

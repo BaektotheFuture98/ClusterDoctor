@@ -59,8 +59,6 @@ from cluster_doctor.incident_analysis_agent.model.log_fetch import LogFetchResul
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.model.observations import SourceWindowStatus
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import (
-    MAX_EVIDENCE_TOTAL,
-    clamp_evidence,
     truncate_raw,
 )
 from cluster_doctor.incident_analysis_agent.service.node_investigation import (

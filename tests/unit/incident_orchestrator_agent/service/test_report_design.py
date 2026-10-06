@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import TimelineCard
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection import report_content
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import minute_stamp
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html import report_layout
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative
