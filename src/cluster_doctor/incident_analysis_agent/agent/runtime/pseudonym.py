@@ -32,8 +32,15 @@ from langchain.agents.middleware import AgentMiddleware
 _IPV4 = re.compile(
     r"(?<!\d)(?<!\d\.)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)(?!\.\d)"
 )
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_PSEUDONYM = re.compile(r"\b(?:ip|email|company|user|req)-\d{4}\b", re.IGNORECASE)
+# 경계는 한글을 포함하지 않는 ASCII 기준이다. 한국어 문장에서는 값 뒤에 조사가 바로
+# 붙는다("logstash가", "ip-0006에서"). ``\w``/``\b``는 한글도 단어 문자로 보므로
+# 그 자리에서 값이 가려지지 않거나 가명이 복원되지 않고, 이메일은 뒤 조사까지 삼킨다.
+_ASCII_WORD = "A-Za-z0-9_"
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_PSEUDONYM = re.compile(
+    rf"(?<![{_ASCII_WORD}])(?:ip|email|company|user|req)-\d{{4}}(?![{_ASCII_WORD}])",
+    re.IGNORECASE,
+)
 
 # 이보다 짧은 값은 등록하지 않는다. 한두 글자 사용자 ID가 다른 단어 속에서
 # 치환되면 프롬프트가 망가진다.
@@ -80,7 +87,7 @@ class Pseudonymizer:
                     re.escape(v) for v in sorted(self._registered, key=len, reverse=True)
                 )
                 self._registered_pattern = re.compile(
-                    rf"(?<!\w)(?:{alternatives})(?!\w)"
+                    rf"(?<![{_ASCII_WORD}])(?:{alternatives})(?![{_ASCII_WORD}])"
                 )
             return self._registered_pattern
 
