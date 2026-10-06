@@ -6,6 +6,20 @@
 """
 
 from contextlib import ExitStack
+import logging
+
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
+    ReportPublisher,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_report_publisher import (
+    SftpReportPublisher,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_uploader import (
+    SftpTarget,
+    SftpUploader,
+)
+
+_logger = logging.getLogger(__name__)
 from urllib.parse import urlparse
 
 import clickhouse_connect
@@ -110,6 +124,35 @@ def _build_log_repository(settings: Settings, client: Client) -> ClickHouseLogAd
     )
 
 
+def build_sftp_uploader(settings: Settings, *, attempts: int = 2) -> SftpUploader:
+    """``REPORT_SFTP_*`` 설정으로 업로더를 만든다. 서버 호스트 키를 검증하지 않으면 경고한다."""
+    if not settings.report_sftp_known_hosts.strip():
+        _logger.warning(
+            "REPORT_SFTP_KNOWN_HOSTS가 비어 있어 서버 호스트 키를 검증하지 않는다"
+        )
+    return SftpUploader(
+        SftpTarget(
+            host=settings.report_sftp_host.strip(),
+            port=settings.report_sftp_port,
+            user=settings.report_sftp_user.strip(),
+            remote_dir=settings.report_sftp_remote_dir.strip(),
+            password=settings.report_sftp_password.get_secret_value(),
+            key_file=settings.report_sftp_key_file.strip(),
+            known_hosts=settings.report_sftp_known_hosts.strip(),
+            timeout_seconds=settings.report_sftp_timeout_seconds,
+        ),
+        attempts=attempts,
+    )
+
+
+def _build_report_publisher(settings: Settings) -> ReportPublisher:
+    """리포트는 로컬 HTML 파일로 남기고, 설정이 켜져 있으면 SFTP로도 올린다."""
+    local = HtmlFileReportPublisher(output_dir=settings.report_dir)
+    if not settings.report_sftp_enabled:
+        return local
+    return SftpReportPublisher(local, build_sftp_uploader(settings))
+
+
 def _build_analyze_incident(
     settings: Settings, runtime_resources: RuntimeResources
 ) -> AnalyzeIncident:
@@ -137,7 +180,7 @@ def _build_analyze_incident(
         incident_analyzer=incident_analyzer,
         # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
         # 떨어뜨린다.
-        report_publisher=HtmlFileReportPublisher(output_dir=settings.report_dir),
+        report_publisher=_build_report_publisher(settings),
     )
 
 

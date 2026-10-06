@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["gemini", "nvidia_nim"]
@@ -86,6 +86,51 @@ class Settings(LoggingSettings):
     @classmethod
     def _default_empty_report_dir(cls, v: str) -> str:
         return v if v.strip() else "reports"
+
+    # 리포트를 SFTP로 다른 서버에 올린다. REPORT_SFTP_HOST가 비어 있으면 꺼진다.
+    report_sftp_host: str = ""
+    report_sftp_port: int = Field(default=22, gt=0, le=65535)
+    report_sftp_user: str = ""
+    report_sftp_password: SecretStr = SecretStr("")
+    report_sftp_key_file: str = ""
+    report_sftp_remote_dir: str = ""
+    report_sftp_known_hosts: str = ""
+    report_sftp_timeout_seconds: float = Field(default=10.0, gt=0)
+
+    @field_validator("report_sftp_port", "report_sftp_timeout_seconds", mode="before")
+    @classmethod
+    def _default_empty_sftp_number(cls, v, info):
+        if isinstance(v, str) and not v.strip():
+            return 22 if info.field_name == "report_sftp_port" else 10.0
+        return v
+
+    @model_validator(mode="after")
+    def _require_sftp_connection_details(self) -> "Settings":
+        # 켜져 있는데 값이 모자라면 사건 한 건을 태운 뒤가 아니라 기동에서 멈춘다.
+        # 오류 문구에는 필드 이름만 싣고 값은 싣지 않는다.
+        if not self.report_sftp_host.strip():
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("report_sftp_user", self.report_sftp_user),
+                ("report_sftp_remote_dir", self.report_sftp_remote_dir),
+            )
+            if not value.strip()
+        ]
+        if not (self.report_sftp_password.get_secret_value() or self.report_sftp_key_file.strip()):
+            missing.append("report_sftp_password")
+        if missing:
+            raise ValueError(
+                "report_sftp_host is set but these are missing: "
+                + ", ".join(missing)
+                + " (report_sftp_password or report_sftp_key_file is required)"
+            )
+        return self
+
+    @property
+    def report_sftp_enabled(self) -> bool:
+        return bool(self.report_sftp_host.strip())
 
     @field_validator("gemini_api_key")
     @classmethod
