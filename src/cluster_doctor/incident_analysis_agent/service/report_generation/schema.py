@@ -45,6 +45,21 @@ _SEVERITIES = ("Critical", "Warning", "Info")
 _CONFIDENCES = ("High", "Medium", "Low")
 
 
+def _as_string_list(value: object) -> object:
+    """배열이어야 할 문자열 필드에 문자열 하나가 온 응답을 받아 준다.
+
+    사건 종합 호출은 provider에 타입을 강제하지 않는 느슨한 response_format을 쓰므로
+    ``["a"]`` 대신 ``"a"``가 올 수 있다. 쉼표나 줄바꿈으로 쪼개지 않고 한 항목으로
+    감싼다 — 쪼개면 문장 안의 쉼표가 항목을 가른다. 값이 없으면 빈 배열이다.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    return value
+
+
 class DraftTimelineEntry(BaseModel):
     """모델 응답의 타임라인 초안 한 항목.
 
@@ -59,6 +74,8 @@ class DraftTimelineEntry(BaseModel):
         default=[], description="이 줄의 근거가 된 Evidence id. 예: E-abc-3"
     )
 
+    _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
+
 
 class DraftFinding(BaseModel):
     """모델이 반환하는 문제 주장 초안.
@@ -72,6 +89,8 @@ class DraftFinding(BaseModel):
         default="", description="관찰된 사실만. 원인 추정은 root_causes에 쓴다."
     )
     evidence_refs: list[str] = Field(default=[], description="근거 Evidence id.")
+
+    _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
 
     @field_validator("severity", mode="before")
     @classmethod
@@ -107,6 +126,13 @@ class DraftCause(BaseModel):
     counter_evidence_refs: list[str] = Field(
         default=[], description="이 결론과 맞지 않는 Evidence id. 없으면 빈 배열."
     )
+
+    _string_list = field_validator(
+        "uncertainties",
+        "supporting_evidence_refs",
+        "counter_evidence_refs",
+        mode="before",
+    )(_as_string_list)
 
     @field_validator("confidence", mode="before")
     @classmethod
@@ -145,6 +171,8 @@ class DraftRecommendation(BaseModel):
     cause_index: int | None = Field(default=None, ge=0, description="대응하는 root_causes의 0부터 시작하는 인덱스. 공통 조사는 null.")
     text: str = Field(default="", description="근거와 연결된 확인 절차 또는 조치.")
     evidence_refs: list[str] = Field(default_factory=list)
+
+    _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
 
 
 class DraftReport(BaseModel):
@@ -195,6 +223,10 @@ class DraftReport(BaseModel):
     suggested_windows: list[DraftWindowSuggestion] = Field(
         default=[], description="needs_more_context가 true일 때 필요한 시간 범위."
     )
+
+    _string_list = field_validator(
+        "summary_evidence_refs", "unresolved_questions", mode="before"
+    )(_as_string_list)
 
     @field_validator("recommendations", mode="before")
     @classmethod
