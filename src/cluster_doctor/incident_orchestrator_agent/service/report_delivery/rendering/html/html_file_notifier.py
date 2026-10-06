@@ -96,7 +96,7 @@ class HtmlFileReportPublisher(ReportPublisher):
             return ReportPublication(text_length=locals().get("text_length", 0))
 
         _logger.info("리포트 저장: %s", path)
-        return ReportPublication(text_length=text_length)
+        return ReportPublication(text_length=text_length, path=path)
 
     def _write(
         self,
