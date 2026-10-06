@@ -145,7 +145,14 @@ def test_get_settings_names_the_missing_sftp_fields(monkeypatch, tmp_path):
     from cluster_doctor.bootstrap.configuration import settings as settings_module
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("REPORT_SFTP_HOST", "reports.example")
+    for name, value in (
+        ("CLICKHOUSE_URL", _BASE["clickhouse_url"]),
+        ("ES_HOST", _BASE["es_host"]),
+        ("NVIDIA_API_KEY", _BASE["nvidia_api_key"]),
+        ("LLM_PROVIDER", _BASE["llm_provider"]),
+        ("REPORT_SFTP_HOST", "reports.example"),
+    ):
+        monkeypatch.setenv(name, value)
     monkeypatch.setattr(settings_module.Settings, "model_config", {**settings_module.Settings.model_config, "env_file": None})
     settings_module.get_settings.cache_clear()
     try:
