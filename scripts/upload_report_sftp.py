@@ -31,7 +31,10 @@ def main() -> int:
 
     path = args.file
     if path is None:
-        candidates = sorted(Path(settings.report_dir).glob("report-*.html"))
+        candidates = sorted(
+            Path(settings.report_dir).glob("report-*.html"),
+            key=lambda candidate: candidate.stat().st_mtime,
+        )
         if not candidates:
             print(f"{settings.report_dir}에 올릴 리포트가 없습니다.", file=sys.stderr)
             return 2

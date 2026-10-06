@@ -187,8 +187,9 @@ def get_settings() -> Settings:
     try:
         return Settings()
     except ValidationError as exc:
+        # 모델 단위 검증 오류는 loc이 비어 있으므로 문구(값을 담지 않는다)를 대신 보여 준다.
         fields = ", ".join(
-            ".".join(str(part) for part in error["loc"]) or "(root)"
+            ".".join(str(part) for part in error["loc"]) or str(error["msg"])
             for error in exc.errors(include_input=False, include_url=False)
         )
         raise ConfigurationError(

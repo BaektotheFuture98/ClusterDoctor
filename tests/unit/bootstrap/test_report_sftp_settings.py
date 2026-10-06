@@ -139,3 +139,19 @@ def test_known_hosts_setting_silences_the_startup_warning(tmp_path, caplog):
     _build_report_publisher(_sftp(report_dir=str(tmp_path), report_sftp_known_hosts="/etc/ssh/known_hosts"))
 
     assert "REPORT_SFTP_KNOWN_HOSTS" not in caplog.text
+
+
+def test_get_settings_names_the_missing_sftp_fields(monkeypatch, tmp_path):
+    from cluster_doctor.bootstrap.configuration import settings as settings_module
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("REPORT_SFTP_HOST", "reports.example")
+    monkeypatch.setattr(settings_module.Settings, "model_config", {**settings_module.Settings.model_config, "env_file": None})
+    settings_module.get_settings.cache_clear()
+    try:
+        with pytest.raises(settings_module.ConfigurationError) as error:
+            settings_module.get_settings()
+    finally:
+        settings_module.get_settings.cache_clear()
+
+    assert "report_sftp_user" in str(error.value)

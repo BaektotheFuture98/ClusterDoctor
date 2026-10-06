@@ -10,7 +10,7 @@ import logging
 import posixpath
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import paramiko
@@ -28,7 +28,7 @@ class SftpTarget:
     port: int
     user: str
     remote_dir: str
-    password: str = ""
+    password: str = field(default="", repr=False)
     key_file: str = ""
     known_hosts: str = ""
     timeout_seconds: float = 10.0
@@ -40,6 +40,9 @@ _PERMANENT_ERRORS = (
     paramiko.BadHostKeyException,
     PermissionError,
 )
+
+# 채널이 멈췄거나 끊긴 오류. 같은 채널로 원격 정리를 해도 다시 시간 제한까지 기다릴 뿐이다.
+_STALLED_ERRORS = (TimeoutError, EOFError)
 
 
 def _describe(exc: BaseException) -> str:
@@ -64,6 +67,8 @@ class SftpUploader:
         retry_delay_seconds: float = 2.0,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        if attempts < 1:
+            raise ValueError("attempts must be at least 1")
         self._target = target
         self._client_factory = client_factory
         self._attempts = attempts
@@ -112,15 +117,18 @@ class SftpUploader:
             try:
                 # 전송 중 서버가 멈춰도 무기한 기다리지 않는다.
                 sftp.get_channel().settimeout(target.timeout_seconds)
-                _ensure_directory(sftp, target.remote_dir)
-                name = _unique_name(sftp, target.remote_dir, local_path.name)
-                final = posixpath.join(target.remote_dir, name)
+                remote_dir = target.remote_dir.rstrip("/") or "/"
+                _ensure_directory(sftp, remote_dir)
+                name = _unique_name(sftp, remote_dir, local_path.name)
+                final = posixpath.join(remote_dir, name)
                 partial = final + ".part"
                 try:
                     sftp.put(str(local_path), partial)
                     sftp.rename(partial, final)
-                except Exception:
-                    _remove_quietly(sftp, partial)
+                except Exception as exc:
+                    # 응답이 끊긴 채널에서 정리를 시도하면 시간 제한만큼 더 기다린다.
+                    if not isinstance(exc, _STALLED_ERRORS):
+                        _remove_quietly(sftp, partial)
                     raise
                 return final
             finally:
