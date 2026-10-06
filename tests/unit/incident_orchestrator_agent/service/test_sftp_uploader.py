@@ -280,3 +280,38 @@ def test_partial_file_is_removed_when_the_rename_fails(report):
 
     assert ("remove", "/srv/reports/report-20261006-090000.html.part") in sftp.calls
     assert not any(path.endswith(".part") for path in sftp.files)
+
+
+def test_stalled_transfer_skips_the_remote_cleanup(report):
+    sftp = FakeSftp(dirs={"/srv", "/srv/reports"})
+
+    def stalled(local, remote):
+        raise TimeoutError("timed out")
+
+    sftp.put = stalled
+
+    with pytest.raises(SftpUploadError):
+        _uploader(FakeClient(sftp), attempts=1).upload(report)
+
+    assert not any(call[0] == "remove" for call in sftp.calls)
+
+
+def test_trailing_slash_on_the_remote_directory_is_ignored(report):
+    sftp = FakeSftp()
+
+    remote = _uploader(FakeClient(sftp), target={"remote_dir": "/srv/reports/"}).upload(report)
+
+    assert remote == "/srv/reports/report-20261006-090000.html"
+    assert [call for call in sftp.calls if call[0] == "mkdir"] == [
+        ("mkdir", "/srv"),
+        ("mkdir", "/srv/reports"),
+    ]
+
+
+def test_password_is_not_part_of_the_target_repr():
+    assert "s3cret-pw" not in repr(_target(password="s3cret-pw"))
+
+
+def test_at_least_one_attempt_is_required():
+    with pytest.raises(ValueError):
+        SftpUploader(_target(), attempts=0)
