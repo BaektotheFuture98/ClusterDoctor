@@ -6,6 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LlmProvider = Literal["gemini", "nvidia_nim"]
 
+_DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024
+_DEFAULT_LOG_BACKUP_COUNT = 5
+
 
 class LoggingSettings(BaseSettings):
     """Read log configuration before external-service settings are validated."""
@@ -18,11 +21,22 @@ class LoggingSettings(BaseSettings):
     )
 
     log_dir: str = "logs"
+    # app.log를 이 크기에서 넘기고 백업을 이 개수까지만 남긴다. 총량은 대략
+    # (backup_count + 1) * max_bytes다.
+    log_max_bytes: int = Field(default=_DEFAULT_LOG_MAX_BYTES, gt=0)
+    log_backup_count: int = Field(default=_DEFAULT_LOG_BACKUP_COUNT, gt=0)
 
     @field_validator("log_dir")
     @classmethod
     def _default_empty_log_dir(cls, v: str) -> str:
         return v if v.strip() else "logs"
+
+    @field_validator("log_max_bytes", "log_backup_count", mode="before")
+    @classmethod
+    def _default_empty_rotation_value(cls, v, info):
+        if isinstance(v, str) and not v.strip():
+            return _DEFAULT_LOG_MAX_BYTES if info.field_name == "log_max_bytes" else _DEFAULT_LOG_BACKUP_COUNT
+        return v
 
 
 class Settings(LoggingSettings):

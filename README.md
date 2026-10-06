@@ -167,6 +167,7 @@ LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가
 | `NODE_HEAP_WARN_PERCENT`, `NODE_QUEUE_WARN` | `85`, `100` | metric evidence threshold |
 | `REPORT_DIR` | `reports` | HTML 보고서 저장 디렉터리. 미지정·빈 값이면 `reports`, 상대 경로는 작업 디렉터리 기준 |
 | `LOG_DIR` | `logs` | `app.log` 저장 디렉터리. 미지정·빈 값이면 `logs`, 상대 경로는 작업 디렉터리 기준 |
+| `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` | `10485760`, `5` | `app.log` 로테이션. 크기를 넘으면 `app.log.1`…로 넘기고 백업은 개수까지만 남긴다(총량 약 `(LOG_BACKUP_COUNT + 1) * LOG_MAX_BYTES`). 양수만 허용, 빈 값이면 기본값 |
 | `LITELLM_LOCAL_MODEL_COST_MAP` | `True` | litellm의 GitHub cost-map fetch를 막음 |
 
 Kafka offset은 `(group, topic, partition)` 기준이다. 새 topic에 committed offset이 없으면
@@ -231,7 +232,9 @@ uv run python -m cluster_doctor.main
 Kafka consumer는 block하며 log는 stderr와 `LOG_DIR/app.log`, report는 `REPORT_DIR`에 남긴다.
 `.env`에 `LOG_DIR=/var/log/clusterdoctor`처럼 절대 경로를 지정할 수 있다. 지정하지
 않거나 빈 값이면 기존처럼 작업 디렉터리의 `logs/app.log`에 저장한다. 디렉터리가
-없으면 자동 생성하며, 실행 계정에 쓰기 권한이 있어야 한다.
+없으면 자동 생성하며, 실행 계정에 쓰기 권한이 있어야 한다. `app.log`는 크기 기준으로
+로테이션한다(기본 10MB, 백업 5개). Windows에서는 편집기 등이 `app.log`를 열어 두면
+로테이션 시점의 이름 변경이 실패할 수 있다(로그 기록 오류는 콘솔에만 남고 분석은 계속된다).
 보고서는 `.env`의 `REPORT_DIR=/var/lib/clusterdoctor/reports`로 경로를 지정한다.
 미지정하거나 빈 값이면 기존처럼 작업 디렉터리의 `reports/`에 저장한다.
 실제 문제성 로그 발생을 기다리지 않고 분석 시작 신호를 확인할 때는 다음을 쓴다.
