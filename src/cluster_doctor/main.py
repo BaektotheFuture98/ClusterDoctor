@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from cluster_doctor.bootstrap.configuration.settings import LoggingSettings, get_settings
@@ -26,12 +27,18 @@ def configure_logging() -> None:
     if already_configured:
         return
 
-    log_dir = Path(LoggingSettings().log_dir)
+    logging_settings = LoggingSettings()
+    log_dir = Path(logging_settings.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     formatter = logging.Formatter(_LOG_FORMAT)
     incident_id_filter = IncidentIdLogFilter()
 
-    file_handler = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
+    file_handler = RotatingFileHandler(
+        log_dir / "app.log",
+        maxBytes=logging_settings.log_max_bytes,
+        backupCount=logging_settings.log_backup_count,
+        encoding="utf-8",
+    )
     stream_handler = logging.StreamHandler()
     for handler in (file_handler, stream_handler):
         handler.setFormatter(formatter)
