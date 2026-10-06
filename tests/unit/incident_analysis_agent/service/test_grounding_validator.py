@@ -138,7 +138,6 @@ def test_summary_only_is_checked_with_stable_claim_id():
 
 
 def test_partial_duplicate_unknown_verdicts_fail_closed():
-    import pytest
     for payload in ([{}], [{'claim_id':'timeline:0','status':'UNKNOWN'}],
         [{'claim_id':'unknown','status':'PASSED'}], [{'claim_id':'timeline:0','status':'PASSED'}]*2):
         validator, _ = _make_validator(json.dumps(payload))

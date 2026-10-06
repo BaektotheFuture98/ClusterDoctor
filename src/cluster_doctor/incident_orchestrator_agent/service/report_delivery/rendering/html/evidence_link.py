@@ -17,10 +17,3 @@ def anchor(ref: str) -> str:
         "evidence-"
         + hashlib.sha256(ref.encode("utf-8", errors="surrogatepass")).hexdigest()
     )
-
-
-def evidence_ref(ref: str, known: set[str]) -> str:
-    # A ref without collected evidence has no anchor, so it is marked instead of linked.
-    if ref in known:
-        return f'<a href="#{anchor(ref)}">{esc(ref)}</a>'
-    return f'<span class="hint">{esc(ref)} 근거 없음(dangling)</span>'

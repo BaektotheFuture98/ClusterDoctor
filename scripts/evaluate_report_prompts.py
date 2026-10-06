@@ -7,7 +7,6 @@ import argparse
 import json
 import signal
 import sys
-from dataclasses import replace
 from datetime import datetime, timedelta, UTC
 from decimal import Decimal
 from itertools import count

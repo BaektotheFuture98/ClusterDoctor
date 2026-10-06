@@ -5,7 +5,6 @@ from decimal import Decimal
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url import request_fields
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import (
-    Observations,
     merge_observations,
 )
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
