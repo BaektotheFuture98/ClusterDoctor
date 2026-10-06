@@ -42,6 +42,19 @@ _PSEUDONYM = re.compile(
     re.IGNORECASE,
 )
 
+# 복원되지 않고 남은 가명을 찾는 점검용이다. 모델이 가명을 변형해 쓴 경우(``ip-6``,
+# ``ip_0006``, ``ip-0006abc``)도 잡아야 하므로 복원용 ``_PSEUDONYM``보다 느슨하다.
+_ALIAS_LIKE = re.compile(
+    rf"(?<![{_ASCII_WORD}])(?:ip|email|company|user|req)[-_]\d+[{_ASCII_WORD}]*",
+    re.IGNORECASE,
+)
+
+
+def unrestored_aliases(text: str) -> tuple[str, ...]:
+    """``text``에 남은 가명 모양의 문자열을 중복 없이 정렬해 돌려준다."""
+    return tuple(sorted({match.group(0) for match in _ALIAS_LIKE.finditer(text)}))
+
+
 # 이보다 짧은 값은 등록하지 않는다. 한두 글자 사용자 ID가 다른 단어 속에서
 # 치환되면 프롬프트가 망가진다.
 _MIN_REGISTERED_LENGTH = 3

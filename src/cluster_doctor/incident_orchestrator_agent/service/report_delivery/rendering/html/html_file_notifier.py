@@ -10,9 +10,13 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
+    unrestored_aliases,
+)
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     IncidentAnalysisReport,
 )
@@ -32,6 +36,22 @@ _logger = logging.getLogger(__name__)
 _KST = timezone(timedelta(hours=9))
 
 _FILENAME_FORMAT = "report-%Y%m%d-%H%M%S"
+
+_NON_VISIBLE = re.compile(r"<(script|style)[^>]*>.*?</>", re.DOTALL | re.IGNORECASE)
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _warn_unrestored_aliases(html: str) -> None:
+    """저장 직전 본문에 가명이 남았는지 본다. 내용은 바꾸지 않고 로그만 남긴다.
+
+    가명은 LLM 경계 안쪽에만 있어야 하고 응답에서 복원된다. 모델이 가명을
+    변형해 쓰면 복원이 비껴가므로, 어떤 값이 샜는지 알 수 있게 가명 문자열만
+    기록한다. 문장은 실제 값을 담고 있으므로 로그에 싣지 않는다.
+    """
+    visible = _TAG.sub(" ", _NON_VISIBLE.sub(" ", html))
+    leftover = unrestored_aliases(visible)
+    if leftover:
+        _logger.warning("리포트에 복원되지 않은 가명이 남았다: %s", ", ".join(leftover))
 
 
 class HtmlFileReportPublisher(ReportPublisher):
@@ -87,15 +107,14 @@ class HtmlFileReportPublisher(ReportPublisher):
         self._output_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now(_KST)
         path = _unique_path(self._output_dir, now)
-        path.write_text(
-            render_report(
-                report,
-                generated_at=now,
-                gaps=gaps,
-                analysis_failed=analysis_failed,
-            ),
-            encoding="utf-8",
+        html = render_report(
+            report,
+            generated_at=now,
+            gaps=gaps,
+            analysis_failed=analysis_failed,
         )
+        _warn_unrestored_aliases(html)
+        path.write_text(html, encoding="utf-8")
         return path
 
 
