@@ -549,6 +549,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import unique_citations, remaining_summary_citations
     obs=report.observations
     rows=rank_query_requests(obs.query_requests)
     out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '핵심 요약',
@@ -558,7 +559,6 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     narrative=display_narrative(report,analysis_failed=analysis_failed)
     if narrative:
         out.append(narrative.headline)
-        out.extend(visible_citations(narrative.headline_citations))
     else:
         out.extend(execution_summary(obs))
         out.append('분석 해석을 확인하지 못해 관측 사실만 표시합니다.')
@@ -595,22 +595,25 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     if narrative:
         for index, c in enumerate(narrative.causes):
             out.append(f'{c.statement} · 확신도 {c.confidence}')
-            out.extend('판단 근거: '+s for s in visible_citations(c.supporting))
-            out.extend('반증: '+s for s in visible_citations(c.contradicting))
             if c.mechanism: out.append('판단 설명: '+c.mechanism)
             out.extend('미확인 사항: '+v for v in c.uncertainties)
-            for a in narrative.recommendations:
-                if getattr(a,'cause_index',None)==index:
-                    out.extend((str(a),*visible_citations(getattr(a,'citations',()))))
+            actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
+            out.extend('확인·조치: '+str(a) for a in actions if str(a).strip())
+            supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))
+            out.extend('판단 근거: '+s for s in visible_citations(supporting))
+            out.extend('반증: '+s for s in visible_citations(unique_citations(c.contradicting)))
         for f in narrative.findings:
             out.extend((f.title,f.detail,*visible_citations(f.citations)))
         for a in narrative.recommendations:
-            if getattr(a,'cause_index',None) is not None and a.cause_index < len(narrative.causes):
+            cause_index=getattr(a,'cause_index',None)
+            if cause_index is not None and 0<=cause_index<len(narrative.causes):
                 continue
-            out.append(str(a))
-            out.extend(visible_citations(getattr(a,'citations',())))
+            if str(a).strip():out.append('확인·조치: '+str(a))
+            out.extend(visible_citations(unique_citations(getattr(a,'citations',()))))
+        if not narrative.causes:out.append('확인된 원인 없음')
+        summary_sources=remaining_summary_citations(narrative)
+        if summary_sources:out.extend(('종합 요약 근거', *visible_citations(summary_sources)))
     else:out.append('검증을 완료한 원인 판단 없음')
     for s in obs.source_statuses:
         if s.status=='failed':out.append(f'{s.source} {s.host} 수집 실패 · {stamp(s.start)}')
     return scrub('\n'.join(out).rstrip()+'\n')
-
