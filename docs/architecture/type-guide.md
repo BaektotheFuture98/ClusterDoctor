@@ -37,7 +37,8 @@ Minute map 결과만 append reducer로 합치고 reduce 결과는 교체한다.
 | VerificationIssue/Type | analysis/model/validation.py · frozen BaseModel/StrEnum | grounding → 검증 middleware |
 | IncidentAnalysisReport, Finding, Narrative, CauseAssessment, TimelineAnnotation | orchestrator/model/incident_report.py · frozen dataclass | projection → rendering/publication |
 | WindowResult | orchestrator/model/window_result.py · frozen dataclass | 위임 결과 → Main State/result projection |
-| ReportPublication | orchestrator/model/report_delivery.py · frozen dataclass | publisher → lifecycle 결과 |
+| ReportPublication | orchestrator/model/report_delivery.py · frozen dataclass | publisher → lifecycle 결과 (path: 로컬 저장 파일, remote_path: SFTP로 올린 경로) |
+| SftpTarget | orchestrator/service/report_delivery/publication/sftp/sftp_uploader.py · frozen dataclass | wiring(Settings) → SftpUploader |
 | RawRecord, MinuteBucket, SelectedRecord, MinuteResult, AnalysisResult | workflow/minute_analysis/model.py · frozen dataclass | minute 입력/선별/결과 |
 | MapSelection/Output, ReduceSelection/Output | workflow/minute_analysis/schema.py · BaseModel | LLM → minute nodes |
 | DraftReport/Draft* | service/report_generation/schema.py · BaseModel | LLM → report writer/초안 변환 |
