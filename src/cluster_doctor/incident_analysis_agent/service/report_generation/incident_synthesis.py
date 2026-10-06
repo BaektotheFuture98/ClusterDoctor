@@ -24,7 +24,7 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
         if not conflicts or round_no == 2:
             break
         revised = seams.report_writer.revise_report(report, tuple(conflicts), evidence,
-                                                    observations=observations)
+                                                    observations=observations, incident_final=True)
         if revised is None:
             break
         report = revised

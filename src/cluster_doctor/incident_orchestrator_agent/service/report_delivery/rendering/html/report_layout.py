@@ -9,6 +9,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import render_ssh_logs, ssh_evidence
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import unique_citations, remaining_summary_citations
 
 DEMO_GAP = "디자인 미리보기용 가상 데이터입니다. 실제 장애 분석 결과가 아닙니다."
 
@@ -28,6 +29,13 @@ def quotes(items):
     return ''.join(f'<pre class="quote">{esc(text)}</pre>' for text in visible_citations(items))
 
 
+def render_paragraphs(text: str, *, css_class: str = '') -> str:
+    """Display authored paragraphs without interpreting their claims or markup."""
+    attribute = f' class="{esc(css_class)}"' if css_class else ''
+    return ''.join(f'<p{attribute}>{esc(paragraph.strip())}</p>'
+                   for paragraph in text.replace('\r\n', '\n').split('\n\n') if paragraph.strip())
+
+
 def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[str,...], analysis_failed: bool, css: str) -> str:
     obs=report.observations
     rows=rank_query_requests(obs.query_requests)
@@ -40,7 +48,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     header+='</header>'
     summary='<section id="summary"><h2>핵심 요약</h2><div class="metrics">'+f'<div class="metric">수집 쿼리 실행 로그<strong>{len(rows)}건</strong></div><div class="metric">최대 실행시간<strong>{esc(maximum)}</strong></div></div>'
     if rows and rows[0].execution_seconds is not None:summary+=f'<p>가장 느린 실행: {esc(stamp(rows[0].record.timestamp))} · {esc(rows[0].record.cmd)}</p>'
-    if narrative and narrative.headline:summary+=f'<p class="report-headline">{esc(narrative.headline)}</p>'+quotes(narrative.headline_citations)
+    if narrative and narrative.headline:summary+=render_paragraphs(narrative.headline, css_class='report-headline')
     if analysis_failed:summary+='<p class="hint">분석 실패</p>'
     failures=[s for s in obs.source_statuses if s.status=='failed']
     for status in failures:summary+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
@@ -74,18 +82,24 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     causes='<section id="causes"><h2>원인 판단·조치</h2>'
     if narrative:
         for index, cause in enumerate(narrative.causes):
-            causes+=f'<h3>{esc(cause.statement)}</h3><p>확신도: {esc(cause.confidence or "미확인")}</p><p>판단 근거</p>'+quotes(cause.supporting)
-            if cause.mechanism: causes+=f'<p>판단 설명: {esc(cause.mechanism)}</p>'
+            causes+=f'<h3>{esc(cause.statement)}</h3><p>확신도: {esc(cause.confidence or "미확인")}</p>'
+            if cause.mechanism: causes+='<p>판단 설명</p>'+render_paragraphs(cause.mechanism)
             if cause.uncertainties: causes+='<p>미확인 사항</p><ul>'+''.join(f'<li>{esc(v)}</li>' for v in cause.uncertainties)+'</ul>'
-            for action in narrative.recommendations:
-                if getattr(action, 'cause_index', None)==index:
-                    causes+=f'<p>확인·조치: {esc(str(action))}</p>'+quotes(getattr(action,'citations',()))
-            if cause.contradicting:causes+='<p>반증</p>'+quotes(cause.contradicting)
-        for finding in narrative.findings:causes+=f'<h3>{esc(finding.title)}</h3><p>{esc(finding.detail)}</p>'+quotes(finding.citations)
+            actions=tuple(action for action in narrative.recommendations if getattr(action, 'cause_index', None)==index)
+            for action in actions:
+                if str(action).strip():causes+='<p>확인·조치</p>'+render_paragraphs(str(action))
+            supporting=unique_citations(cause.supporting, *(getattr(action,'citations',()) for action in actions))
+            causes+='<p>판단 근거</p>'+quotes(supporting)
+            if cause.contradicting:causes+='<p>반증</p>'+quotes(unique_citations(cause.contradicting))
+        for finding in narrative.findings:causes+=f'<h3>{esc(finding.title)}</h3>'+render_paragraphs(finding.detail)+quotes(finding.citations)
         for action in narrative.recommendations:
-            if getattr(action, 'cause_index', None) is None or getattr(action, 'cause_index', 0)>=len(narrative.causes):
-                causes+=f'<p>확인·조치: {esc(str(action))}</p>'+quotes(getattr(action,'citations',()))
+            cause_index=getattr(action, 'cause_index', None)
+            if cause_index is None or not 0<=cause_index<len(narrative.causes):
+                if str(action).strip():causes+='<p>확인·조치</p>'+render_paragraphs(str(action))
+                causes+=quotes(unique_citations(getattr(action,'citations',())))
         if not narrative.causes:causes+='<p>확인된 원인 없음</p>'
+        summary_sources=remaining_summary_citations(narrative)
+        if summary_sources:causes+='<p>종합 요약 근거</p>'+quotes(summary_sources)
     else:causes+='<p>검증을 완료한 원인 판단 없음</p>'
     causes+='</section>'
     notes=source_log_notes(report)

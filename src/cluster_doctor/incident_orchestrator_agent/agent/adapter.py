@@ -234,8 +234,8 @@ class _DeepAgentIncidentAnalyzer:
         failed = (result.status is IncidentStatus.FAILED
                   or final_state.get("latest_analysis_status") is LogAnalysisStatus.FAILED
                   or mismatch)
-        return replace(result, report=report, failed=failed,
-                       gaps=tuple(dict.fromkeys((*result.gaps, *report.verification_issues))))
+        # Final verification details stay on the report, not in public collection gaps.
+        return replace(result, report=report, failed=failed)
 
     # ── 조립 ─────────────────────────────────────────────────────────
     def _compile(self, incident: Incident):

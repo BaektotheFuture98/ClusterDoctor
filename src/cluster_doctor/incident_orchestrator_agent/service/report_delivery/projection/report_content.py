@@ -1,11 +1,14 @@
 """Shared operator content; internal references stay inside DTOs."""
 from dataclasses import replace
+from collections.abc import Iterable
 import re
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import project_timeline, TimelineCard, TimelineItem
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, slowlog_note
+from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative
 
 
 def stamp(moment):
@@ -25,6 +28,27 @@ def evidence_text(e: Evidence) -> str:
 
 def visible_citations(citations):
     return tuple(evidence_text(c.evidence) if c.evidence else '인용 원문 확인 불가' for c in citations)
+
+
+def unique_citations(*groups: Iterable[EvidenceCitation]) -> tuple[EvidenceCitation, ...]:
+    """Deduplicate one evidence role within one display block by identity."""
+    by_id = {}
+    for group in groups:
+        for citation in group:
+            by_id.setdefault(citation.evidence_id, citation)
+    return tuple(by_id.values())
+
+
+def remaining_summary_citations(narrative: Narrative) -> tuple[EvidenceCitation, ...]:
+    """Keep summary-only sources visible after the detailed narrative."""
+    shown = set()
+    for cause in narrative.causes:
+        shown.update(c.evidence_id for c in (*cause.supporting, *cause.contradicting))
+    for finding in narrative.findings:
+        shown.update(c.evidence_id for c in finding.citations)
+    for action in narrative.recommendations:
+        shown.update(c.evidence_id for c in getattr(action, 'citations', ()))
+    return tuple(c for c in unique_citations(narrative.headline_citations) if c.evidence_id not in shown)
 
 
 def report_timeline(report):

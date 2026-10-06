@@ -1,10 +1,84 @@
 import json
+import pytest
 from datetime import datetime, timedelta, timezone
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, VerificationStatus
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import ReportWriter
 
 START = datetime(2026, 10, 5, 8, 16, tzinfo=timezone.utc)
+
+
+def test_reviewed_paragraphs_and_summary_sources_reach_the_rendered_report():
+    from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+    first = LogAnalysisReport(incident_id='I', analyzed_from=START, analyzed_to=START+timedelta(minutes=1))
+    evidence = [Evidence(evidence_id='S1', event_time=START, source=EvidenceSource.QUERY_LOG, message='query-source'),
+                Evidence(evidence_id='S2', event_time=START, source=EvidenceSource.MASTER_LOG, message='master-source')]
+    draft = {'summary': '초안 요약', 'summary_evidence_refs': ['S1'], 'findings': [],
+             'root_causes': [], 'recommendations': [], 'unresolved_questions': []}
+    reviewed = {**draft, 'summary': '지연과 관련 로그를 연결하되 원인 연결은 미확인이다.',
+                'summary_evidence_refs': ['S1', 'S2'],
+                'root_causes': [{'statement': '가능성: 처리 대기', 'confidence': 'Low',
+                                'mechanism': '관측을 설명한다.\n\n영향 경로는 조건부다.',
+                                'supporting_evidence_refs': ['S2']}],
+                'recommendations': [{'text': '대상을 식별하고 대기를 대조한다.', 'cause_index': 0, 'evidence_refs': ['S1']}]}
+    responses = iter((json.dumps(draft, ensure_ascii=False), json.dumps(reviewed, ensure_ascii=False)))
+    result = ReportWriter(call_llm=lambda *a, **k: next(responses)).draft_incident(
+        incident_id='I', cluster='C', window_reports=[first], observations=Observations(), evidence=evidence)
+    output = to_incident_analysis_report(result.model_copy(update={'verification_status': VerificationStatus.PASSED}), Observations(), evidence)
+    assert output.narrative.headline == '지연과 관련 로그를 연결하되 원인 연결은 미확인이다.'
+    assert tuple(c.evidence_id for c in output.narrative.headline_citations) == ('S1', 'S2')
+    html = render_report(output)
+    assert '초안 요약' not in html
+    assert '<p>영향 경로는 조건부다.</p>' in html
+    assert 'query-source' in html and 'master-source' in html
+
+
+@pytest.mark.parametrize('status', [VerificationStatus.PASSED, VerificationStatus.MISMATCH, VerificationStatus.NOT_VERIFIED])
+def test_final_validation_reasons_remain_internal_across_delivery(monkeypatch, status):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import _DeepAgentIncidentAnalyzer
+    from cluster_doctor.incident_orchestrator_agent.model.incident import Incident, IncidentStatus
+    from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
+    from cluster_doctor.incident_orchestrator_agent.model.report_delivery import ReportPublication
+    from cluster_doctor.incident_orchestrator_agent.model.window_result import WindowResult
+    from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
+    from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analyze_incident import AnalyzeIncident
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
+    first = LogAnalysisReport(incident_id='I', analyzed_from=START, analyzed_to=START+timedelta(minutes=1))
+    issues = () if status is VerificationStatus.PASSED else ('internal final reasoning',)
+    final = first.model_copy(update={'summary': '최종 서술', 'verification_status': status, 'verification_issues': issues})
+    analyzer = object.__new__(_DeepAgentIncidentAnalyzer)
+    analyzer._seams = SimpleNamespace()
+    analyzer._recursion_limit = 40
+    def stream(state, *a, **k):
+        yield {**state, 'window_results': (WindowResult(window=TimeRange(START, first.analyzed_to), report=first),),
+               'status': IncidentStatus.COMPLETED, 'closing_reason': '완료',
+               'accumulated_gaps': ('SSH 수집 실패',), 'latest_verification_status': VerificationStatus.PASSED}
+    analyzer._compile = lambda _: SimpleNamespace(stream=stream)
+    monkeypatch.setattr('cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis.synthesize_incident', lambda **k: final)
+    incident = Incident(incident_id='I', cluster='C', trigger_time=START, kafka_receive_time=START)
+    result = analyzer.analyze(IncidentAnalysisRequest(incident, START, first.analyzed_to, 0))
+    assert result.report.verification_issues == issues
+    assert result.report.verification_status is status
+    assert result.failed is (status is VerificationStatus.MISMATCH)
+    assert result.gaps == ('SSH 수집 실패',)
+    publication = []
+    async def publish(report, *, gaps, analysis_failed):
+        publication.append(render_report(report, gaps=gaps, analysis_failed=analysis_failed))
+        publication.append(render_text(report, analysis_failed=analysis_failed))
+        return ReportPublication()
+    publisher = SimpleNamespace(publish=AsyncMock(side_effect=publish))
+    service = AnalyzeIncident(incident_analyzer=MagicMock(), report_publisher=publisher)
+    asyncio.run(service._deliver(result, result.failed, result.gaps))
+    html, text = publication
+    assert 'internal final reasoning' not in html and 'internal final reasoning' not in text
+    assert 'SSH 수집 실패' in html
+
 
 def test_whole_incident_preserves_early_peak_across_longer_than_ten_minutes():
     first = LogAnalysisReport(incident_id='I', analyzed_from=START, analyzed_to=START+timedelta(minutes=10), summary='초기 17.6초 지연')
@@ -16,7 +90,8 @@ def test_whole_incident_preserves_early_peak_across_longer_than_ten_minutes():
     report=ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[first,last],observations=Observations(requested=((START,last.analyzed_to),)),evidence=[])
     assert report.analyzed_from==START
     assert report.analyzed_to==last.analyzed_to
-    assert '초기 17.6초 지연' in calls[0] and '마지막 구간 정상' in calls[0]
+    assert START.isoformat() in calls[0] and last.analyzed_to.isoformat() in calls[0]
+    assert '마지막 구간 정상' not in calls[0]
     assert report.root_causes[0].mechanism
     assert report.root_causes[0].uncertainties==('대상 노드 연결 미확인',)
     assert report.recommendations[0].cause_index==0
@@ -127,14 +202,94 @@ def test_delivery_dto_keeps_existing_positional_citations():
     assert CauseAssessment('후보','Low',(),()).supporting==()
 
 
-def test_incident_uses_json_object_transport_with_explicit_contract():
+def test_incident_uses_minimal_json_schema_transport_with_explicit_contract():
     seen=[]
     first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1))
     def call(messages,**kwargs):
         seen.append(('\n'.join(m['content'] for m in messages),kwargs,messages))
         return '{"summary":"종합","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}'
     ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[first],observations=Observations(),evidence=[])
-    assert seen[0][1]['response_format']=={'type':'json_object'}
+    format=seen[0][1]['response_format']
+    assert format['type']=='json_schema'
+    assert format['json_schema']['schema']=={'type':'object','additionalProperties':True}
     assert '"cause_index"' in seen[0][0] and '"summary_evidence_refs"' in seen[0][0]
     assert [m['role'] for m in seen[0][2]]==['system','user']
     assert '누적 카운터' in seen[0][2][0]['content']
+
+
+def test_final_prompt_has_no_window_expansion_instructions():
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),summary='앞선 판단은 참고')
+    seen=[]
+    def call(messages,**kwargs):
+        seen.extend(messages)
+        return '{"summary":"최종 요약","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}'
+    ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[first],observations=Observations(),evidence=[])
+    system=seen[0]['content']
+    assert 'needs_more_context' not in system
+    assert 'suggested_windows' not in system
+    assert 'Cross-source Analysis' not in system
+    assert '앞선 판단은 참고' not in seen[1]['content']
+    assert '2026-10-05T17:16:00+09:00' in seen[1]['content']
+
+
+def test_final_revision_keeps_final_instruction_role_and_contract():
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),summary='보존할 사실')
+    seen=[]
+    def call(messages,**kwargs):
+        seen.append((messages,kwargs))
+        return '{"summary":"교정한 사실","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}'
+    report=ReportWriter(call_llm=call).revise_report(first,('인용한 시각이 다름',),[],incident_final=True)
+    assert report.summary=='교정한 사실'
+    messages,kwargs=seen[0]
+    assert [m['role'] for m in messages]==['system','user']
+    assert 'needs_more_context' not in '\n'.join(m['content'] for m in messages)
+    assert '보존할 사실' in messages[1]['content'] and '인용한 시각이 다름' in messages[1]['content']
+    assert kwargs['response_format']['type']=='json_schema'
+
+
+def test_final_input_retains_facts_without_prior_interpretation():
+    from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+    from cluster_doctor.incident_analysis_agent.model.report import RootCause
+    prior=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),
+        summary='이전 요약의 미확인 변화 주장',
+        root_causes=(RootCause(statement='이전 원인의 확정 주장',confidence='Medium'),),
+        unresolved_questions=('이전 가설을 전제한 질문',),verification_status=VerificationStatus.PASSED)
+    fact=Evidence(evidence_id='E-real',event_time=START,source=EvidenceSource.QUERY_LOG,message='보존할 관측 사실')
+    seen=[]
+    def call(messages,**kwargs):
+        seen.extend(messages)
+        return '{"summary":"종합","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}'
+    ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[prior],observations=Observations(),evidence=[fact])
+    user=seen[1]['content']
+    assert '보존할 관측 사실' in user and 'E-real' in user
+    assert prior.analyzed_to.isoformat() in user
+    assert not any(text in user for text in (prior.summary,prior.root_causes[0].statement,prior.unresolved_questions[0],'verification_status'))
+
+
+def test_final_diagnosis_uses_one_editor_pass_with_facts_and_draft():
+    from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1))
+    fact=Evidence(evidence_id='E-real',event_time=START,source=EvidenceSource.QUERY_LOG,message='보존할 관측')
+    seen=[]
+    def call(messages,**kwargs):
+        seen.append((messages,kwargs))
+        summary='작성한 초안' if len(seen)==1 else '교정한 관측'
+        return json.dumps(dict(summary=summary,findings=[],root_causes=[],recommendations=[],unresolved_questions=[]),ensure_ascii=False)
+    result=ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[first],observations=Observations(),evidence=[fact])
+    assert result.summary=='교정한 관측'
+    assert len(seen)==2
+    messages,kwargs=seen[1]
+    assert [m['role'] for m in messages]==['system','user']
+    assert '편집자' in messages[0]['content']
+    assert '작성한 초안' in messages[1]['content']
+    assert '보존할 관측' in messages[1]['content'] and 'E-real' in messages[1]['content']
+    assert kwargs['response_format']['type']=='json_schema'
+
+
+def test_invalid_editor_response_does_not_publish_draft_as_reviewed():
+    import pytest
+    from pydantic import ValidationError
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1))
+    replies=iter(['{"summary":"작성한 초안","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}','not json'])
+    with pytest.raises(ValidationError):
+        ReportWriter(call_llm=lambda *a,**k:next(replies)).draft_incident(incident_id='I',cluster='C',window_reports=[first],observations=Observations(),evidence=[])
