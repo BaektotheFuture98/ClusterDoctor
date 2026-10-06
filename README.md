@@ -166,6 +166,7 @@ LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가
 | `CLUSTER_NAME` | `elasticsearch` | 표시 이름 |
 | `NODE_HEAP_WARN_PERCENT`, `NODE_QUEUE_WARN` | `85`, `100` | metric evidence threshold |
 | `REPORT_DIR` | `reports` | HTML 보고서 저장 디렉터리. 미지정·빈 값이면 `reports`, 상대 경로는 작업 디렉터리 기준 |
+| `REPORT_SFTP_HOST`, `REPORT_SFTP_PORT`, `REPORT_SFTP_USER`, `REPORT_SFTP_PASSWORD`, `REPORT_SFTP_KEY_FILE`, `REPORT_SFTP_REMOTE_DIR`, `REPORT_SFTP_KNOWN_HOSTS`, `REPORT_SFTP_TIMEOUT_SECONDS` | (꺼짐), `22`, …, `10` | 리포트를 SFTP로 다른 서버에 올린다. HOST가 비면 꺼진다. 켜면 USER·REMOTE_DIR과 PASSWORD 또는 KEY_FILE이 필요하다 |
 | `LOG_DIR` | `logs` | `app.log` 저장 디렉터리. 미지정·빈 값이면 `logs`, 상대 경로는 작업 디렉터리 기준 |
 | `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` | `10485760`, `5` | `app.log` 로테이션. 크기를 넘으면 `app.log.1`…로 넘기고 백업은 개수까지만 남긴다(총량 약 `(LOG_BACKUP_COUNT + 1) * LOG_MAX_BYTES`). 양수만 허용, 빈 값이면 기본값 |
 | `LITELLM_LOCAL_MODEL_COST_MAP` | `True` | litellm의 GitHub cost-map fetch를 막음 |
@@ -237,6 +238,16 @@ Kafka consumer는 block하며 log는 stderr와 `LOG_DIR/app.log`, report는 `REP
 로테이션 시점의 이름 변경이 실패할 수 있다(로그 기록 오류는 콘솔에만 남고 분석은 계속된다).
 보고서는 `.env`의 `REPORT_DIR=/var/lib/clusterdoctor/reports`로 경로를 지정한다.
 미지정하거나 빈 값이면 기존처럼 작업 디렉터리의 `reports/`에 저장한다.
+리포트를 다른 서버로도 보내려면 `REPORT_SFTP_*`를 채운다. 리포트는 항상 `REPORT_DIR`에 먼저
+저장하고, 저장에 성공한 파일을 SFTP로 올린다(네트워크 오류는 한 번 더 시도하고, 그래도 실패하면 로그만
+남긴다. 인증 실패·호스트 키 불일치·권한 오류는 다시 시도하지 않는다). 업로드는 사건 처리 흐름 안에서
+기다리므로 서버가 응답하지 않으면 그 사건의 리포트 게시가 최대 약 20초 늦어진다(`REPORT_SFTP_TIMEOUT_SECONDS`로
+조절). 업로드는 임시 이름(`.part`)으로 올린 뒤 이름을 바꾸므로 받는 쪽이
+쓰다 만 파일을 보지 않고, 같은 이름이 있으면 `-2`, `-3`을 붙여 덮어쓰지 않는다. 원격 디렉터리가 없으면
+만든다. 로컬 `REPORT_DIR`의 파일은 자동으로 지우지 않는다. 접속 정보를 바꾼 뒤에는
+`uv run python scripts/upload_report_sftp.py`로 가장 최근 리포트 한 건을 올려 접속·인증·쓰기 권한을
+확인할 수 있다. `REPORT_SFTP_KNOWN_HOSTS`를 비우면 서버 호스트 키를 검증하지 않으므로 운영에서는
+known_hosts 파일을 지정하는 것을 권장한다.
 실제 문제성 로그 발생을 기다리지 않고 분석 시작 신호를 확인할 때는 다음을 쓴다.
 
 ```bash
