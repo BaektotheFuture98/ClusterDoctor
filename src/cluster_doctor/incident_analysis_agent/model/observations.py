@@ -157,45 +157,6 @@ class Observations:
     source_statuses: tuple[SourceWindowStatus, ...] = ()
 
 
-def observed_severity(obs: Observations) -> tuple[str, tuple[str, ...]]:
-    """Severity from observed events, never lifetime rejection counters."""
-    reasons: list[str] = []
-    level = ""
-
-    errors = sum(1 for e in obs.master_events if e.level.upper() == "ERROR")
-    warns = sum(1 for e in obs.master_events if e.level.upper() == "WARN")
-    failed_minutes = sum(1 for row in obs.timeline if row.failed)
-
-    if errors:
-        level = level or "Warning"
-        reasons.append(f"마스터 로그 ERROR {errors}건")
-    if failed_minutes:
-        level = level or "Warning"
-        reasons.append(f"분석하지 못한 분 {failed_minutes}개")
-    if warns:
-        level = level or "Info"
-        reasons.append(f"마스터 로그 WARN {warns}건")
-
-    for point in obs.health:
-        if point.status and point.status.lower() != "green" and _inside(point, obs):
-            level = (
-                "Critical" if point.status.lower() == "red" else (level or "Warning")
-            )
-            reasons.append(f"클러스터 상태 {point.status}")
-            break
-
-    return level, tuple(reasons)
-
-
-def _inside(point: HealthPoint, obs: Observations) -> bool:
-    """상태 관측이 분석 구간 안에서 일어났는가."""
-    if not obs.requested:
-        return False
-    start = min(s for s, _e in obs.requested)
-    end = max(e for _s, e in obs.requested)
-    return start <= point.at <= end
-
-
 def merge_node_row(current: NodeMetricRow, new: NodeMetricRow) -> NodeMetricRow:
     """같은 노드의 두 관측을 합친다. 지표마다 max의 max, 표본은 합.
 

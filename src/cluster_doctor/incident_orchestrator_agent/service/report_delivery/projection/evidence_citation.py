@@ -76,11 +76,6 @@ def citation_lines(citation: EvidenceCitation) -> list[str]:
     return lines
 
 
-def citation_text(citation: EvidenceCitation) -> str:
-    e = citation.evidence
-    return "\n".join([*citation_lines(citation), e.message if e else ""])
-
-
 def cite(evidence: Evidence) -> str:
     """근거 하나를 사람이 읽을 한 줄로 그린다."""
     parts = [
