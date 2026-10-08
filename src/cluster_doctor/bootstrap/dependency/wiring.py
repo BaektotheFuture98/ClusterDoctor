@@ -164,6 +164,7 @@ def _build_analyze_incident(
             api_key=settings.llm_api_key,
             heap_warn_percent=settings.node_heap_warn_percent,
             queue_warn=settings.node_queue_warn,
+            analysis_concurrency=settings.analysis_concurrency,
         ),
         log_repository=log_repository,
         cluster_repository=_build_cluster_repository(runtime_resources.es_client),

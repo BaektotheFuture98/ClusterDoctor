@@ -64,6 +64,17 @@ class Settings(LoggingSettings):
     node_heap_warn_percent: int = 85
     node_queue_warn: int = 100
 
+    # 분 단위 선별 그래프 하나가 동시에 돌리는 분의 수. 데이터소스마다 그래프가
+    # 따로 돌므로 전체 동시 작업 수는 이 값의 몇 배가 될 수 있다.
+    analysis_concurrency: int = Field(default=15, gt=0)
+
+    @field_validator("analysis_concurrency", mode="before")
+    @classmethod
+    def _default_empty_analysis_concurrency(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return 15
+        return v
+
     cluster_name: str = "elasticsearch"
 
     es_host: str = ""

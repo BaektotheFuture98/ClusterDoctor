@@ -165,6 +165,7 @@ LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가
 | `KAFKA_FAILURE_TIMEOUT_SECONDS` | `300` | Kafka 연결 확인의 연속 실패 상한(초), 양수만 허용 |
 | `CLUSTER_NAME` | `elasticsearch` | 표시 이름 |
 | `NODE_HEAP_WARN_PERCENT`, `NODE_QUEUE_WARN` | `85`, `100` | metric evidence threshold |
+| `ANALYSIS_CONCURRENCY` | `15` | 분 단위 선별 그래프 하나가 동시에 돌리는 분의 수. 낮추면 메모리 피크가 줄고 분석이 느려질 수 있다. 빈 값이면 `15` |
 | `REPORT_DIR` | `reports` | HTML 보고서 저장 디렉터리. 미지정·빈 값이면 `reports`, 상대 경로는 작업 디렉터리 기준 |
 | `REPORT_SFTP_HOST`, `REPORT_SFTP_PORT`, `REPORT_SFTP_USER`, `REPORT_SFTP_PASSWORD`, `REPORT_SFTP_KEY_FILE`, `REPORT_SFTP_REMOTE_DIR`, `REPORT_SFTP_KNOWN_HOSTS`, `REPORT_SFTP_TIMEOUT_SECONDS` | (꺼짐), `22`, …, `10` | 리포트를 SFTP로 다른 서버에 올린다. HOST가 비면 꺼진다. 켜면 USER·REMOTE_DIR과 PASSWORD 또는 KEY_FILE이 필요하다 |
 | `LOG_DIR` | `logs` | `app.log` 저장 디렉터리. 미지정·빈 값이면 `logs`, 상대 경로는 작업 디렉터리 기준 |

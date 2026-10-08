@@ -49,6 +49,7 @@ def collect_update(seams: AnalysisSeams, state: dict) -> dict:
             node_log_fetcher=seams.node_log_fetcher,
             call_llm=seams.call_llm,
             metric_thresholds=seams.metric_thresholds,
+            analysis_concurrency=seams.analysis_concurrency,
         )
         collected = collector.collect(request.analysis_window, builder)
         evidence = tuple(collected.evidence)

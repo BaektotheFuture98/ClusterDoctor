@@ -36,6 +36,9 @@ from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
     NodeLogFetcher,
 )
 from cluster_doctor.incident_analysis_agent.model.kst import format_kst
+from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
+    MAX_CONCURRENCY,
+)
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisStatus,
     VerificationStatus,
@@ -109,6 +112,7 @@ class DeepAgentsConfig:
     api_key: str
     heap_warn_percent: int
     queue_warn: int
+    analysis_concurrency: int = MAX_CONCURRENCY
 
 
 def build_deepagents_incident_analyzer(
@@ -136,6 +140,7 @@ def build_deepagents_incident_analyzer(
             heap_warn_percent=config.heap_warn_percent,
             queue_warn=config.queue_warn,
         ),
+        analysis_concurrency=config.analysis_concurrency,
     )
     return _DeepAgentIncidentAnalyzer(
         provider=provider,
