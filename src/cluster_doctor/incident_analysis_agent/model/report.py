@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LogAnalysisStatus(StrEnum):
@@ -23,9 +23,6 @@ class LogAnalysisStatus(StrEnum):
     COMPLETED = "COMPLETED"
     # 현재 요청 범위 밖의 시간이 필요하다. Scope 확장은 Supervisor가 승인한다.
     NEED_MORE_CONTEXT = "NEED_MORE_CONTEXT"
-    # 허용된 revision을 다 쓰고도 Evidence와 Report가 맞지 않았다.
-    # 과거 저장 데이터 호환용. 새 진단 실행은 이 상태를 만들지 않는다.
-    VALIDATION_FAILED = "VALIDATION_FAILED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
@@ -134,11 +131,6 @@ class LogAnalysisReport(BaseModel):
     # Validator가 남긴 불일치. PASSED면 비어 있다.
     verification_issues: tuple[str, ...] = Field(default_factory=tuple)
     revision_count: int = 0
-
-    @field_validator("recommendations", mode="before")
-    @classmethod
-    def _legacy_actions(cls, value):
-        return [{"text": item} if isinstance(item, str) else item for item in value]
 
     def cited_refs(self) -> set[str]:
         """리포트 본문이 실제로 인용한 참조 전부.
