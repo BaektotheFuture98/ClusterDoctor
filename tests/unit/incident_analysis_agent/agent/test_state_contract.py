@@ -46,7 +46,7 @@ def test_state_modules_define_only_their_owner_state_and_obsolete_wrappers_are_a
         "incident_analysis_agent/workflow/minute_analysis/state.py": "MinuteAnalysisState",
     }
     for path, expected in owners.items():
-        tree = ast.parse((source / path).read_text())
+        tree = ast.parse((source / path).read_text(encoding="utf-8"))
         assert [n.name for n in tree.body if isinstance(n, ast.ClassDef)] == [expected]
     for owner in ("incident_analysis_agent", "incident_orchestrator_agent"):
         assert not (source / owner / "model" / "basemodel").exists()
@@ -57,7 +57,7 @@ def test_state_modules_define_only_their_owner_state_and_obsolete_wrappers_are_a
 def test_analysis_owner_has_no_reverse_import_of_orchestrator():
     source = Path(__file__).resolve().parents[4] / "src" / "cluster_doctor"
     for path in (source / "incident_analysis_agent").rglob("*.py"):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 assert "incident_orchestrator_agent" not in (node.module or ""), path
