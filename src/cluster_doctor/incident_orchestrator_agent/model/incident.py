@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class IncidentStatus(StrEnum):
@@ -59,4 +59,3 @@ class Incident(BaseModel):
     trigger_time: datetime
     kafka_receive_time: datetime
     trigger_type: TriggerType = TriggerType.PROBLEM_LOG
-    trigger_metadata: dict[str, str] = Field(default_factory=dict)
