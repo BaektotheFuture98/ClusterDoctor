@@ -52,7 +52,6 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     if analysis_failed:summary+='<p class="hint">분석 실패</p>'
     failures=[s for s in obs.source_statuses if s.status=='failed']
     for status in failures:summary+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
-    # Existing exception-only callers still retain their collection failure notice.
     for gap in dict.fromkeys(gaps):
         if gap != DEMO_GAP and not is_validation_diagnostic(gap):summary+=f'<p class="hint">{esc(gap)}</p>'
     if any(row.failed for row in obs.timeline):summary+='<p class="hint">분석하지 못한 구간이 있습니다.</p>'

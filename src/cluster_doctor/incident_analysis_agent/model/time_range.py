@@ -42,11 +42,8 @@ class TimeRange:
                 "start와 end의 시간대 정보가 서로 달라 비교할 수 없습니다 "
                 "(한쪽은 timezone-aware, 다른 한쪽은 naive)"
             )
-        # 둘 다 naive인 것도 막는다. 한쪽만 naive인 경우만 막던 동안 이 타입은
-        # "서로 비교 가능한 구간"은 보장했지만 "**다른 구간과** 비교 가능한
-        # 구간"은 보장하지 못했다. 그 틈으로 모델이 offset 없이 적어 보낸 값이
-        # 두 번 들어왔고, 두 번 다 터진 자리는 여기가 아니라 한참 뒤의 차집합
-        # 산수였다 — 만들어진 자리에서 거절해야 어디가 잘못인지 알 수 있다.
+        # 둘 다 naive인 것도 막는다. 다른 구간과 비교·차집합을 할 때 터지면
+        # 원인이 한참 뒤에 드러나므로, 만들어진 자리에서 거절한다.
         if self.start.utcoffset() is None:
             raise InvalidTimeRangeError(
                 "start와 end는 시간대 정보를 가져야 합니다 (naive datetime 거부)"

@@ -63,8 +63,8 @@ _RATE_LIMIT_HEADERS = (
 
 # 분당 요청 수(RPM) 상한. provider마다 다르고, 없는 provider는 거르지 않는다
 # (nvidia_nim은 실측 실패가 항상 504였지 429가 아니었다). gemini는 무료 티어
-# 한도가 15 RPM인데, minute_analysis의 map 단계가 MAX_CONCURRENCY=15로 팬아웃
-# 하므로(graph.py) 동시에 여러 스레드가 이 함수를 두드린다. 스레드마다 따로
+# 한도가 15 RPM인데, minute_analysis의 map 단계가 병렬로 팬아웃하므로
+# 동시에 여러 스레드가 이 함수를 두드린다. 스레드마다 따로
 # sleep을 넣어도 동시에 깨어나면 순간적으로 한도를 넘기므로, 락으로 감싼
 # 공유 최소 호출 간격으로 건다 — ``complete()``를 거치는 호출은 여기 한 곳만
 # 지키면 호출부 동시성 설정과 무관하게 지켜진다. DeepAgent(ChatLiteLLM) 호출은

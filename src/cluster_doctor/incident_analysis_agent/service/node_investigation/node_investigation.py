@@ -90,7 +90,6 @@ class NodeInvestigationResult:
     evidence: list[Evidence] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     source_statuses: list[SourceWindowStatus] = field(default_factory=list)
-    # 실제로 SSH까지 간 노드. 테스트와 로그가 "조건부로 돌았는가"를 확인한다.
     investigated: list[ResolvedNode] = field(default_factory=list)
 
 

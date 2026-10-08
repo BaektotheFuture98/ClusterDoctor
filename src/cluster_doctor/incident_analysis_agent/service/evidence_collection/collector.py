@@ -140,7 +140,6 @@ class EvidenceCollector:
         # 재사용하면 앞 window의 실패가 뒤 window의 gap으로 새어 나간다.
         self._failed_minutes: set = set()
 
-    # ── 수집 ─────────────────────────────────────────────────────────
     def collect(
         self, window: TimeRange, state: ObservationBuilder
     ) -> CollectedEvidence:
@@ -199,7 +198,6 @@ class EvidenceCollector:
         )
         return collected
 
-    # ── 개별 소스 ────────────────────────────────────────────────────
     def _fetch_and_bucket(
         self, window: TimeRange, state: ObservationBuilder
     ) -> tuple[list[MinuteBucket], list[MinuteBucket], list[NodeMetricEntry]]:

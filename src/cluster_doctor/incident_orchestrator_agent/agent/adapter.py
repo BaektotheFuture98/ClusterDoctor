@@ -242,7 +242,6 @@ class _DeepAgentIncidentAnalyzer:
         # Final verification details stay on the report, not in public collection gaps.
         return replace(result, report=report, failed=failed)
 
-    # ── 조립 ─────────────────────────────────────────────────────────
     def _compile(self, incident: Incident):
         """Incident 입력과 고정 의존성으로 그래프를 조립한다."""
         tools = [
@@ -263,7 +262,6 @@ class _DeepAgentIncidentAnalyzer:
             analysis_subagent=analysis_subagent,
         )
 
-    # ── 결과 ─────────────────────────────────────────────────────────
     def _result_from(self, state: dict) -> IncidentAnalysisResult:
         """끝난 뒤의 ``MainAgentState``에서 결과를 읽는다.
 

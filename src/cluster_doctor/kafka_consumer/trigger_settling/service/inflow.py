@@ -16,7 +16,6 @@ from datetime import datetime, timedelta
 
 _logger = logging.getLogger(__name__)
 
-# 파이프라인 지연을 의심하는 문턱.
 PIPELINE_DELAY_LIMIT = timedelta(minutes=30)
 
 # 유입이 멎었다고 보는 연속 0건 횟수. 1로는 부족하다 — 커넥터 폴링 주기 때문에
