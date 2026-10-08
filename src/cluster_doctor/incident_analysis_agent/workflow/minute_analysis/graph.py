@@ -36,7 +36,8 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state impor
 _MAP = "map_minute"
 _REDUCE = "reduce"
 
-# 그래프 작업 동시 실행 수. 실제 LLM 요청은 공통 transport의 15개 제한을 공유한다.
+# 그래프 작업 동시 실행 수의 기본값. 운영에서는 ANALYSIS_CONCURRENCY로 바꾼다.
+# 실제 LLM 요청은 공통 transport의 15개 제한을 공유한다.
 MAX_CONCURRENCY = 15
 
 
@@ -46,6 +47,7 @@ def run_analysis(
     call_llm: StructuredLlmCaller,
     *,
     new_evidence_id: EvidenceIdFactory,
+    max_concurrency: int = MAX_CONCURRENCY,
 ) -> AnalysisResult:
     """한 datasource의 분 단위 선별을 끝까지 돌린다.
 
@@ -80,7 +82,7 @@ def run_analysis(
             "evidence": [],
             "reduce_degraded": False,
         },
-        config={"max_concurrency": MAX_CONCURRENCY},
+        config={"max_concurrency": max_concurrency},
     )
 
     results = final["minute_results"]

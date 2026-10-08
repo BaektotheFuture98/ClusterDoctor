@@ -68,6 +68,7 @@ from cluster_doctor.incident_analysis_agent.service.observation.builder import (
     ObservationBuilder,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
+    MAX_CONCURRENCY,
     run_analysis,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
@@ -119,6 +120,7 @@ class EvidenceCollector:
         node_log_fetcher: NodeLogFetcher,
         call_llm: Callable[..., str],
         metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS,
+        analysis_concurrency: int = MAX_CONCURRENCY,
     ) -> None:
         id_lock = Lock()
         def synchronized_id() -> str:
@@ -133,6 +135,7 @@ class EvidenceCollector:
         self._node_log_fetcher = node_log_fetcher
         self._call_llm = call_llm
         self._metric_thresholds = metric_thresholds
+        self._analysis_concurrency = analysis_concurrency
         # 선별이 실패한 분. ``collect``마다 비운다 — 같은 collector를 두 window에
         # 재사용하면 앞 window의 실패가 뒤 window의 gap으로 새어 나간다.
         self._failed_minutes: set = set()
@@ -293,6 +296,7 @@ class EvidenceCollector:
                 buckets,
                 self._call_llm,
                 new_evidence_id=self._new_evidence_id,
+                max_concurrency=self._analysis_concurrency,
             )
         except Exception as exc:
             _logger.exception("[collector] %s 선별 오류", spec.label)
@@ -424,6 +428,7 @@ class EvidenceCollector:
             fetcher=self._node_log_fetcher,
             call_llm=self._call_llm,
             new_evidence_id=self._new_evidence_id,
+            max_concurrency=self._analysis_concurrency,
         )
         for status in result.source_statuses:
             state.record_source_status(status)

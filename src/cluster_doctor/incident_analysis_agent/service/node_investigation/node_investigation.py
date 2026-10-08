@@ -51,6 +51,7 @@ from cluster_doctor.incident_analysis_agent.service.observation.log_format impor
     format_evidence_line,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
+    MAX_CONCURRENCY,
     run_analysis,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
@@ -173,6 +174,7 @@ def investigate_nodes(
     fetcher: NodeLogFetcher,
     call_llm: Callable[..., str],
     new_evidence_id: Callable[[], str],
+    max_concurrency: int = MAX_CONCURRENCY,
 ) -> NodeInvestigationResult:
     """후보 노드를 풀고, 붙고, 분 단위 선별한다.
 
@@ -245,6 +247,7 @@ def investigate_nodes(
             group_into_buckets(records),
             call_llm,
             new_evidence_id=new_evidence_id,
+            max_concurrency=max_concurrency,
         )
         # 노드 이름을 코드가 붙인다. SSH 원문에는 자기 노드 이름이 없으므로,
         # 모델에게 물으면 지어낸다.
