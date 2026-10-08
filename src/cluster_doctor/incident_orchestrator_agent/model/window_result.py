@@ -1,4 +1,4 @@
-"""Immutable result of one validated analysis window."""
+"""검증된 분석 window 하나의 불변 결과."""
 
 from pydantic import BaseModel, ConfigDict
 
@@ -7,7 +7,7 @@ from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 
 
 class WindowResult(BaseModel):
-    """A report belongs to a window; it is not mutable execution state."""
+    """리포트는 window에 속하며 가변 실행 state가 아니다."""
 
     model_config = ConfigDict(frozen=True)
     window: TimeRange

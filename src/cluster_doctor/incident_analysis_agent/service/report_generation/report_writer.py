@@ -39,7 +39,7 @@ _logger = logging.getLogger(__name__)
 
 
 def _incident_response_format() -> dict:
-    """Constrain JSON syntax without a large nested provider schema."""
+    """중첩이 큰 provider schema 없이 JSON 문법만 제한한다."""
     return {"type": "json_schema", "json_schema": {
         "name": "incident_report_object",
         "schema": {"type": "object", "additionalProperties": True},
@@ -96,7 +96,7 @@ class ReportWriter:
     def draft_incident(self, *, incident_id: str, cluster: str,
                        window_reports: list[LogAnalysisReport],
                        observations: Observations, evidence: list[Evidence]) -> LogAnalysisReport:
-        """Summarize retained incident facts without another fetch or agent loop."""
+        """추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다."""
         import json
         from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
         from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange

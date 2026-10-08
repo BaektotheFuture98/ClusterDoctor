@@ -1,4 +1,4 @@
-"""Synthetic DTOs and annotated analysis through the actual mapping/publisher."""
+"""합성 DTO와 주석을 단 분석 결과를 실제 mapping/publisher에 통과시킨다."""
 import argparse
 import asyncio
 import sys

@@ -1,4 +1,4 @@
-"""Analysis tools read runtime state and return replacement updates."""
+"""분석 tool은 runtime state를 읽고 교체용 update를 반환한다."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _MAX_REPORT_ATTEMPTS = 2
 
 
 def collect_update(seams: AnalysisSeams, state: dict) -> dict:
-    """Run collection locally; only immutable values escape this call."""
+    """수집을 로컬에서 실행한다. 이 호출 밖으로는 불변 값만 나간다."""
     if state.get("collected"):
         return {}
     request = state["request"]
@@ -78,9 +78,9 @@ def collect_update(seams: AnalysisSeams, state: dict) -> dict:
 
 
 def report_update(seams: AnalysisSeams, state: dict, focus: str) -> dict:
-    """Writing result: state replacements plus local draft suggestions.
+    """작성 결과. state 교체 값과 로컬 draft 제안으로 구성된다.
 
-    draft_suggested_windows is response metadata, not an Agent State channel.
+    draft_suggested_windows는 응답 메타데이터이며 Agent State 채널이 아니다.
     """
     attempts = int(state.get("report_attempts", 0))
     if (
@@ -130,7 +130,7 @@ def _response(runtime: ToolRuntime, update: dict, payload: dict) -> Command:
 def _build_tools(seams: AnalysisSeams) -> list:
     @tool
     def collect_evidence(runtime: ToolRuntime) -> Command:
-        """Collect approved-window evidence once; preserve successes and source/window failure gaps."""
+        """승인된 window의 증거를 한 번 수집한다. 성공 결과와 source/window 실패 공백을 보존한다."""
         state = runtime.state
         update = collect_update(seams, state)
         projected = {**state, **update}
@@ -158,7 +158,7 @@ def _build_tools(seams: AnalysisSeams) -> list:
 
     @tool
     def write_report(focus: str, runtime: ToolRuntime) -> Command:
-        """Write an unverified report; requires evidence, at most two attempts."""
+        """검증 전 보고서를 작성한다. 증거가 필요하며 최대 두 번까지 시도한다."""
         state = runtime.state
         if not state.get("collected") or not state.get("evidence"):
             return _response(
@@ -196,7 +196,7 @@ def _build_tools(seams: AnalysisSeams) -> list:
     def report_insufficient(
         reason: str, suggested_windows: list[str], runtime: ToolRuntime
     ) -> Command:
-        """Report missing context and propose windows without expanding scope."""
+        """부족한 context를 보고하고, 범위를 넓히지 않은 채 window를 제안한다."""
         accepted, rejected = [], []
         for item in suggested_windows or []:
             try:

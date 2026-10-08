@@ -1,4 +1,4 @@
-"""Escaping helper shared by the HTML report sections."""
+"""HTML 리포트 섹션들이 공유하는 escape 헬퍼."""
 
 import html
 

@@ -1,4 +1,4 @@
-"""Code-owned facts shared by drafting, revision and grounding."""
+"""초안 작성·수정·grounding이 공유하는, 코드가 소유한 사실."""
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict
@@ -103,7 +103,7 @@ def _evidence_key(item: Evidence) -> tuple:
 
 
 def preserve_required_evidence(required: list[Evidence], selected: list[Evidence]) -> list[Evidence]:
-    """Reserve top executions within the existing source and overall caps."""
+    """기존 source 상한과 전체 상한 안에서 상위 execution을 먼저 확보한다."""
     result = []
     counts = Counter()
     used = set()

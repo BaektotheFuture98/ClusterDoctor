@@ -15,7 +15,7 @@ from elasticsearch import Elasticsearch
 
 @dataclass
 class RuntimeResources:
-    """Clients shared by one execution; close them after analysis has stopped."""
+    """한 실행이 공유하는 클라이언트. 분석이 멈춘 뒤에 닫는다."""
 
     clickhouse_client: Client
     es_client: Elasticsearch

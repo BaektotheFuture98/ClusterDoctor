@@ -1,4 +1,4 @@
-"""Analysis execution boundary, independent of Main Agent state."""
+"""Main Agent state와 독립된 분석 실행 경계."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def _execution_projection(state: dict) -> dict:
 
 
 def _validation_failure(state: dict, report, retries: int, exc: Exception) -> dict:
-    """Commit even freshly consumed IDs when a validation service aborts."""
+    """validation service가 중단돼도 방금 소비한 ID까지 commit한다."""
     _logger.exception("Analysis 검증 실패")
     reason = f"리포트 검증이 실패했다: {type(exc).__name__}"
     return _execution_projection(
@@ -105,7 +105,7 @@ def _validation_failure(state: dict, report, retries: int, exc: Exception) -> di
 
 
 def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
-    """Bounded deterministic validation; return replacements to the same graph."""
+    """횟수가 제한된 결정적 validation. 교체 값을 같은 graph로 돌려준다."""
     report = state.get("report")
     if report is None:
         return {}

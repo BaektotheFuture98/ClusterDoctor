@@ -1,7 +1,7 @@
-"""Fixed-case protocol checks (offline) and separate actual-model evaluation.
+"""고정 케이스 프로토콜 검사(오프라인)와 별도의 실제 모델 평가.
 
-Offline responses are annotated fixtures: they test contracts and calculations,
-not a model's ability to diagnose an arbitrary incident.
+오프라인 응답은 주석을 단 fixture이다. 계약과 계산을 검증할 뿐, 임의의 incident를
+진단하는 모델의 능력을 검증하지 않는다.
 """
 import argparse
 import json

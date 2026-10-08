@@ -1,4 +1,4 @@
-"""Create recent, isolated ClickHouse fixture tables; no network or database mutation."""
+"""최근 시각의 격리된 ClickHouse fixture 테이블을 만든다. 네트워크 접근과 DB 변경은 없다."""
 import argparse
 import json
 from datetime import datetime, timedelta, timezone

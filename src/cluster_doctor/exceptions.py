@@ -13,7 +13,7 @@ class ClusterDoctorError(RuntimeError):
 
 
 class KafkaUnavailableError(ClusterDoctorError):
-    """Kafka connectivity did not recover within the configured deadline."""
+    """설정된 제한 시간 안에 Kafka 연결이 복구되지 않았다."""
 
 
 class LlmApiError(ClusterDoctorError):

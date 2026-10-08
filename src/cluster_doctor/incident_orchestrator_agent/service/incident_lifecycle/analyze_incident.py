@@ -1,4 +1,4 @@
-"""Run the complete analysis lifecycle for one settled incident."""
+"""정착(settled)된 incident 하나의 전체 분석 lifecycle을 실행한다."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ _logger = logging.getLogger(__name__)
 
 
 class AnalyzeIncident:
-    """Run an input/result boundary, close, and publish an incident."""
+    """입력/결과 경계를 실행하고 incident를 닫은 뒤 발행한다."""
 
     def __init__(
         self,

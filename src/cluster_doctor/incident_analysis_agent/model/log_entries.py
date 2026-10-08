@@ -39,7 +39,7 @@ class LogEntry:
 
 
 def record_json(entry: LogEntry) -> str:
-    """Serialize only the fetched record fields, without collection metadata."""
+    """수집 메타데이터 없이 fetch한 레코드 필드만 직렬화한다."""
     values = {
         f.name: getattr(entry, f.name)
         for f in fields(entry)
@@ -113,7 +113,7 @@ class NodeMetricEntry(LogEntry):
 
 @dataclass(frozen=True)
 class QueryLogEntry(LogEntry):
-    """ClickHouse log record. Column names and stored values are preserved."""
+    """ClickHouse 로그 레코드. 컬럼 이름과 저장된 값을 그대로 유지한다."""
 
     source: ClassVar[str] = "es_query_log"
 
@@ -145,7 +145,7 @@ class QueryLogEntry(LogEntry):
 
     @property
     def timestamp(self) -> datetime:
-        """Internal event-time accessor; the stored DTO field remains reg_date."""
+        """내부용 event 시각 접근자. 저장되는 DTO 필드는 그대로 reg_date이다."""
         return self.reg_date
 
     @property

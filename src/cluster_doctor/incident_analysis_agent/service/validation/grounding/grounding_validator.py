@@ -1,4 +1,4 @@
-"""Model contradiction checks with complete response coverage."""
+"""응답 전체를 빠짐없이 다루는 모델 기반 모순 검사."""
 from __future__ import annotations
 
 import json

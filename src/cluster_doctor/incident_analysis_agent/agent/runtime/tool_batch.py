@@ -1,4 +1,4 @@
-"""Stateless admission of one state-changing tool per model turn."""
+"""모델 turn당 state를 바꾸는 tool을 하나만 허용하는 상태 없는 검사."""
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, ToolMessage

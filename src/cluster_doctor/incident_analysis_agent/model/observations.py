@@ -250,10 +250,10 @@ def _later(left: datetime | None, right: datetime | None) -> datetime | None:
 def merge_query_requests(
     current: tuple[QueryLogEntry, ...], new: tuple[QueryLogEntry, ...]
 ) -> tuple[QueryLogEntry, ...]:
-    """Keep batch multiplicity while avoiding double counting overlapping fetches.
+    """batch 내 중복 횟수는 유지하되, 겹치는 fetch를 이중 집계하지 않는다.
 
-    There is no request ID in the fetched schema. Identical full records use the
-    maximum observed multiplicity; collection timestamps are not part of identity.
+    fetch한 schema에는 request ID가 없다. 전체 필드가 같은 레코드는 관측된 최대
+    중복 횟수를 쓰며, 수집 시각은 동일성 판단에 포함하지 않는다.
     """
     existing = Counter(record_json(item) for item in current)
     incoming = Counter()

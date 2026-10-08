@@ -96,7 +96,7 @@ def _build_es_client(settings: Settings) -> Elasticsearch:
 
 
 def build_runtime_resources(settings: Settings) -> RuntimeResources:
-    """Create execution-owned clients, rolling back a partially built runtime."""
+    """실행 단위가 소유하는 클라이언트를 만들고, 일부만 만들어진 runtime은 롤백한다."""
     with ExitStack() as stack:
         clickhouse_client = _build_clickhouse_client(settings)
         stack.callback(clickhouse_client.close)

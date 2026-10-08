@@ -12,10 +12,10 @@ MAX_TIME_RANGE_DURATION = timedelta(minutes=10)
 
 
 class InvalidTimeRangeError(ValueError):
-    """Invalid window values, distinct from parsing or provider failures.
+    """잘못된 window 값. 파싱 실패나 provider 실패와 구분된다.
 
-    Tool and lifecycle callers can handle range rejection separately from
-    other ValueError subclasses without exposing unrelated error details.
+    tool과 lifecycle 호출자는 무관한 오류 상세를 노출하지 않고, 범위 거부를
+    다른 ValueError 하위 클래스와 따로 처리할 수 있다.
     """
 
 

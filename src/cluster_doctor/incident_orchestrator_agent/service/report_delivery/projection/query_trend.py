@@ -1,4 +1,4 @@
-"""Per-minute execution counts with explicit collection coverage."""
+"""수집 범위를 명시한 분 단위 실행 횟수."""
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal

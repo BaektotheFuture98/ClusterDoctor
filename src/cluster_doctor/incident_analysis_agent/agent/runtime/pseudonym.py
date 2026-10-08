@@ -136,11 +136,11 @@ _current: ContextVar[Pseudonymizer | None] = ContextVar("pseudonymizer", default
 
 @contextmanager
 def pseudonym_scope(*, fresh: bool = False) -> Iterator[Pseudonymizer]:
-    """Share one mapping within an incident; release it on success or failure.
+    """incident 하나 안에서 mapping을 공유하고, 성공·실패와 무관하게 해제한다.
 
-    Main starts a fresh scope. Nested analysis and standalone LLM calls reuse
-    an active scope, or create a temporary one when called independently.
-    Context copies share the same thread-safe mapping, not separate counters.
+    Main이 새 scope를 시작한다. 중첩된 분석과 단독 LLM 호출은 활성 scope를
+    재사용하며, 독립적으로 호출되면 임시 scope를 만든다.
+    context 복사본은 별도 카운터가 아니라 같은 thread-safe mapping을 공유한다.
     """
     current = _current.get()
     if current is not None and not fresh:
@@ -155,7 +155,7 @@ def pseudonym_scope(*, fresh: bool = False) -> Iterator[Pseudonymizer]:
 
 
 class _ScopedPseudonyms:
-    """Stateless access to the current mapping; never retain identifiers globally."""
+    """현재 mapping에 상태 없이 접근한다. 식별자를 전역에 보관하지 않는다."""
 
     def register(self, kind: str, value: object) -> None:
         # LLM 분석 없이 데이터소스만 조회하는 경우가 있다. 그 읽기가 조회보다

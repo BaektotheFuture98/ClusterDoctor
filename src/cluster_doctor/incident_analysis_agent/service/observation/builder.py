@@ -53,7 +53,7 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _candidate_prompt_line(candidate: SlowCandidate) -> str:
-    """Project a candidate into the compact representation shown to the model."""
+    """후보를 모델에 보여줄 압축 표현으로 투영한다."""
     parts = [
         f"[{candidate.candidate_id}]",
         candidate.source,
@@ -109,7 +109,7 @@ class ObservationBuilder:
 
     @classmethod
     def from_state(cls, window: TimeRange, state: dict) -> ObservationBuilder:
-        """Rebuild a short-lived local builder from AnalysisAgentState snapshots."""
+        """AnalysisAgentState 스냅샷에서 수명이 짧은 로컬 builder를 다시 만든다."""
         builder = cls(window, str(state.get("time_basis", "")))
         builder.timeline = {row.minute: row for row in state.get("timeline", ())}
         builder.nodes = {row.node: row for row in state.get("nodes", ())}
@@ -129,7 +129,7 @@ class ObservationBuilder:
         return builder
 
     def state_update(self) -> dict[str, object]:
-        """Project mutable local work back to immutable AnalysisAgentState values."""
+        """로컬 mutable 작업 결과를 불변 AnalysisAgentState 값으로 되돌려 투영한다."""
         observations = self.to_observations()
         return {
             "timeline": observations.timeline,

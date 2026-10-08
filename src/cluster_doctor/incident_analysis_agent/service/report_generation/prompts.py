@@ -233,7 +233,7 @@ def build_incident_synthesis_messages(
     *, cluster: str, analyzed_from: datetime, analyzed_to: datetime,
     previous_windows_json: str, analysis_context: str,
 ) -> list[dict[str, str]]:
-    """Keep final diagnosis instructions separate from retained incident data."""
+    """최종 진단 지시문을 보존된 incident 데이터와 분리해 둔다."""
     context = "\n".join([
         f"클러스터: {cluster[:200]}",
         f"사건 분석 범위: {analyzed_from.astimezone(KST).isoformat()} ~ {analyzed_to.astimezone(KST).isoformat()}",

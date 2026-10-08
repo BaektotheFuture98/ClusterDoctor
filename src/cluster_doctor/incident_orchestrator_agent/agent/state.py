@@ -1,4 +1,4 @@
-"""The sole mutable LangGraph state schema owned by the Main DeepAgent."""
+"""Main DeepAgent가 소유하는 유일한 가변 LangGraph state 스키마."""
 
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ ANALYSIS_SUBAGENT = "analysis"
 
 
 def last_write_wins(_current: Any, incoming: Any) -> Any:
-    """LangGraph reducer for a complete, immutable replacement value."""
+    """완전한 불변 값으로 통째 교체하는 LangGraph reducer."""
     return incoming
 
 
 class MainAgentState(DeepAgentState):
     """The complete state of one Main DeepAgent invocation.
 
-    Tools and middleware return ``Command(update=...)`` values. They never
-    retain or mutate another Python object for this same lifecycle.
+    Tool과 middleware는 ``Command(update=...)`` 값을 반환하며, 같은 lifecycle의
+    다른 Python 객체를 보관하거나 변경하지 않는다.
     """
 
     incident_id: NotRequired[Annotated[str, last_write_wins]]
@@ -68,7 +68,7 @@ def initial_main_agent_state(
     pending_windows: tuple[TimeRange, ...],
     total_wait_seconds: float,
 ) -> dict[str, Any]:
-    """Create the complete initial value for one Main Agent invocation."""
+    """Main Agent 호출 한 번의 완전한 초기값을 만든다."""
     return {
         "incident_id": incident_id,
         "observed_end": observed_end,

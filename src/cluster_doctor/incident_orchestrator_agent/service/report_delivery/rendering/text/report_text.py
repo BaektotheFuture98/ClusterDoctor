@@ -27,7 +27,7 @@ def scrub(text: str) -> str:
 
 
 def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
-    """Plain fallback with the same execution facts and verification gate as HTML."""
+    """HTML과 같은 실행 사실과 검증 gate를 갖는 평문 fallback."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, source_log_notes
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note

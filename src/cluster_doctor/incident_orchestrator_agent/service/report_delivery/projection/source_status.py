@@ -1,4 +1,4 @@
-"""Collection state per source, shared by the HTML and text renderers."""
+"""source별 수집 상태. HTML과 텍스트 renderer가 공유한다."""
 from dataclasses import dataclass
 from typing import Literal
 

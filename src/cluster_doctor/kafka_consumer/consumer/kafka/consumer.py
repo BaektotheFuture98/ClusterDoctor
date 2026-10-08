@@ -23,7 +23,7 @@ _CONSUMER_STOP_TIMEOUT_SECONDS = 10.0
 
 
 class _AssignmentState(ConsumerRebalanceListener):
-    """Distinguish a completed empty assignment from an unfinished rebalance."""
+    """할당이 비어 있는 채로 완료된 경우와 rebalance가 끝나지 않은 경우를 구분한다."""
 
     def __init__(self) -> None:
         self.rebalancing = True

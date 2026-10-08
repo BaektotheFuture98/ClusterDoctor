@@ -1,4 +1,4 @@
-"""Reserve Main Agent delegations in state before ToolNode executes them."""
+"""ToolNode가 실행하기 전에 Main Agent 위임을 state에 먼저 예약한다."""
 
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.messages import ToolMessage

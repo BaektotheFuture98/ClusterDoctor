@@ -1,4 +1,4 @@
-"""Report publication result shared by lifecycle and delivery components."""
+"""lifecycle과 delivery 구성요소가 함께 쓰는 리포트 발행 결과."""
 
 from dataclasses import dataclass
 from pathlib import Path

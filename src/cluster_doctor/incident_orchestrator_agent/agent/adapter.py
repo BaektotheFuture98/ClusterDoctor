@@ -105,7 +105,7 @@ _KICKOFF = """Incident가 열렸다. 분석을 시작한다.
 
 @dataclass(frozen=True)
 class DeepAgentsConfig:
-    """Configuration owned by the composite Main Agent adapter."""
+    """Composite Main Agent adapter가 소유하는 설정."""
 
     provider: str
     model: str
@@ -123,7 +123,7 @@ def build_deepagents_incident_analyzer(
     node_resolver: NodeResolver,
     node_log_fetcher: NodeLogFetcher,
 ) -> IncidentAnalyzer:
-    """Assemble the complete DeepAgents engine behind the incident-analyzer port."""
+    """incident-analyzer port 뒤에 놓일 DeepAgents 엔진 전체를 조립한다."""
     provider = require_supported_provider(config.provider)
     call_llm = build_structured_call(
         provider=provider, model=config.model, api_key=config.api_key
