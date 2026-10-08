@@ -1,4 +1,4 @@
-"""Main Agent tools; all execution data is read from ``ToolRuntime.state``."""
+"""Main Agent tool. 실행 데이터는 모두 ``ToolRuntime.state``에서 읽는다."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def make_propose_analysis_tool() -> BaseTool:
     def propose_analysis(
         start_kst: str, end_kst: str, goal: str, runtime: ToolRuntime
     ) -> Command:
-        """Validate and admit one analysis window."""
+        """분석 window 하나를 검증하고 수락한다."""
         state = _state(runtime)
         try:
             requested = TimeRange(start=parse_kst(start_kst), end=parse_kst(end_kst))
@@ -89,7 +89,7 @@ def make_propose_analysis_tool() -> BaseTool:
 def make_finish_incident_tool() -> BaseTool:
     @tool("finish_incident")
     def finish_incident(outcome: str, reason: str, runtime: ToolRuntime) -> Command:
-        """Finish the incident with a terminal outcome."""
+        """종료 결과(terminal outcome)로 incident를 마무리한다."""
         state = _state(runtime)
         try:
             status = IncidentStatus(outcome.strip().upper())
@@ -136,7 +136,7 @@ def make_finish_incident_tool() -> BaseTool:
 def make_list_candidate_windows_tool() -> BaseTool:
     @tool("list_candidate_windows")
     def list_candidate_windows(limit: int = 4, runtime: ToolRuntime = None) -> str:
-        """List windows the Main Agent may still analyze."""
+        """Main Agent가 아직 분석할 수 있는 window 목록을 반환한다."""
         state = _state(runtime)
         proposed = [
             *state.get("pending_windows", ()),

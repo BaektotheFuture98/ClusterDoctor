@@ -1,4 +1,4 @@
-"""Main state ↔ Analysis contract adapter. Analysis never sees Main state."""
+"""Main state ↔ Analysis contract 어댑터. Analysis는 Main state를 보지 않는다."""
 
 from deepagents import CompiledSubAgent
 from langchain_core.messages import AIMessage

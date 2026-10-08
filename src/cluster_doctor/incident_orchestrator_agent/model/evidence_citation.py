@@ -1,4 +1,4 @@
-"""A resolved reference retains both identity and collection metadata."""
+"""해소된 참조는 식별 정보와 수집 메타데이터를 모두 유지한다."""
 
 from dataclasses import dataclass
 

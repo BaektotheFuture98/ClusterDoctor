@@ -1,4 +1,4 @@
-"""Individual execution views shared by analysis and report delivery."""
+"""분석과 보고서 전달이 공유하는 개별 execution 뷰."""
 from __future__ import annotations
 
 from dataclasses import dataclass

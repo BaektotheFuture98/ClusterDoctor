@@ -1,4 +1,4 @@
-"""Accept problem-log signals, settle their arrival window, and request analysis."""
+"""problem-log 신호를 받아 도착 window를 정착시키고 분석을 요청한다."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class ProblemLogProcessor:
         self._close_task: asyncio.Task[None] | None = None
 
     async def submit(self, problem_log_signal: ProblemLogSignal) -> None:
-        """Enqueue a signal; analysis runs in the background processing loop."""
+        """신호를 큐에 넣는다. 분석은 백그라운드 처리 루프에서 실행된다."""
         if self._closed:
             raise RuntimeError("problem log processor is closed")
         arrival = _Arrival(trigger=problem_log_signal, received_at=datetime.now(UTC))
@@ -127,7 +127,7 @@ class ProblemLogProcessor:
                     self._task = asyncio.create_task(self._process_pending())
 
     async def close(self) -> None:
-        """Discard buffered work; wait for an active analysis to finish before closing."""
+        """버퍼에 쌓인 작업을 버리고, 진행 중인 분석이 끝나기를 기다린 뒤 닫는다."""
         self._closed = True
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._close())

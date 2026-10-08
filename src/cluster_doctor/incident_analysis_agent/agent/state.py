@@ -1,4 +1,4 @@
-"""The sole mutable LangGraph state schema owned by the Analysis DeepAgent."""
+"""Analysis DeepAgent가 소유하는 유일한 mutable LangGraph state schema."""
 
 from __future__ import annotations
 
@@ -29,11 +29,10 @@ def last_write_wins(_current: Any, incoming: Any) -> Any:
 
 
 class AnalysisAgentState(DeepAgentState):
-    """All mutable data for exactly one analysis delegation.
+    """분석 위임 한 건에 해당하는 모든 mutable 데이터.
 
-    Collection and observation fields are immutable snapshots. A service may use
-    local mutable builders while it runs, but only replacement values return to
-    this LangGraph state.
+    수집·observation 필드는 불변 스냅샷이다. service는 실행 중 로컬 mutable
+    builder를 쓸 수 있지만, 이 LangGraph state로는 교체용 값만 돌려준다.
     """
 
     request: NotRequired[Annotated[LogAnalysisRequest, last_write_wins]]

@@ -11,7 +11,7 @@ _DEFAULT_LOG_BACKUP_COUNT = 5
 
 
 class LoggingSettings(BaseSettings):
-    """Read log configuration before external-service settings are validated."""
+    """외부 서비스 설정을 검증하기 전에 로그 설정을 먼저 읽는다."""
 
     model_config = SettingsConfigDict(
         env_file=".env",

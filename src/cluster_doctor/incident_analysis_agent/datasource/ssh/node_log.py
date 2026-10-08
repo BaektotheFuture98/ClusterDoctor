@@ -145,7 +145,7 @@ def to_records(
 def ssh_provenance(
     resolved, start: datetime, end: datetime, *, role: str | None = None
 ) -> EvidenceProvenance:
-    """Snapshot the resolved destination used for this particular fetch."""
+    """이번 fetch에 사용한 확정 destination을 스냅샷으로 남긴다."""
     return EvidenceProvenance(
         method="ssh",
         collected_at=datetime.now(KST),

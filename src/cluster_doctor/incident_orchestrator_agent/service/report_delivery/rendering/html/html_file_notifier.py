@@ -1,7 +1,7 @@
-"""Publish standalone operator reports with a plain-text fallback.
+"""평문 fallback과 함께 독립 실행형 운영자 리포트를 발행한다.
 
-No external assets are required. Publication failures retain the plain-text
-report in the application log. Page layout lives in report_layout; HTML escaping in evidence_link.
+외부 asset이 필요 없다. 발행에 실패하면 평문 리포트를 애플리케이션 로그에
+남긴다. 페이지 레이아웃은 report_layout, HTML escape는 evidence_link에 있다.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""The sole mutable LangGraph state schema for minute analysis."""
+"""minute analysis의 유일한 mutable LangGraph state schema."""
 
 from __future__ import annotations
 

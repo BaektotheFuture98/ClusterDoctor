@@ -1,4 +1,4 @@
-"""Check reference integrity only; semantic judgments belong to the model prompt."""
+"""참조 무결성만 검사한다. 의미 판단은 모델 prompt의 몫이다."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence

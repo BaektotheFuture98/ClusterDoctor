@@ -36,7 +36,7 @@ class EvidenceSource(StrEnum):
 
 
 class EvidenceProvenance(BaseModel):
-    """Collection-time location, never authored by the model."""
+    """수집 시점에 정해지는 위치. 모델이 작성하지 않는다."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

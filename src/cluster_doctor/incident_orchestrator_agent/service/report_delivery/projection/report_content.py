@@ -1,4 +1,4 @@
-"""Shared operator content; internal references stay inside DTOs."""
+"""운영자에게 공통으로 보이는 내용. 내부 참조는 DTO 안에만 둔다."""
 from dataclasses import replace
 from collections.abc import Iterable
 import re
@@ -31,7 +31,7 @@ def visible_citations(citations):
 
 
 def unique_citations(*groups: Iterable[EvidenceCitation]) -> tuple[EvidenceCitation, ...]:
-    """Deduplicate one evidence role within one display block by identity."""
+    """표시 블록 하나 안에서 evidence 역할 하나를 identity로 중복 제거한다."""
     by_id = {}
     for group in groups:
         for citation in group:
@@ -40,7 +40,7 @@ def unique_citations(*groups: Iterable[EvidenceCitation]) -> tuple[EvidenceCitat
 
 
 def remaining_summary_citations(narrative: Narrative) -> tuple[EvidenceCitation, ...]:
-    """Keep summary-only sources visible after the detailed narrative."""
+    """요약에만 나온 source도 상세 서술 뒤에 계속 보이게 한다."""
     shown = set()
     for cause in narrative.causes:
         shown.update(c.evidence_id for c in (*cause.supporting, *cause.contradicting))
@@ -95,13 +95,13 @@ def system_maxima(nodes):
 
 
 def timeline_sources(card, shown_evidence=()):
-    """Sources omitted from standalone tables remain visible for displayed cards."""
+    """독립 표에서 빠진 source도 표시되는 카드에서는 계속 보이게 한다."""
     shown={e.evidence_id for e in shown_evidence}
     return tuple(c for c in card.evidence_citations if c.evidence_id not in shown)
 
 
 def execution_summary(observations):
-    """Observed facts only; never infer keyword or node causation."""
+    """관측된 사실만 다룬다. keyword나 node의 인과를 추론하지 않는다."""
     rows=rank_query_requests(observations.query_requests)
     if not rows:
         return ('수집된 쿼리 실행 로그가 없습니다.',)
@@ -121,7 +121,7 @@ def execution_summary(observations):
 
 
 def display_narrative(report, *, analysis_failed=False):
-    """Use the standard narrative slots even when analysis is unavailable."""
+    """분석을 쓸 수 없어도 표준 서술 slot을 그대로 사용한다."""
     from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative, CauseAssessment
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import citations
     if report.verification_status=='PASSED' and report.narrative and not analysis_failed:
@@ -140,7 +140,7 @@ SOURCE_DISPLAY_LIMIT = 10
 
 
 def source_log_sections(report):
-    """Fixed source slots, with collection observations authoritative for master logs."""
+    """source slot은 고정이며, master log는 수집 관측값이 우선한다."""
     master=tuple(' · '.join(x for x in (
         stamp(e.timestamp) if e.timestamp else '시각 미확인', e.node, e.level, e.logger, e.line or e.rendered) if x)
         for e in report.observations.master_events[:MASTER_DISPLAY_LIMIT])
@@ -149,7 +149,7 @@ def source_log_sections(report):
 
 
 def source_log_notes(report):
-    """Empty-section explanations keyed by section id; only for sections with no items."""
+    """section id별 빈 섹션 설명. 항목이 없는 섹션에만 쓴다."""
     sections={id_:lines for id_,_,lines in source_log_sections(report)}
     notes={}
     if not sections['master-logs']:notes['master-logs']=master_note(report.observations)

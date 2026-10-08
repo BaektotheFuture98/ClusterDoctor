@@ -39,7 +39,7 @@ MASTER_EVENT_LOGGERS = (
     "o.e.c.r.a.DiskThresholdMonitor",  # 디스크 워터마크
     "o.e.c.r.a.d.DiskThresholdDecider",
     "o.e.m.j.JvmGcMonitorService",  # GC overhead
-    "o.e.i.b.HierarchyCircuitBreakerService",  # circuit breaker
+    "o.e.i.b.HierarchyCircuitBreakerService",  # 서킷 브레이커
     "o.e.c.InternalClusterInfoService",
 )
 # 로거를 좁혔으므로 300은 과하다. 사고 중 비용 천장을 낮게 유지한다.

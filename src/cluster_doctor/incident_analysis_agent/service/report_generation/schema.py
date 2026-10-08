@@ -334,7 +334,7 @@ class DraftReport(BaseModel):
 
 
 class IncidentDraftReport(DraftReport):
-    """Require deliberate incident judgments; empty arrays remain valid when warranted."""
+    """incident 판단을 의도적으로 내리게 한다. 근거가 있으면 빈 배열도 유효하다."""
     summary: str
     findings: list[DraftFinding]
     root_causes: list[DraftCause]

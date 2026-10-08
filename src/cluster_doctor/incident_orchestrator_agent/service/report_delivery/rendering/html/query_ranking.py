@@ -1,4 +1,4 @@
-"""Rank individual execution logs, never partial-keyword groups."""
+"""개별 실행 로그의 순위를 매기며, 일부 keyword만 맞는 그룹은 묶지 않는다."""
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests, matching_candidate
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import QUERY_LOG_MISSING

@@ -1,4 +1,4 @@
-"""Actual standalone report using code facts and verified interpretations."""
+"""코드가 만든 사실과 검증된 해석으로 구성한 독립 실행형 리포트."""
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
@@ -30,7 +30,7 @@ def quotes(items):
 
 
 def render_paragraphs(text: str, *, css_class: str = '') -> str:
-    """Display authored paragraphs without interpreting their claims or markup."""
+    """작성된 문단을 주장이나 마크업으로 해석하지 않고 그대로 표시한다."""
     attribute = f' class="{esc(css_class)}"' if css_class else ''
     return ''.join(f'<p{attribute}>{esc(paragraph.strip())}</p>'
                    for paragraph in text.replace('\r\n', '\n').split('\n\n') if paragraph.strip())

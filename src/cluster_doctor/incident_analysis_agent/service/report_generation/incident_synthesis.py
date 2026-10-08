@@ -1,4 +1,4 @@
-"""Final incident narrative from accumulated facts; no collection or delegation."""
+"""누적된 사실로 최종 incident 서술을 만든다. 수집과 위임은 하지 않는다."""
 from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report

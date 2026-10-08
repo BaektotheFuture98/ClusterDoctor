@@ -1,4 +1,4 @@
-"""Immutable data exchanged by the minute-analysis workflow."""
+"""minute-analysis workflow가 주고받는 불변 데이터."""
 
 from __future__ import annotations
 

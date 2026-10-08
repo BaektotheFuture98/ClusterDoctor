@@ -1,4 +1,4 @@
-"""Separate count and maximum-runtime SVG charts sharing one time axis."""
+"""하나의 시간 축을 공유하는 횟수/최대 실행 시간 SVG 차트를 분리해 그린다."""
 from math import ceil, log10
 
 from cluster_doctor.incident_analysis_agent.model.kst import KST

@@ -25,7 +25,7 @@ SETTLED_ZERO_STREAK = 2
 
 @dataclass(frozen=True)
 class ProblemLogSignal:
-    """Occurrence time of a problem-log signal used to determine an analysis window."""
+    """분석 window를 정하는 데 쓰는 problem-log 신호의 발생 시각."""
 
     timestamp: datetime
 

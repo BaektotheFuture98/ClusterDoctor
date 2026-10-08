@@ -143,7 +143,7 @@ def _minute(moment: datetime) -> datetime:
 def _with_followup_events(
     signals: list[_Signal], evidence: tuple[Evidence, ...]
 ) -> list[_Signal]:
-    """Show later observations separately, without labeling a recovery."""
+    """이후 관측은 따로 보여 주며 회복으로 단정하지 않는다."""
     result = []
     by_id = {item.evidence_id: item for item in evidence}
     for signal in signals:

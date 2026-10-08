@@ -1,4 +1,4 @@
-"""LLM structured-output schemas local to minute analysis."""
+"""minute analysis 안에서만 쓰는 LLM structured-output schema."""
 
 from pydantic import BaseModel, Field
 

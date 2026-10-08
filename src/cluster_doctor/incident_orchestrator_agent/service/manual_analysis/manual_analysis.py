@@ -1,4 +1,4 @@
-"""Direct, queue-free manual analysis entry point."""
+"""큐를 거치지 않는 직접 수동 분석 진입점."""
 
 from __future__ import annotations
 

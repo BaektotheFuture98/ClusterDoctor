@@ -90,7 +90,7 @@ class LogAnalysisResponse(BaseModel):
 
 @dataclass(frozen=True)
 class WindowAnalysisResult:
-    """Final immutable projection of one AnalysisAgentState."""
+    """AnalysisAgentState 하나를 불변으로 투영한 최종 결과."""
 
     window: TimeRange
     status: LogAnalysisStatus

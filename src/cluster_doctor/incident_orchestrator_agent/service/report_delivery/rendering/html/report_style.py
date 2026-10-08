@@ -1,4 +1,4 @@
-"""Single stylesheet for the HTML incident report."""
+"""HTML incident 리포트 전용 단일 스타일시트."""
 
 REPORT_CSS = """
 :root{color-scheme:light dark;

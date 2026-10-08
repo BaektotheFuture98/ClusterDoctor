@@ -1,4 +1,4 @@
-"""Framework-independent lifecycle commands, outcomes and analysis contracts."""
+"""프레임워크와 무관한 lifecycle command, outcome, analysis contract."""
 
 from __future__ import annotations
 
