@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     ReportFinding,
+    ReportRecommendation,
     RootCause,
 )
 from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import (
@@ -22,7 +23,7 @@ def test_revision_includes_complete_editable_report():
         root_causes=(
             RootCause(statement="cause", counter_evidence_refs=("E-counter",)),
         ),
-        recommendations=("action to preserve",),
+        recommendations=(ReportRecommendation(text="action to preserve"),),
         unresolved_questions=("question to preserve",),
     )
     prompt = build_revision_prompt(
