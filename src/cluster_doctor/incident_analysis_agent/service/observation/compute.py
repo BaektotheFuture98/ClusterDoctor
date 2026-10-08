@@ -214,9 +214,7 @@ def slow_candidates(logs: list[LogEntry], limit: int = 5) -> list[SlowCandidate]
     picked: list[SlowCandidate] = []
 
     # ``or -1``이면 안 된다. parse_duration_ms("0.4ms")는 0을 돌려주는데
-    # ``0 or -1``은 -1이라, 파싱에 성공한 0ms가 파싱 실패와 같은 취급을 받아
-    # 정렬 최하위로 밀린다. 바로 아래 run_time 쪽은 처음부터 is not None을
-    # 쓰고 있었다 — 같은 함수 안에서 규칙이 갈려 있었다.
+    # ``0 or -1``은 -1이라, 파싱에 성공한 0ms가 파싱 실패와 같은 취급을 받아 정렬 최하위로 밀린다.
     def _took_key(entry: SlowlogEntry) -> float:
         ms = parse_duration_ms(entry.took)
         return ms if ms is not None else -1

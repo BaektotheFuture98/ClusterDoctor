@@ -56,6 +56,7 @@ class ProblemLogProcessor:
         *,
         analyze_incident: AnalyzeIncident,
         cluster: str = "elasticsearch",
+        # 아래 두 대기 시간은 테스트가 정착 대기를 줄이려고 덮어쓴다. 운영은 기본값.
         quiet_period_seconds: float = QUIET_PERIOD_SECONDS,
         max_settling_wait_seconds: float = MAX_TOTAL_WAIT_SECONDS,
         max_pending: int = 0,

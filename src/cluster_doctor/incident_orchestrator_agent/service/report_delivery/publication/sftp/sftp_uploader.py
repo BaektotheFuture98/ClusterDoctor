@@ -62,6 +62,8 @@ class SftpUploader:
         self,
         target: SftpTarget,
         *,
+        # client_factory·retry_delay_seconds·sleep은 테스트가 가짜 클라이언트와
+        # 즉시 재시도를 주입하려고 덮어쓴다. 운영은 기본값.
         client_factory: Callable[[], paramiko.SSHClient] = paramiko.SSHClient,
         attempts: int = 2,
         retry_delay_seconds: float = 2.0,

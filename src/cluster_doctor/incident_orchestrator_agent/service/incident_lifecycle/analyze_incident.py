@@ -46,6 +46,7 @@ class AnalyzeIncident:
         *,
         incident_analyzer: IncidentAnalyzer,
         report_publisher: ReportPublisher,
+        # 테스트가 타임아웃 경로를 빠르게 타려고 덮어쓴다. 운영은 기본값.
         incident_timeout_seconds: float = INCIDENT_TIMEOUT_SECONDS,
     ) -> None:
         self._analyzer = incident_analyzer

@@ -178,8 +178,6 @@ def _build_analyze_incident(
 
     return AnalyzeIncident(
         incident_analyzer=incident_analyzer,
-        # 리포트는 HTML 파일로 남긴다. 저장에 실패하면 어댑터가 전문을 로그로
-        # 떨어뜨린다.
         report_publisher=_build_report_publisher(settings),
     )
 

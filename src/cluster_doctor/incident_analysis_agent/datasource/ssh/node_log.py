@@ -43,7 +43,6 @@ _KST = timezone(timedelta(hours=9))
 # 남는다. 같은 숫자라고 한 상수로 묶으면 그 반대 편향이 가려진다.
 DEFAULT_HOST_LOG_LINES = 300
 
-# SSH 타임아웃(접속/명령).
 SSH_CONNECT_TIMEOUT_SECONDS = 10
 SSH_COMMAND_TIMEOUT_SECONDS = 30
 

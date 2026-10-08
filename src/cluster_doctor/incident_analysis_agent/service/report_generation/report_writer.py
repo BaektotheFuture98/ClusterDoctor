@@ -52,7 +52,6 @@ class ReportWriter:
     def __init__(self, *, call_llm: Callable[..., str]) -> None:
         self._call_llm = call_llm
 
-    # ── Cross-source Analysis ────────────────────────────────────────
     def draft_report(
         self,
         request: LogAnalysisRequest,
@@ -213,7 +212,6 @@ class ReportWriter:
             "analyzed_to": report.analyzed_to,
         })
 
-    # ── 응답 조립 ────────────────────────────────────────────────────
     @staticmethod
     def summary_for_supervisor(report: LogAnalysisReport, state: ObservationBuilder) -> str:
         """Supervisor가 읽을 한두 문단. 리포트 전문이 아니다."""
