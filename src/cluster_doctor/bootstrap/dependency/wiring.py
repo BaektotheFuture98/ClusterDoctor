@@ -77,7 +77,7 @@ def _build_clickhouse_client(settings: Settings) -> Client:
         send_receive_timeout=_CLICKHOUSE_SEND_RECEIVE_TIMEOUT_SECONDS,
         # 공유 HTTP client의 병렬 조회가 동일한 ClickHouse 세션을 사용하지 않도록 한다.
         autogenerate_session_id=False,
-        # Domain windows are timezone-aware; UTC results must retain their offset.
+        # 도메인의 조회 창이 timezone-aware이므로 결과도 UTC 오프셋을 유지해야 한다.
         tz_mode="aware",
     )
 

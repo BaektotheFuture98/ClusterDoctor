@@ -45,12 +45,10 @@ _REQUEST_TIMEOUT_SECONDS = 1200.0
 MAX_LLM_CONCURRENCY = 15
 _llm_slots = threading.BoundedSemaphore(MAX_LLM_CONCURRENCY)
 
-# 429 진단용으로 남길 응답 헤더. 화이트리스트인 것이 핵심이다 —
-# 응답 본문·요청 URL·str(exc)는 어떤 경우에도 로그에 넣지 않는다. provider에
-# 따라 요청 URL에 API 키가 실리고, 본문에는 provider 내부 정보가 실린다.
-# 그 원칙 때문에 LlmApiError는 상태 코드만 담는데, 그 결과 429가 났을 때
-# "요청 수 한도인지 토큰 한도인지"를 알 길이 사라졌다. 아래 값들이 그 구분을
-# 알려 주는 표준 헤더이고, 키나 URL을 담지 않는다.
+# 429 진단용으로 남길 응답 헤더. 화이트리스트만 로그에 남기고 응답 본문·요청
+# URL·str(exc)는 절대 넣지 않는다 — URL에 API 키가, 본문에 provider 내부
+# 정보가 실릴 수 있다. LlmApiError는 상태 코드만 담으므로, 429가 요청 수
+# 한도인지 토큰 한도인지는 이 표준 헤더로만 구분할 수 있다.
 _RATE_LIMIT_HEADERS = (
     "retry-after",
     "x-ratelimit-limit-requests",
@@ -61,13 +59,12 @@ _RATE_LIMIT_HEADERS = (
     "x-ratelimit-reset-tokens",
 )
 
-# 분당 요청 수(RPM) 상한. provider마다 다르고, 없는 provider는 거르지 않는다
-# (nvidia_nim은 실측 실패가 항상 504였지 429가 아니었다). gemini는 무료 티어
-# 한도가 15 RPM인데, minute_analysis의 map 단계가 병렬로 팬아웃하므로
-# 동시에 여러 스레드가 이 함수를 두드린다. 스레드마다 따로
-# sleep을 넣어도 동시에 깨어나면 순간적으로 한도를 넘기므로, 락으로 감싼
-# 공유 최소 호출 간격으로 건다 — ``complete()``를 거치는 호출은 여기 한 곳만
-# 지키면 호출부 동시성 설정과 무관하게 지켜진다. DeepAgent(ChatLiteLLM) 호출은
+# provider별 분당 요청 수(RPM) 상한. 목록에 없는 provider는 거르지 않는다
+# (nvidia_nim의 실패는 항상 504였고 429가 아니었다). gemini 무료 티어는
+# 15 RPM인데 minute_analysis의 map 단계가 병렬 팬아웃하므로 여러 스레드가
+# 동시에 이 함수를 호출한다. 스레드별 sleep은 동시에 깨어나 한도를 넘기므로
+# 락으로 감싼 공유 최소 호출 간격을 쓴다 — ``complete()`` 경유 호출은 여기
+# 한 곳에서 호출부 동시성과 무관하게 지켜진다. DeepAgent(ChatLiteLLM) 호출은
 # 이 간격을 거치지 않는다.
 _MIN_CALL_INTERVAL_SECONDS: dict[str, float] = {
     "gemini": 5.0,  # 12 RPM. 무료 티어 15 RPM에 안전마진을 둔 값.
@@ -259,10 +256,10 @@ def complete(
         # litellm 자체 재시도는 끈다. 이 경로의 실패는 대부분 429이고, 그것은
         # 분당 입력 토큰 한도 초과가 원인이다. 같은 프롬프트를 다시
         # 보내면 실패가 보장된 채 소비만 배로 늘어난다(실측: 513,122
-        # 토큰 → 재시도 포함 2,052,488 토큰, 한도 250,000의 821%).
-        # litellm.completion()은 오류 종류별 재시도 정책을 받지 않으므로
-        # 일시적 오류까지 함께 포기한다 — 분 하나가 실패해도 분석
-        # 전체는 살아남게 되어 있어(MinuteResult.failed=True) 감당된다.
+        # 토큰이 재시도 포함 2,052,488 토큰, 한도의 821%).
+        # litellm.completion()은 오류 종류별 재시도 정책을 받지 않아
+        # 일시적 오류까지 포기하게 되지만, 분 하나가 실패해도 분석 전체는
+        # 살아남으므로(MinuteResult.failed=True) 감당된다.
         # 재시도가 필요한 오류만 아래 루프가 ``_retry_wait``로 가려 직접 한다.
         "num_retries": 0,
     }

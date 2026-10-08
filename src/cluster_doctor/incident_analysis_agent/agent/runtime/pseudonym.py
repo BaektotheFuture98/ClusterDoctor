@@ -158,8 +158,8 @@ class _ScopedPseudonyms:
     """Stateless access to the current mapping; never retain identifiers globally."""
 
     def register(self, kind: str, value: object) -> None:
-        # Datasources can also be queried without an LLM analysis. Such reads
-        # must not create a mapping that outlives the query.
+        # LLM 분석 없이 데이터소스만 조회하는 경우가 있다. 그 읽기가 조회보다
+        # 오래 남는 매핑을 만들면 안 된다.
         current = _current.get()
         if current is not None:
             current.register(kind, value)

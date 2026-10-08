@@ -61,9 +61,9 @@ async def main() -> None:
             except KafkaUnavailableError as exc:
                 logging.getLogger(__name__).critical("%s; terminating process with exit code 1", exc)
                 logging.shutdown()
-                # Consumer cleanup has already been attempted. Normal shutdown waits
-                # for analysis threads, so it cannot enforce this fatal outage policy.
-                # Exit the whole process, discarding pending/in-flight analysis.
+                # consumer 정리는 이미 시도했다. 정상 종료는 분석 스레드를 기다리므로
+                # 이 치명적 장애 정책을 지킬 수 없다. 대기·진행 중 분석을 버리고
+                # 프로세스 전체를 즉시 끝낸다.
                 os._exit(1)
         finally:
             await problem_log_processor.close()

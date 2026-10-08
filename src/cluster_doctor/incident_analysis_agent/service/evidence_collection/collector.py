@@ -102,7 +102,7 @@ class CollectedEvidence:
 
     evidence: list[Evidence] = field(default_factory=list)
     investigated_nodes: list[str] = field(default_factory=list)
-    # 선별이 실패해 근거가 비어 있는 분. 호출자가 unresolved gap으로 올린다.
+    # 선별이 실패해 근거가 비어 있는 분. unresolved gap의 원천이다.
     failed_minutes: set = field(default_factory=set)
 
 
@@ -147,7 +147,7 @@ class EvidenceCollector:
         self._failed_minutes = set()
 
         collected.evidence.extend(self._collect_cluster_health(state))
-        # Each branch owns its builder; only the coordinator merges observations.
+        # 브랜치마다 builder를 따로 쓰고 병합은 coordinator만 한다. 병렬 실행 중 공유 상태를 없애기 위해서다.
         master_state = ObservationBuilder(window)
         slow_state = ObservationBuilder(window)
         query_state = ObservationBuilder(window)

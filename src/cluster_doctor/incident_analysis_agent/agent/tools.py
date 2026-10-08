@@ -103,8 +103,8 @@ def report_update(seams: AnalysisSeams, state: dict, focus: str) -> dict:
             window=request.analysis_window,
             evidence_refs=tuple(item.evidence_id for item in state["evidence"]),
         )
-        # Preserve the explicit report_insufficient decision: the draft's
-        # suggestion is shown to the model, not automatically adopted.
+        # report_insufficient로 명시한 결정을 유지한다. 초안의 제안 구간은
+        # 모델에게 보여 줄 뿐 자동으로 채택하지 않는다.
         update.update(
             report=report, draft_suggested_windows=tuple(draft.parsed_windows())
         )

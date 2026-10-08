@@ -266,8 +266,8 @@ class SshNodeLogFetcher(NodeLogFetcher):
             _assert_safe_path(cluster_name, "cluster_name"),
         )
 
-        # Offset-bearing records may use a different calendar day. Cover every
-        # valid UTC offset; the local parser applies the precise time window.
+        # 로그 시각의 오프셋에 따라 UTC 기준 날짜가 어긋날 수 있어 앞뒤 하루씩 넓혀 거른다.
+        # 정확한 시간 창 판정은 로컬 파서가 한다.
         first_day = (start_dt.astimezone(timezone.utc) - timedelta(days=1)).date()
         last_day = (end_dt.astimezone(timezone.utc) + timedelta(days=1)).date()
         dates = []
@@ -276,8 +276,8 @@ class SshNodeLogFetcher(NodeLogFetcher):
             dates.append(day.isoformat())
             day += timedelta(days=1)
         pattern = "|".join("\\[" + day for day in dates)
-        # Keep bounded exception continuations through BOTH filters. Their time
-        # comes from the preceding parsed record, never a fabricated timestamp.
+        # 예외 스택 같은 이어지는 줄은 -A 40으로 두 필터를 모두 통과시킨다.
+        # 이어지는 줄의 시각은 직전 레코드에서 가져오며 임의로 만들지 않는다.
         cmd = _assert_allowed(
             f"grep -aE -A 40 '{_SEVERITY_PATTERN}' '{log_file}'"
             f" | grep -aE -A 40 '{pattern}'"

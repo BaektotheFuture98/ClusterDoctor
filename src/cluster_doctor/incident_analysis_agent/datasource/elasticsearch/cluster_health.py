@@ -43,7 +43,6 @@ class ElasticsearchClusterAdapter(ClusterRepository):
         return dict(self._client.cluster.health())
 
     def explain_allocation(self) -> dict:
-        # 미할당 샤드가 없으면 ES가 400을 돌려준다. 그것을 여기서 삼키지
-        # 않는다 — "샤드 문제 없음"과 "ES에 못 붙었음"은 다른 사실이고,
-        # 무엇을 리포트에 쓸지는 호출자가 판단한다.
+        # 미할당 샤드가 없으면 ES가 400을 돌려준다. 여기서 삼키지 않는다 —
+        # "샤드 문제 없음"과 "ES에 못 붙었음"은 다른 사실이다.
         return dict(self._client.cluster.allocation_explain())

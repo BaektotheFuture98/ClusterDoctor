@@ -109,7 +109,7 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
     report = state.get("report")
     if report is None:
         return {}
-    # Each assignment is a replacement projection, never an in-place state mutation.
+    # 상태를 제자리에서 바꾸지 않고 매번 교체본을 만든다.
     current = state
     grounding = GroundingValidator(call_llm=seams.call_llm)
     revisions = 0
@@ -174,7 +174,7 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
                     + ("원문 불일치 재분석에 실패했다.",),
                 }
                 break
-            # Preserve the original explicit expansion decision and new collection gaps.
+            # 재분석 결과로 덮어쓰지 않도록 기존 확장 결정은 유지하고 새 수집 공백은 보존한다.
             current = {
                 **fresh,
                 "suggested_windows": tuple(current.get("suggested_windows", ())),
@@ -243,7 +243,7 @@ def project_result(state: dict) -> WindowAnalysisResult:
     else:
         status = LogAnalysisStatus.COMPLETED if report else LogAnalysisStatus.FAILED
     if report:
-        # ReportWriter's formatting only reads gaps from its observation helper.
+        # ReportWriter 서식은 observation 헬퍼에서 gap만 읽는다.
         from cluster_doctor.incident_analysis_agent.service.observation.builder import (
             ObservationBuilder,
         )

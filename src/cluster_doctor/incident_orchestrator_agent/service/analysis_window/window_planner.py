@@ -27,7 +27,7 @@ _logger = logging.getLogger(__name__)
 
 # 이보다 짧게 남은 조각은 후보로 올리지 않는다. 분 경계 반올림 때문에 몇십
 # 초짜리 꼬리가 정상적으로 생기는데, 그것 하나 때문에 분석 호출 하나를 쓰면
-# 예산 여섯 번 중 한 번이 사라진다.
+# 호출 상한(MAX_ANALYSIS_CALLS)이 헛되이 줄어든다.
 MIN_USEFUL_WINDOW = timedelta(minutes=1)
 
 
