@@ -51,7 +51,7 @@ def _render_chart(points: tuple[QueryTrendPoint, ...], *, counts: bool) -> str:
             if current:
                 segments.append(current)
                 current = []
-            # Empty successful minutes have no maximum; failures remain distinguishable.
+            # 성공했지만 비어 있는 분은 최댓값이 없다. 실패한 분과는 표시를 구분한다.
             missing = '실패' if point.status == 'failed' else '—'
             marks.append(f'<text x="{x:.2f}" y="{_BASE-10}" text-anchor="middle">{missing}<title>{esc(_label(point))}</title></text>')
         else:

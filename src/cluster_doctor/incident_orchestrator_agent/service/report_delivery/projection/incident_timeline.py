@@ -711,7 +711,7 @@ def _master_signals(
             key=_master_key_from_event(match) if match else _master_key_from_evidence(item)
             selected.setdefault(key, []).append(item)
 
-    # Collected master observations remain visible when LLM selection yields no evidence.
+    # LLM 선별이 근거를 못 골라도 수집된 master 관측은 타임라인에 남긴다.
     for event in observations.master_events:
         if event.timestamp is not None and event.level.strip().upper() in ('ERROR','WARN','WARNING'):
             selected.setdefault(_master_key_from_event(event), [])

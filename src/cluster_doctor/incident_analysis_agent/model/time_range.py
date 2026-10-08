@@ -1,16 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-# Caps query fan-out (the ClickHouse adapter issues one query per source per
-# one-minute segment) and memory use (all rows are buffered before sorting).
-# Enforced here -- in the domain model -- rather than in a single entry point
-# so the limit holds for every caller, present and future. One-minute
-# segments built internally by the adapter are always well under this, so
-# they are never rejected by it.
+# 쿼리 팬아웃(ClickHouse 어댑터는 소스당 1분 구간마다 쿼리 한 건)과 메모리
+# (정렬 전에 모든 행을 버퍼링)를 제한한다. 진입점 한 곳이 아니라 도메인
+# 모델에서 강제해야 현재와 미래의 모든 호출자에게 한도가 적용된다. 어댑터가
+# 내부에서 만드는 1분 구간은 이 값에 한참 못 미쳐 거절되지 않는다.
 #
-# The graph analysis mode issues one LLM call per non-empty minute, so this
-# window size also bounds LLM cost and how long a single request can run --
-# not just ClickHouse fan-out.
+# 그래프 분석 모드는 비어 있지 않은 분마다 LLM을 한 번 호출하므로, 이 값은
+# LLM 비용과 요청 한 건의 소요 시간도 함께 제한한다.
 MAX_TIME_RANGE_DURATION = timedelta(minutes=10)
 
 
@@ -35,8 +32,8 @@ class TimeRange:
     def __post_init__(self):
         if self.start is None or self.end is None:
             raise InvalidTimeRangeError("start와 end는 None일 수 없습니다")
-        # Reject mixed timezone awareness before comparison can raise TypeError.
-        # utcoffset() also catches tzinfo objects that leave a datetime naive.
+        # 비교하다 TypeError가 나기 전에 aware/naive 혼용을 거절한다.
+        # tzinfo가 있어도 utcoffset()이 None이면 naive이므로 utcoffset()으로 판별한다.
         if (self.start.utcoffset() is None) != (self.end.utcoffset() is None):
             raise InvalidTimeRangeError(
                 "start와 end의 시간대 정보가 서로 달라 비교할 수 없습니다 "

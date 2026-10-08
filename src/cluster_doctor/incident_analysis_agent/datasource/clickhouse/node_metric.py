@@ -33,7 +33,7 @@ from cluster_doctor.incident_analysis_agent.model.log_entries import (
 )
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 
-# Lifetime rejected counters are observations, not current-window failures.
+# rejected는 기동 이후 누적 카운터라 값이 있어도 현재 window의 장애 증거가 아니다.
 _REJECTED_FLOOR = 0
 
 

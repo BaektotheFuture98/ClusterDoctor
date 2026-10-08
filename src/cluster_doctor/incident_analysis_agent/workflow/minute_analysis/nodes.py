@@ -39,8 +39,7 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.state impor
 
 _logger = logging.getLogger(__name__)
 
-# ``complete``에서 provider/model/api_key를 미리 묶어 둔 형태. 호출부는
-# 메시지와 응답 스키마만 정한다.
+# ``complete``에 provider/model/api_key를 미리 묶어 둔 형태.
 StructuredLlmCaller = Callable[..., str]
 EvidenceIdFactory = Callable[[], str]
 

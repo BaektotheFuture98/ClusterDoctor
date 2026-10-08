@@ -132,8 +132,8 @@ class KafkaConsumerAdapter:
     async def _probe_connection(self) -> None:
         revision = self._assignment.revision
         partitions = self._consumer.assignment()
-        # This is a fresh request, but does not update the consumer's own
-        # metadata cache. end_offsets() handles stale leaders independently.
+        # 브로커에 새로 요청하지만 consumer 자체의 metadata 캐시는 갱신하지 않는다.
+        # 오래된 leader는 end_offsets()가 따로 처리한다.
         if self._topic not in await self._consumer.topics():
             raise KafkaError("Subscribed topic is absent from broker metadata")
 
@@ -143,14 +143,14 @@ class KafkaConsumerAdapter:
                 raise KafkaError("Incomplete offsets from assigned partition leaders")
             coordinator_partition = min(partitions)
         else:
-            # A stable standby consumer must not probe leaders owned by peers.
+            # 파티션을 배정받지 못한 대기 consumer는 다른 consumer 소유 파티션의 leader를 조회하지 않는다.
             known = self._consumer.partitions_for_topic(self._topic)
             if not known:
                 raise KafkaError("Subscribed topic has no known partitions")
             coordinator_partition = TopicPartition(self._topic, min(known))
 
-        # Uncached OffsetFetch verifies the group coordinator as well. None
-        # means no offset was committed yet and is a healthy response.
+        # 캐시를 거치지 않는 OffsetFetch라 group coordinator까지 함께 검증된다.
+        # None은 아직 커밋된 오프셋이 없다는 뜻이며 정상 응답이다.
         await self._consumer.committed(coordinator_partition)
         if (
             self._assignment.rebalancing

@@ -78,8 +78,8 @@ class Evidence(BaseModel):
     event_type: str | None = None
     severity: str | None = None
 
-    # 코드가 렌더링한 근거 한 줄. 소스에 따라 원문 그대로이거나 구조화된 값을
-    # 조립한 서술이다. 프롬프트와 운영자 리포트가 함께 읽는다.
+    # 코드가 렌더링한 근거 한 줄. 로그 원문 그대로이거나 구조화된 값을
+    # 조립한 서술이다.
     message: str
 
     provenance: EvidenceProvenance | None = None

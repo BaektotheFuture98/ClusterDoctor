@@ -103,8 +103,8 @@ class ReportWriter:
         spans = [*observations.requested,
                  *((r.analyzed_from, r.analyzed_to) for r in window_reports)]
         start, end = min(a for a, _ in spans), max(b for _, b in spans)
-        # Prior diagnoses can anchor the final model to unsupported claims.
-        # Retain the span metadata; independently diagnose accumulated facts.
+        # 이전 구간의 진단 문장은 최종 모델을 근거 없는 주장에 고정시킨다.
+        # 구간 범위만 넘기고 진단은 누적 사실로 새로 내리게 한다.
         previous = [{
             "from": r.analyzed_from.isoformat(), "to": r.analyzed_to.isoformat(),
         } for r in window_reports]
@@ -119,9 +119,9 @@ class ReportWriter:
         if sum(len(message['content']) for message in messages) > 60000:
             raise ValueError("사건 종합 입력이 예산을 초과했다")
         with llm_label("incident_synthesis"):
-            # Keep the provider grammar small; validate the complete DTO below.
+            # provider 문법 제한이 있어 스키마는 작게 두고, 전체 DTO 검증은 아래에서 한다.
             text = self._call_llm(messages, response_format=_incident_response_format())
-        # A malformed synthesis must not silently become an empty successful report.
+        # 형식이 깨진 종합 결과가 빈 성공 리포트로 조용히 넘어가면 안 된다.
         draft = IncidentDraftReport.model_validate_json(text)
         if not draft.summary.strip():
             raise ValueError("사건 종합 응답에 요약이 없다")

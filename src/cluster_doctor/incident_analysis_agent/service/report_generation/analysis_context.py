@@ -38,8 +38,8 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
     def encode():
         return json.dumps(data, ensure_ascii=False,
             default=lambda value: value.astimezone(KST).isoformat() if isinstance(value, datetime) else str(value))
-    # Protect the complete JSON budget. All source DTOs
-    # remain intact; compaction is explicitly visible to the model.
+    # JSON 전체가 max_chars를 넘지 않도록 줄인다. 원본 DTO는 건드리지 않고,
+    # 줄인 사실은 context_omissions로 모델에 드러낸다.
     omissions = data['context_omissions']
     nodes = [row for row in observations.nodes if row.samples > 0]
     data['node_metric_maxima'] = {
@@ -72,14 +72,14 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
             if len(row['conditions']) > 20:
                 omissions['conditions'] = omissions.get('conditions', 0) + len(row['conditions']) - 20
                 row['conditions'] = row['conditions'][:20]
-    # Drop optional context rows only when compaction is still insufficient.
-    # Exact count/maxima above survive; absent metadata never means normal/zero.
+    # 위 압축으로도 넘칠 때만 선택 행을 뒤에서부터 버린다. 정확한 건수·최댓값은 남기며,
+    # 메타데이터가 없다고 정상이나 0으로 읽히면 안 된다.
     for field in ('node_metrics', 'evidence', 'source_statuses', 'slow_executions', 'minute_observations'):
         while data[field] and len(encode()) > max_chars - 100:
             data[field].pop()
             omissions[field] = omissions.get(field, 0) + 1
     while len(encode()) > max_chars - 100:
-        # A cluster can have enormous tie lists; values remain code-computed.
+        # 동률 노드 목록은 클러스터 규모만큼 길어질 수 있다. 목록만 줄이고 최댓값은 코드가 계산한 그대로 둔다.
         ties = [entry['nodes'] for entry in data['node_metric_maxima'].values() if entry['nodes']]
         if not ties:
             break

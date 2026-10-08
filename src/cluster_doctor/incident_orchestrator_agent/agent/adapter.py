@@ -229,17 +229,17 @@ class _DeepAgentIncidentAnalyzer:
             )
         except Exception:
             _logger.exception("사건 종합 분석 실패")
-            # Do not present the last window as if it explained the full incident.
+            # 마지막 window의 리포트를 사건 전체의 설명인 것처럼 내놓지 않는다.
             return replace(result, report=None, failed=True, status=IncidentStatus.FAILED,
                            reason="사건 종합 분석을 생성하지 못했다.",
                            gaps=(*result.gaps, "사건 종합 분석을 생성하지 못했다."))
         mismatch = report.verification_status is VerificationStatus.MISMATCH
-        # A corrected final judgment supersedes a window's earlier mismatch.
-        # Actual workflow/analysis failures still remain failures.
+        # 최종 종합 판정이 바로잡았다면 window의 앞선 불일치는 실패로 세지 않는다.
+        # 워크플로·분석이 실제로 실패한 경우는 그대로 실패다.
         failed = (result.status is IncidentStatus.FAILED
                   or final_state.get("latest_analysis_status") is LogAnalysisStatus.FAILED
                   or mismatch)
-        # Final verification details stay on the report, not in public collection gaps.
+        # 최종 검증 내용은 리포트에 남기고 수집 gap에는 싣지 않는다.
         return replace(result, report=report, failed=failed)
 
     def _compile(self, incident: Incident):
@@ -295,7 +295,7 @@ class _DeepAgentIncidentAnalyzer:
                 is VerificationStatus.MISMATCH
             ),
             gaps=tuple(dict.fromkeys((*state["accumulated_gaps"], *verification_gaps))),
-            report=None,  # Only incident-wide synthesis can supply the final narrative.
+            report=None,  # 최종 서술은 사건 전체 종합 단계만 채운다.
             observations=state["observations"],
             evidence=tuple(state["evidence"]),
             analysis_calls=state["analysis_call_count"],

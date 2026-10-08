@@ -30,15 +30,10 @@ from cluster_doctor.incident_analysis_agent.model.time_range import (
 DEFAULT_NODE_LOG_LIMIT = 300
 MAX_NODE_LOG_LIMIT = 2000
 
-# Each per-segment query already scopes to a single one-minute window for a
-# single source, but a pathological spike (a query storm, a metric-reporting
-# loop gone wrong) could still return an unbounded number of rows within
-# that minute, and results are fully buffered in memory before sorting.
-# 10,000 rows/minute/source is generous headroom over normal traffic for any
-# of the three sources here (slow-log entries, query-log entries, or
-# per-node metric samples are all naturally in the tens-to-low-thousands per
-# minute) while still bounding worst-case memory and transfer size per
-# query.
+# 분 단위 구간 쿼리 하나가 돌려줄 행 수 상한. 쿼리 폭주 같은 이상 급증이면
+# 한 분에도 행이 무한정 올 수 있고, 결과는 정렬 전에 메모리에 전부 올라온다.
+# 평상시 세 소스는 분당 수십~수천 행이라 10,000이면 여유가 충분하면서
+# 최악의 메모리·전송량은 막는다.
 MAX_ROWS_PER_SEGMENT_PER_SOURCE = 10_000
 
 _logger = logging.getLogger(__name__)
@@ -215,8 +210,8 @@ class ClickHouseLogAdapter(LogRepository):
             ("es_query_log", query_log.fetch, self._log_table),
             ("node_metric", node_metric.fetch, self._node_metric_table),
         )
-        # 분마다 세 소스를 동시에 조회하되 전체 기간의 쿼리를 한꺼번에 제출하지 않는다.
-        # 제출마다 context를 복사해 Incident의 가명 대응표와 로그 ID를 전달한다.
+        # 전체 기간을 한꺼번에 제출하지 않고 분 단위로 나눠 ClickHouse 부하를 제한한다.
+        # 워커 스레드는 context를 상속하지 않으므로 제출마다 복사해 가명 대응표와 로그 ID를 넘긴다.
         with ThreadPoolExecutor(max_workers=3) as executor:
             for seg in split_by_minute(time_range):
                 pending = [
