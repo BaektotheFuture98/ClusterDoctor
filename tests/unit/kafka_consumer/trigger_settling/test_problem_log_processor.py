@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analyze_incident import (
     StartIncident,
 )
+from cluster_doctor.kafka_consumer.trigger_settling.service.inflow import ProblemLogSignal
 from cluster_doctor.kafka_consumer.trigger_settling.service.problem_log_processor import ProblemLogProcessor
 
 
@@ -43,7 +44,7 @@ async def test_settles_after_two_consecutive_empty_polls():
         analyze_incident=fake, quiet_period_seconds=0.02, max_settling_wait_seconds=5
     )
 
-    await problem_log_processor.submit(datetime.now(UTC))
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=datetime.now(UTC)))
     await _wait_until(lambda: len(fake.calls) == 1)
 
     command = fake.calls[0]
@@ -59,12 +60,12 @@ async def test_new_arrival_mid_settle_extends_window_and_resets_streak():
     )
 
     t1 = datetime.now(UTC)
-    await problem_log_processor.submit(t1)
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=t1))
     # 첫 quiet period 하나만 지나가게 한다 — 아직 정착(2번 연속 0건)되지 않은 시점.
     await asyncio.sleep(0.04)
 
     t2 = datetime.now(UTC)
-    await problem_log_processor.submit(t2)
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=t2))
 
     await _wait_until(lambda: len(fake.calls) == 1, timeout=3)
     command = fake.calls[0]
@@ -78,7 +79,7 @@ async def test_close_cancels_pending_settle_wait_promptly():
         analyze_incident=fake, quiet_period_seconds=5.0, max_settling_wait_seconds=60
     )
 
-    await problem_log_processor.submit(datetime.now(UTC))
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=datetime.now(UTC)))
     await asyncio.sleep(0.01)  # 정착 루프가 첫 sleep에 들어간 뒤
 
     start = time.monotonic()
@@ -95,7 +96,7 @@ async def test_close_waits_for_in_flight_analysis_to_finish():
         analyze_incident=fake, quiet_period_seconds=0.02, max_settling_wait_seconds=5
     )
 
-    await problem_log_processor.submit(datetime.now(UTC))
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=datetime.now(UTC)))
     await _wait_until(lambda: len(fake.calls) == 1)  # 이제 분석 중(block)
 
     close_task = asyncio.create_task(problem_log_processor.close())
@@ -113,10 +114,10 @@ async def test_second_trigger_during_analysis_waits_for_first_to_finish():
         analyze_incident=fake, quiet_period_seconds=0.02, max_settling_wait_seconds=5
     )
 
-    await problem_log_processor.submit(datetime.now(UTC))
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=datetime.now(UTC)))
     await _wait_until(lambda: len(fake.calls) == 1)  # 첫 Incident 분석 중(block)
 
-    await problem_log_processor.submit(datetime.now(UTC))
+    await problem_log_processor.submit(ProblemLogSignal(timestamp=datetime.now(UTC)))
     await asyncio.sleep(0.1)
     assert len(fake.calls) == 1  # 두 번째 신호는 큐에 쌓였을 뿐 아직 처리되지 않음
 

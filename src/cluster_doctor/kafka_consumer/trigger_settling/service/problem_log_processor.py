@@ -73,12 +73,10 @@ class ProblemLogProcessor:
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
-    async def submit(self, problem_log_signal: ProblemLogSignal | datetime) -> None:
+    async def submit(self, problem_log_signal: ProblemLogSignal) -> None:
         """Enqueue a signal; analysis runs in the background processing loop."""
         if self._closed:
             raise RuntimeError("problem log processor is closed")
-        if isinstance(problem_log_signal, datetime):
-            problem_log_signal = ProblemLogSignal(timestamp=problem_log_signal)
         arrival = _Arrival(trigger=problem_log_signal, received_at=datetime.now(UTC))
         try:
             self._pending.put_nowait(arrival)
@@ -95,6 +93,8 @@ class ProblemLogProcessor:
             while not self._closed and not self._pending.empty():
                 first = self._pending.get_nowait()
                 tracker = await self._settle(first)
+                if self._closed:
+                    return
                 incident = Incident(
                     incident_id=uuid.uuid4().hex[:12],
                     cluster=self._cluster,
@@ -102,8 +102,6 @@ class ProblemLogProcessor:
                     kafka_receive_time=first.received_at,
                     trigger_type=TriggerType.PROBLEM_LOG,
                 )
-                if self._closed:
-                    return
                 command = StartIncident(
                     incident,
                     tracker.first_seen,

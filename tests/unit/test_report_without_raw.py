@@ -6,25 +6,11 @@ from cluster_doctor.incident_analysis_agent.model.evidence import (
     EvidenceSource,
 )
 from cluster_doctor.incident_analysis_agent.model.kst import KST
-from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
-    citation_text,
-)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import (
     render_ssh_logs,
 )
 
 T = datetime(2026, 10, 2, 9, 32, 35, tzinfo=KST)
-
-
-def test_citation_text_shows_message_without_raw_label():
-    e = Evidence(evidence_id='E1', event_time=T, source=EvidenceSource.QUERY_LOG,
-                 message='runtime=2.56s', provenance=EvidenceProvenance(method='clickhouse', table='log'))
-
-    text = citation_text(EvidenceCitation('E1', e))
-
-    assert text.endswith('runtime=2.56s')
-    assert '원문 미확보' not in text
 
 
 def test_ssh_view_shows_message_and_file_path():

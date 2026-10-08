@@ -11,9 +11,7 @@ from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.observation.builder import (
     ObservationBuilder,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_ranking import (
-    query_ranking,
-)
+from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 
@@ -106,13 +104,13 @@ def test_fetch_marks_partial_query_log_records(monkeypatch):
 
 def test_ranking_keeps_same_partial_keywords_as_individual_executions():
     rows=(request(duration='10'),request(1,duration='2'),request(2,duration='9',cmd='bulk'))
-    ranked=query_ranking(rows)
+    ranked=rank_query_requests(tuple(rows))
     assert [r.execution_seconds for r in ranked]==[Decimal('10'),Decimal('9'),Decimal('2')]
     assert len(ranked)==3 and ranked[1].record.cmd=='bulk'
 
 
 def test_invalid_runtimes_remain_records_but_do_not_win():
-    ranked=query_ranking(tuple(request(i,duration=v) for i,v in enumerate(('NaN','Infinity','-1','0','2'))))
+    ranked=rank_query_requests(tuple(request(i,duration=v) for i,v in enumerate(('NaN','Infinity','-1','0','2'))))
     assert [r.execution_seconds for r in ranked]==[Decimal(2),Decimal(0),None,None,None]
     assert len(ranked)==5
 
