@@ -9,6 +9,7 @@ from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, Evid
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links, cross_links_payload
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_log_line
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import MAX_EVIDENCE_PER_SOURCE, MAX_EVIDENCE_TOTAL, MAX_RAW_LOG_CHARS
@@ -30,6 +31,9 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
         'minute_observations': [asdict(row) for row in observations.timeline],
         'source_statuses': [asdict(status) for status in observations.source_statuses],
         'node_metrics': [asdict(row) for row in observations.nodes],
+        'cross_links': cross_links_payload(
+            build_cross_links(observations),
+            {e.record_key: e.evidence_id for e in evidence if e.record_key}),
         'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.astimezone(KST).isoformat(),
             source=e.source, time_origin=e.time_origin,
             provenance=e.provenance.model_dump(mode='json') if e.provenance else None,
