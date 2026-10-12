@@ -1,0 +1,207 @@
+"""소스 사이의 시간·노드 연결. 모델이 아니라 코드가 대조한다.
+
+쿼리 로그 시각(``reg_date``)이 요청 시작인지 종료인지 확정되지 않았다. 그래서
+겹침은 두 가정으로 각각 계산하고, 두 가정 모두에서 겹친 것과 한 가정에서만
+겹친 것을 나눠 둔다. 한쪽 가정의 결과를 사실처럼 싣지 않기 위해서다.
+"""
+
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
+from statistics import median
+
+from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry, query_record_key
+from cluster_doctor.incident_analysis_agent.model.observations import (
+    NodeMetricRow,
+    Observations,
+    SourceWindowStatus,
+)
+from cluster_doctor.incident_analysis_agent.service.observation.master_wait import (
+    MasterWait,
+    parse_master_waits,
+)
+from cluster_doctor.incident_analysis_agent.service.observation.query_requests import valid_runtime
+
+SLOW_QUERY_SECONDS = Decimal("10")
+_PROFILE_ROWS = 8
+_TIER = re.compile(r"tier=([^,}\]]+)")
+
+
+@dataclass(frozen=True)
+class QueryInterval:
+    record_key: str
+    logged_at: datetime
+    seconds: Decimal
+    cmd: str
+    user: str
+    target_host: str
+
+    def if_logged_at_end(self) -> tuple[datetime, datetime]:
+        return self.logged_at - timedelta(seconds=float(self.seconds)), self.logged_at
+
+    def if_logged_at_start(self) -> tuple[datetime, datetime]:
+        return self.logged_at, self.logged_at + timedelta(seconds=float(self.seconds))
+
+
+@dataclass(frozen=True)
+class WaitOverlap:
+    wait: MasterWait
+    both: tuple[QueryInterval, ...]
+    one_assumption: tuple[QueryInterval, ...]
+
+
+@dataclass(frozen=True)
+class MinuteLink:
+    minute: datetime
+    slow_queries: int
+    master_waits: int
+
+
+@dataclass(frozen=True)
+class NodeCard:
+    node: str
+    node_ip: str
+    tier: str
+    waits: tuple[MasterWait, ...]
+    metrics: NodeMetricRow | None
+    node_log: tuple[SourceWindowStatus, ...]
+    queries_targeting: int
+
+
+@dataclass(frozen=True)
+class QueryProfileRow:
+    cmd: str
+    date_range: int
+    index_count: int
+    total: int
+    slow: int
+    median_seconds: Decimal | None
+    max_seconds: Decimal | None
+
+
+@dataclass(frozen=True)
+class CrossLinks:
+    slow_threshold: Decimal
+    overlaps: tuple[WaitOverlap, ...]
+    minutes: tuple[MinuteLink, ...]
+    nodes: tuple[NodeCard, ...]
+    profile: tuple[QueryProfileRow, ...]
+
+
+def _host(value: str | None) -> str:
+    return (value or "").split(":")[0].strip()
+
+
+def _minute(moment: datetime) -> datetime:
+    return moment.replace(second=0, microsecond=0)
+
+
+def _median(values: list[Decimal]) -> Decimal | None:
+    return Decimal(str(median(values))) if values else None
+
+
+def _overlaps(left: tuple[datetime, datetime], right: tuple[datetime, datetime]) -> bool:
+    return left[0] < right[1] and right[0] < left[1]
+
+
+def query_shape(record: QueryLogEntry) -> tuple[str, int, int]:
+    """키워드가 아니라 요청의 무게를 정하는 값으로만 묶는다."""
+    index_count = len([name for name in (record.index_name or "").split(",") if name.strip()])
+    return record.cmd, record.date_range, index_count
+
+
+def _slow_intervals(observations: Observations, slow_seconds: Decimal) -> tuple[QueryInterval, ...]:
+    rows = []
+    for record in observations.query_requests:
+        seconds = valid_runtime(record.run_time)
+        if seconds is None or seconds < slow_seconds:
+            continue
+        rows.append(QueryInterval(query_record_key(record), record.timestamp, seconds,
+                                  record.cmd, record.user, _host(record.target_host)))
+    return tuple(sorted(rows, key=lambda q: q.logged_at))
+
+
+def _wait_overlaps(waits: tuple[MasterWait, ...], slow: tuple[QueryInterval, ...]) -> tuple[WaitOverlap, ...]:
+    result = []
+    for wait in waits:
+        if wait.sent_at is None or wait.received_at is None:
+            continue
+        window = (wait.sent_at, wait.received_at)
+        at_end = {q.record_key for q in slow if _overlaps(q.if_logged_at_end(), window)}
+        at_start = {q.record_key for q in slow if _overlaps(q.if_logged_at_start(), window)}
+        result.append(WaitOverlap(
+            wait=wait,
+            both=tuple(q for q in slow if q.record_key in at_end & at_start),
+            one_assumption=tuple(q for q in slow if q.record_key in at_end ^ at_start),
+        ))
+    return tuple(result)
+
+
+def _minute_links(observations: Observations, waits: tuple[MasterWait, ...],
+                  slow: tuple[QueryInterval, ...]) -> tuple[MinuteLink, ...]:
+    slow_by_minute: dict[datetime, int] = defaultdict(int)
+    for query in slow:
+        slow_by_minute[_minute(query.logged_at)] += 1
+    waits_by_minute: dict[datetime, int] = defaultdict(int)
+    for wait in waits:
+        if wait.event.timestamp is not None:
+            waits_by_minute[_minute(wait.event.timestamp)] += 1
+    minutes = {row.minute for row in observations.timeline} | set(slow_by_minute) | set(waits_by_minute)
+    return tuple(MinuteLink(m, slow_by_minute.get(m, 0), waits_by_minute.get(m, 0)) for m in sorted(minutes))
+
+
+def _node_cards(observations: Observations, waits: tuple[MasterWait, ...]) -> tuple[NodeCard, ...]:
+    grouped: dict[str, list[MasterWait]] = defaultdict(list)
+    for wait in waits:
+        if wait.target_node:
+            grouped[wait.target_node].append(wait)
+    metrics = {row.node: row for row in observations.nodes}
+    cards = []
+    for node, node_waits in grouped.items():
+        row = metrics.get(node)
+        ip = node_waits[0].target_ip or (row.node_ip if row else "")
+        tier = next((m.group(1) for w in node_waits if (m := _TIER.search(w.event.line or ""))), "")
+        cards.append(NodeCard(
+            node=node,
+            node_ip=ip,
+            tier=tier,
+            waits=tuple(node_waits),
+            metrics=row,
+            node_log=tuple(s for s in observations.source_statuses
+                           if s.source == "node_log" and s.host and s.host in (ip, node)),
+            queries_targeting=sum(1 for r in observations.query_requests if ip and _host(r.target_host) == ip),
+        ))
+    return tuple(sorted(cards, key=lambda card: card.node))
+
+
+def _profile(observations: Observations, slow_seconds: Decimal) -> tuple[QueryProfileRow, ...]:
+    groups: dict[tuple[str, int, int], list[Decimal | None]] = defaultdict(list)
+    for record in observations.query_requests:
+        groups[query_shape(record)].append(valid_runtime(record.run_time))
+    rows = []
+    for (cmd, date_range, index_count), values in groups.items():
+        measured = [v for v in values if v is not None]
+        rows.append(QueryProfileRow(
+            cmd=cmd, date_range=date_range, index_count=index_count, total=len(values),
+            slow=sum(1 for v in measured if v >= slow_seconds),
+            median_seconds=_median(measured),
+            max_seconds=max(measured) if measured else None,
+        ))
+    rows.sort(key=lambda r: (-r.slow, -(r.max_seconds or 0), -r.total, r.cmd))
+    return tuple(rows[:_PROFILE_ROWS])
+
+
+def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLOW_QUERY_SECONDS) -> CrossLinks:
+    waits = parse_master_waits(observations.master_events)
+    slow = _slow_intervals(observations, slow_seconds)
+    return CrossLinks(
+        slow_threshold=slow_seconds,
+        overlaps=_wait_overlaps(waits, slow),
+        minutes=_minute_links(observations, waits, slow),
+        nodes=_node_cards(observations, waits),
+        profile=_profile(observations, slow_seconds),
+    )
