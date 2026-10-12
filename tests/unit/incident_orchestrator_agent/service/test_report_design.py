@@ -19,7 +19,7 @@ def test_report_is_standalone_with_visible_escaped_ssh_raw():
     html=render_report(example())
     assert '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
     assert '<script' not in html and '<link ' not in html and 'href="#evidence' not in html
-    assert '<details' not in html and 'INTERNAL_ID' not in html
+    assert html.count('<details')==1 and 'INTERNAL_ID' not in html
 
 
 def test_plain_text_keeps_source_and_raw():

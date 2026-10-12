@@ -46,7 +46,7 @@ def render_conclusion(links: CrossLinks, *, headline_html: str, notices_html: st
         out.append(f'<p class="verdict">{esc(line)}</p>')
     if headline_html:
         out.append(headline_html)
-    elif analysis_failed:
+    if analysis_failed:
         out.append('<p class="hint">AI 분석에 실패해 관측값만 표시합니다.</p>')
     out.append(notices_html)
     return ''.join(out) + '</section>'
