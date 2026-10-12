@@ -15,6 +15,7 @@ from decimal import Decimal
 from statistics import median
 from typing import Literal
 
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry, query_record_key
 from cluster_doctor.incident_analysis_agent.model.observations import (
     NodeMetricRow,
@@ -242,3 +243,56 @@ def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLO
         profile=_profile(observations, slow_seconds),
         verdict=judge_spread(observations, slow_seconds=slow_seconds),
     )
+
+
+_PAYLOAD_LIST_LIMIT = 10
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return moment.astimezone(KST).isoformat() if moment else None
+
+
+def _text(value: Decimal | None) -> str | None:
+    return str(value) if value is not None else None
+
+
+def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict:
+    """모델 입력용 투영. 근거 id가 있는 쿼리는 id를 같이 실어 인용할 수 있게 한다."""
+    def interval(query: QueryInterval) -> dict:
+        return {"evidence_id": evidence_ids.get(query.record_key), "logged_at": _iso(query.logged_at),
+                "execution_seconds": str(query.seconds), "cmd": query.cmd}
+
+    verdict = links.verdict
+    return {
+        "query_time_basis": "쿼리 로그 reg_date가 시작/종료 중 무엇인지 확정되지 않아 두 가정을 모두 계산했다",
+        "slow_threshold_seconds": str(links.slow_threshold),
+        "verdict": {
+            "scope": verdict.scope,
+            "slow_shapes": [{"cmd": c, "date_range": d, "index_count": n} for c, d, n in verdict.slow_shapes],
+            "reference_median_seconds": _text(verdict.reference_median),
+            "slow_minute_median_seconds": _text(verdict.slow_minute_median),
+        },
+        "master_wait_overlaps": [{
+            "master_event_time": _iso(o.wait.event.timestamp),
+            "target_node": o.wait.target_node or o.wait.target_node_id,
+            "action": o.wait.action,
+            "waiting_from": _iso(o.wait.sent_at),
+            "waiting_to": _iso(o.wait.received_at),
+            "timeout_ms": o.wait.timeout_ms,
+            "overlap_under_both_assumptions": [interval(q) for q in o.both[:_PAYLOAD_LIST_LIMIT]],
+            "overlap_under_one_assumption": [interval(q) for q in o.one_assumption[:_PAYLOAD_LIST_LIMIT]],
+        } for o in links.overlaps],
+        "minutes": [{"minute": _iso(m.minute), "slow_queries": m.slow_queries, "master_waits": m.master_waits}
+                    for m in links.minutes],
+        "node_cards": [{
+            "node": c.node, "node_ip": c.node_ip, "tier": c.tier, "master_waits": len(c.waits),
+            "metrics_max": ({"cpu": c.metrics.cpu_max, "jvm_heap": c.metrics.jvm_heap_max,
+                             "search_queue": c.metrics.search_queue_max} if c.metrics else None),
+            "node_log": [{"status": s.status, "row_count": s.row_count, "error": s.error} for s in c.node_log],
+            "queries_targeting_node": c.queries_targeting,
+        } for c in links.nodes[:_PAYLOAD_LIST_LIMIT]],
+        "slow_query_profile": [{
+            "cmd": p.cmd, "date_range": p.date_range, "index_count": p.index_count, "total": p.total,
+            "slow": p.slow, "median_seconds": _text(p.median_seconds), "max_seconds": _text(p.max_seconds),
+        } for p in links.profile],
+    }
