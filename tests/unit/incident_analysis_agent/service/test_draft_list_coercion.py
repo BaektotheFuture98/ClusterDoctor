@@ -20,8 +20,7 @@ INCIDENT = {
     "root_causes": [
         {
             "statement": "원인",
-            "confidence": "Low",
-            "uncertainties": "요청이 집중된 타이밍과 힙 상승의 상관관계를 확정할 수 없습니다.",
+            "supporting_evidence_refs": "E1",
         }
     ],
     "recommendations": [],
@@ -29,12 +28,10 @@ INCIDENT = {
 }
 
 
-def test_incident_draft_accepts_string_for_uncertainties():
+def test_incident_draft_accepts_string_for_cause_refs():
     draft = IncidentDraftReport.model_validate_json(json.dumps(INCIDENT, ensure_ascii=False))
 
-    assert draft.root_causes[0].uncertainties == [
-        "요청이 집중된 타이밍과 힙 상승의 상관관계를 확정할 수 없습니다."
-    ]
+    assert draft.root_causes[0].supporting_evidence_refs == ["E1"]
 
 
 @pytest.mark.parametrize(
@@ -42,7 +39,6 @@ def test_incident_draft_accepts_string_for_uncertainties():
     [
         (DraftTimelineEntry, "evidence_refs"),
         (DraftFinding, "evidence_refs"),
-        (DraftCause, "uncertainties"),
         (DraftCause, "supporting_evidence_refs"),
         (DraftCause, "counter_evidence_refs"),
         (DraftRecommendation, "evidence_refs"),
@@ -75,7 +71,7 @@ def test_window_draft_keeps_content_when_a_list_field_is_a_string():
         {
             "summary": "구간 요약",
             "unresolved_questions": "추가 로그가 필요합니다.",
-            "root_causes": [{"statement": "원인", "uncertainties": "확인 불가"}],
+            "root_causes": [{"statement": "원인", "counter_evidence_refs": "E9"}],
         },
         ensure_ascii=False,
     )
@@ -84,7 +80,7 @@ def test_window_draft_keeps_content_when_a_list_field_is_a_string():
 
     assert draft.summary == "구간 요약"
     assert draft.unresolved_questions == ["추가 로그가 필요합니다."]
-    assert draft.root_causes[0].uncertainties == ["확인 불가"]
+    assert draft.root_causes[0].counter_evidence_refs == ["E9"]
 
 
 def test_missing_required_incident_field_is_still_an_error():

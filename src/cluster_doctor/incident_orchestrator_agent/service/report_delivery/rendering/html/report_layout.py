@@ -81,9 +81,8 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     causes='<section id="causes"><h2>원인 판단·조치</h2>'
     if narrative:
         for index, cause in enumerate(narrative.causes):
-            causes+=f'<h3>{esc(cause.statement)}</h3><p>확신도: {esc(cause.confidence or "미확인")}</p>'
+            causes+=f'<h3>{esc(cause.statement)}</h3>'
             if cause.mechanism: causes+='<p>판단 설명</p>'+render_paragraphs(cause.mechanism)
-            if cause.uncertainties: causes+='<p>미확인 사항</p><ul>'+''.join(f'<li>{esc(v)}</li>' for v in cause.uncertainties)+'</ul>'
             actions=tuple(action for action in narrative.recommendations if getattr(action, 'cause_index', None)==index)
             for action in actions:
                 if str(action).strip():causes+='<p>확인·조치</p>'+render_paragraphs(str(action))

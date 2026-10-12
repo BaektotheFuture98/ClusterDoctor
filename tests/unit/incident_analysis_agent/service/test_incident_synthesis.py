@@ -19,7 +19,7 @@ def test_reviewed_paragraphs_and_summary_sources_reach_the_rendered_report():
              'root_causes': [], 'recommendations': [], 'unresolved_questions': []}
     reviewed = {**draft, 'summary': '지연과 관련 로그를 연결하되 원인 연결은 미확인이다.',
                 'summary_evidence_refs': ['S1', 'S2'],
-                'root_causes': [{'statement': '가능성: 처리 대기', 'confidence': 'Low',
+                'root_causes': [{'statement': '가능성: 처리 대기',
                                 'mechanism': '관측을 설명한다.\n\n영향 경로는 조건부다.',
                                 'supporting_evidence_refs': ['S2']}],
                 'recommendations': [{'text': '대상을 식별하고 대기를 대조한다.', 'cause_index': 0, 'evidence_refs': ['S1']}]}
@@ -86,14 +86,13 @@ def test_whole_incident_preserves_early_peak_across_longer_than_ten_minutes():
     calls=[]
     def call(messages, **kwargs):
         calls.append('\n'.join(m['content'] for m in messages))
-        return json.dumps({'summary':'초기 지연 후 정상화','findings':[],'unresolved_questions':[],'root_causes':[{'statement':'검색 처리 병목 후보','mechanism':'검색 처리 대기로 실행시간이 길어질 수 있음','uncertainties':['대상 노드 연결 미확인']}], 'recommendations':[{'text':'피크 실행 대상의 큐를 확인','cause_index':0}]},ensure_ascii=False)
+        return json.dumps({'summary':'초기 지연 후 정상화','findings':[],'unresolved_questions':[],'root_causes':[{'statement':'검색 처리 병목 후보','mechanism':'검색 처리 대기로 실행시간이 길어질 수 있음'}], 'recommendations':[{'text':'피크 실행 대상의 큐를 확인','cause_index':0}]},ensure_ascii=False)
     report=ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[first,last],observations=Observations(requested=((START,last.analyzed_to),)),evidence=[])
     assert report.analyzed_from==START
     assert report.analyzed_to==last.analyzed_to
     assert START.isoformat() in calls[0] and last.analyzed_to.isoformat() in calls[0]
     assert '마지막 구간 정상' not in calls[0]
     assert report.root_causes[0].mechanism
-    assert report.root_causes[0].uncertainties==('대상 노드 연결 미확인',)
     assert report.recommendations[0].cause_index==0
 
 
@@ -112,13 +111,13 @@ def test_synthesis_validates_new_claims_and_does_not_collect():
     seen=[]
     def call(messages, **kwargs):
         if kwargs.get('response_format'):
-            return json.dumps({'summary':'사건 한국어 요약','findings':[],'unresolved_questions':[],'root_causes':[{'statement':'후보','mechanism':'처리 대기 가능성','uncertainties':['노드 연결 미확인']}], 'recommendations':[{'text':'대상 확인','cause_index':0}]},ensure_ascii=False)
+            return json.dumps({'summary':'사건 한국어 요약','findings':[],'unresolved_questions':[],'root_causes':[{'statement':'후보','mechanism':'처리 대기 가능성'}], 'recommendations':[{'text':'대상 확인','cause_index':0}]},ensure_ascii=False)
         claims=json.loads(messages[0]['content'].split('Claims:\n')[1].split('\nEvidence:\n')[0])
         seen.extend(c['claim_id'] for c in claims)
         return json.dumps([{'claim_id':c['claim_id'],'status':'PASSED','affected_evidence_refs':[]} for c in claims])
     result=synthesize_incident(seams=SimpleNamespace(report_writer=ReportWriter(call_llm=call),call_llm=call),incident=SimpleNamespace(incident_id='I',cluster='C'),window_reports=[first],observations=Observations(),evidence=[])
     assert result.verification_status is VerificationStatus.PASSED
-    assert 'cause:0:mechanism' in seen and 'cause:0:uncertainty:0' in seen
+    assert 'cause:0:mechanism' in seen and not any('uncertainty' in c for c in seen)
 
 
 def test_projection_and_html_keep_actions_with_their_cause():
@@ -127,11 +126,11 @@ def test_projection_and_html_keep_actions_with_their_cause():
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
-    report=DraftReport(summary='요약',root_causes=[{'statement':'첫 후보','mechanism':'처리 대기 가능성','uncertainties':['연결 미확인']},{'statement':'둘째 후보'}],recommendations=[{'text':'첫 후보 조사','cause_index':0},{'text':'둘째 후보 조사','cause_index':1},{'text':'공통 조사'}]).to_domain(incident_id='I',window=TimeRange(START,START+timedelta(minutes=1)),evidence_refs=()).model_copy(update={'verification_status':VerificationStatus.PASSED})
+    report=DraftReport(summary='요약',root_causes=[{'statement':'첫 후보','mechanism':'처리 대기 가능성'},{'statement':'둘째 후보'}],recommendations=[{'text':'첫 후보 조사','cause_index':0},{'text':'둘째 후보 조사','cause_index':1},{'text':'공통 조사'}]).to_domain(incident_id='I',window=TimeRange(START,START+timedelta(minutes=1)),evidence_refs=()).model_copy(update={'verification_status':VerificationStatus.PASSED})
     output=to_incident_analysis_report(report,Observations(),[])
     html=render_report(output)
     assert html.index('첫 후보 조사') < html.index('둘째 후보') < html.index('둘째 후보 조사')
-    assert html.count('첫 후보 조사')==1 and '처리 대기 가능성' in html and '연결 미확인' in html
+    assert html.count('첫 후보 조사')==1 and '처리 대기 가능성' in html
     text=render_text(output)
     assert text.index('첫 후보 조사')<text.index('둘째 후보')
 
@@ -199,7 +198,7 @@ def test_delivery_dto_keeps_existing_positional_citations():
     from cluster_doctor.incident_orchestrator_agent.model.incident_report import Recommendation, CauseAssessment
     assert Recommendation('확인',()).citations==()
     assert Recommendation('확인',()).cause_index is None
-    assert CauseAssessment('후보','Low',(),()).supporting==()
+    assert CauseAssessment('후보',(),()).supporting==()
 
 
 def test_incident_uses_minimal_json_schema_transport_with_explicit_contract():
@@ -252,7 +251,7 @@ def test_final_input_retains_facts_without_prior_interpretation():
     from cluster_doctor.incident_analysis_agent.model.report import RootCause
     prior=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),
         summary='이전 요약의 미확인 변화 주장',
-        root_causes=(RootCause(statement='이전 원인의 확정 주장',confidence='Medium'),),
+        root_causes=(RootCause(statement='이전 원인의 확정 주장'),),
         unresolved_questions=('이전 가설을 전제한 질문',),verification_status=VerificationStatus.PASSED)
     fact=Evidence(evidence_id='E-real',event_time=START,source=EvidenceSource.QUERY_LOG,message='보존할 관측 사실')
     seen=[]

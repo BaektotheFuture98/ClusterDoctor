@@ -83,9 +83,7 @@ class RootCause(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     statement: str = ""
-    confidence: str = ""
     mechanism: str = ""
-    uncertainties: tuple[str, ...] = Field(default_factory=tuple)
     supporting_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
     counter_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
 

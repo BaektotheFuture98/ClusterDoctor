@@ -221,9 +221,7 @@ class ReportWriter:
         parts = [report.summary or "(요약 없음)"]
         if report.root_causes:
             cause = report.root_causes[0]
-            parts.append(
-                f"원인 후보: {cause.statement} (confidence={cause.confidence or '미기재'})"
-            )
+            parts.append(f"원인 후보: {cause.statement}")
         if report.unresolved_questions:
             parts.append("미해결: " + "; ".join(report.unresolved_questions[:3]))
         if state.gaps:
