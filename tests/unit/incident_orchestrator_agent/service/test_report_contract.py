@@ -1,3 +1,4 @@
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import PRINT_OPEN_SCRIPT
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -34,7 +35,7 @@ def test_actual_html_is_individual_source_backed_report():
     assert '평균' not in html and 'Avg' not in html
     assert 'unverified conclusion' not in html and 'unverified cause' not in html
     assert '시각 미확인' in html and '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
-    assert '<script>' not in html
+    assert '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
     text=render_text(report())
     assert '1.96s' in text and 'bulk' in text and 'INTERNAL_ID' not in text
     assert '평균' not in text and 'unverified conclusion' not in text

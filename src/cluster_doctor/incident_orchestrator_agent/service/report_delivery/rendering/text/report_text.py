@@ -34,6 +34,8 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import unique_citations, remaining_summary_citations
+    from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import node_line, verdict_line
     obs=report.observations
     rows=rank_query_requests(obs.query_requests)
     out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '핵심 요약',
@@ -46,6 +48,9 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     else:
         out.extend(execution_summary(obs))
         out.append('분석 해석을 확인하지 못해 관측 사실만 표시합니다.')
+    links=build_cross_links(obs)
+    out.append(verdict_line(links))
+    if line:=node_line(links):out.append(line)
     out.append('쿼리 실행 추이')
     for p in project_query_trend(obs):
         out.append(f'{stamp(p.start)} ~ {stamp(p.end)} · {p.count if p.count is not None else "미확인"}건 · 최대 {str(p.maximum_seconds)+"s" if p.maximum_seconds is not None else "미확인"} · {p.status}')

@@ -25,8 +25,10 @@ _CROSS_LINK_RULES = """
 소스 간 연결(cross_links):
 - cross_links는 코드가 계산한 시각·노드 대조와 판정이다. 시간 겹침, 노드 연결, 지연 범위는 이 값을 근거로 쓰고 직접 다시 계산하지 않는다.
 - verdict.scope가 지연 범위다. specific은 느린 요청이 slow_shapes 형태에 한정되고 같은 시각 다른 요청은 기준 분과 비슷했다는 뜻, cluster_wide는 다른 요청도 함께 느려졌다는 뜻, undetermined는 비교 표본이 부족하다는 뜻이다. 요약과 원인 판단은 이 판정과 모순되지 않게 쓴다.
+- no_slow는 쿼리 로그를 수집했고 느린 요청이 없었다는 뜻이다. no_query_log는 쿼리 로그를 수집하지 못했거나 비어 있어 판정할 수 없다는 뜻이므로 느린 요청이 없었다고 쓰지 않는다.
 - master_wait_overlaps의 waiting_from~waiting_to가 마스터가 응답을 기다린 구간이다. 쿼리와의 동시성은 로그 시각이 아니라 이 구간으로 말한다.
 - overlap_under_both_assumptions는 쿼리 로그 시각 해석과 무관하게 겹친 실행이다. overlap_under_one_assumption은 해석에 따라 달라지므로 동시 실행이 확인됐다고 쓰지 않는다.
+- 늦게 응답한 노드는 node_cards에서 late_responses>0인 노드만이다.
 - node_cards의 node_log status=ok, row_count=0은 조회에 성공했고 0줄이었다는 뜻이다. 수집 실패와 구분한다.
 """
 

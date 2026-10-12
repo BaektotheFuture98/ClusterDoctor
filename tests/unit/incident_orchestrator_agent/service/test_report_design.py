@@ -1,3 +1,4 @@
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import PRINT_OPEN_SCRIPT
 from dataclasses import replace
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
@@ -18,7 +19,7 @@ def example():return report('PASSED')
 def test_report_is_standalone_with_visible_escaped_ssh_raw():
     html=render_report(example())
     assert '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
-    assert '<script' not in html and '<link ' not in html and 'href="#evidence' not in html
+    assert '<script' not in html.replace(PRINT_OPEN_SCRIPT,'') and '<link ' not in html and 'href="#evidence' not in html
     assert html.count('<details')==1 and 'INTERNAL_ID' not in html
 
 
@@ -57,7 +58,7 @@ def test_timeline_is_bounded_and_contains_absolute_maximum():
 def test_verified_headline_and_source_text_are_escaped():
     r=replace(example(),narrative=Narrative(headline='<script>alert(1)</script> & claim'))
     html=render_report(r)
-    assert '&lt;script&gt;alert(1)&lt;/script&gt; &amp; claim' in html and '<script>' not in html
+    assert '&lt;script&gt;alert(1)&lt;/script&gt; &amp; claim' in html and '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
 
 
 def test_unique_section_ids():

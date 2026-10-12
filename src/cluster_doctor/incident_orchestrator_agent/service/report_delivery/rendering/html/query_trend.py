@@ -90,8 +90,10 @@ def render_query_trend(points: tuple[QueryTrendPoint, ...], links=None) -> str:
         count = point.count if point.count is not None else '—'
         runtime = _number(point.maximum_seconds) if point.maximum_seconds is not None else '—'
         link = minutes.get(point.minute)
-        extra = (f'<td>{link.slow_queries if link else 0}</td><td>{link.master_waits if link else 0}</td>'
-                 if links else '')
+        # 수집되지 않은 분의 0은 "없음"이 아니라 "모름"이다.
+        measured = point.status in ('ok', 'limited')
+        extra = ((f'<td>{link.slow_queries if link else 0}</td><td>{link.master_waits if link else 0}</td>'
+                  if measured else '<td>—</td><td>—</td>') if links else '')
         out.append(f'<tr><td>{point.start.astimezone(KST):%H:%M:%S} ~ {point.end.astimezone(KST):%H:%M:%S}</td>'
                    f'<td>{count}</td><td>{runtime}</td><td>{_NAMES[point.status]}</td>{extra}</tr>')
     return ''.join(out) + '</tbody></table></section>'

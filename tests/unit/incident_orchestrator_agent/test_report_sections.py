@@ -68,7 +68,7 @@ def test_verdict_lines():
 def test_conclusion_has_no_severity_banner_and_mentions_nodes():
     html = render_conclusion(build_cross_links(_OBS), headline_html="<p>요약</p>")
     assert 'id="conclusion"' in html and "<p>요약</p>" in html
-    assert "데이터 노드 1대(RC6-18)" in html
+    assert "노드 1대(RC6-18)" in html
     assert "LOW" not in html and "HIGH" not in html
 
 

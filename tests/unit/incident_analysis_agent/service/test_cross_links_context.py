@@ -72,7 +72,7 @@ def test_cross_links_shrinks_within_budget_and_records_omissions():
     assert len(raw) <= limit
     data = json.loads(raw)
     assert data["context_omissions"]["cross_links.minutes"] > 0
-    assert data["cross_links"]["verdict"]["scope"] == "no_slow"
+    assert data["cross_links"]["verdict"]["scope"] == "no_query_log"
 
 
 def test_cross_links_only_cite_evidence_ids_that_survived_trimming():
