@@ -6,7 +6,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report
 
 
-def summary_of(html):return html.split('id="summary"',1)[1].split('</section>',1)[0]
+def summary_of(html):return ''.join(html.split(f'id="{name}"',1)[1].split('</section>',1)[0] for name in ('conclusion','metrics'))
 
 
 def test_header_contains_actual_title_cluster_and_period():
@@ -22,7 +22,7 @@ def test_demo_is_identified_once():
 
 def test_summary_shows_total_and_peak_from_all_executions():
     summary=summary_of(render_report(report()))
-    assert '12건' in summary and '1.96s' in summary and 'search' in summary
+    assert '12건' in summary and '1.96s' in summary
     assert '평균' not in summary and 'rejected' not in summary
 
 
@@ -43,4 +43,4 @@ def test_counter_is_per_node_cumulative_and_does_not_create_critical():
 
 def test_collection_failure_and_analysis_failure_remain_visible():
     html=render_report(report(),analysis_failed=True,gaps=('SSH 수집 실패',))
-    assert 'SSH 수집 실패' in html and '분석 실패' in html
+    assert 'SSH 수집 실패' in html and 'AI 분석에 실패' in html

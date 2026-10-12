@@ -129,7 +129,7 @@ def test_projection_and_html_keep_actions_with_their_cause():
     report=DraftReport(summary='요약',root_causes=[{'statement':'첫 후보','mechanism':'처리 대기 가능성'},{'statement':'둘째 후보'}],recommendations=[{'text':'첫 후보 조사','cause_index':0},{'text':'둘째 후보 조사','cause_index':1},{'text':'공통 조사'}]).to_domain(incident_id='I',window=TimeRange(START,START+timedelta(minutes=1)),evidence_refs=()).model_copy(update={'verification_status':VerificationStatus.PASSED})
     output=to_incident_analysis_report(report,Observations(),[])
     html=render_report(output)
-    assert html.index('첫 후보 조사') < html.index('둘째 후보') < html.index('둘째 후보 조사')
+    assert html.index('첫 후보') < html.index('둘째 후보') < html.index('첫 후보 조사') < html.index('둘째 후보 조사')
     assert html.count('첫 후보 조사')==1 and '처리 대기 가능성' in html
     text=render_text(output)
     assert text.index('첫 후보 조사')<text.index('둘째 후보')

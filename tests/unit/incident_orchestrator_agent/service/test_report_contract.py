@@ -24,7 +24,7 @@ def report(status='NOT_VERIFIED'):
 
 def test_actual_html_is_individual_source_backed_report():
     html=render_report(report())
-    sections=['summary','query-trend','timeline','query-ranking','ssh-logs','system-metrics','causes']
+    sections=['conclusion','metrics','query-trend','query-ranking','causes','evidence','timeline','ssh-logs','system-metrics']
     positions=[html.index(f'id="{name}"') for name in sections]
     assert positions==sorted(positions)
     assert 'Elasticsearch 쿼리·노드 로그 분석' in html and '수집 쿼리 실행 로그' in html
@@ -84,8 +84,9 @@ def test_timeline_uses_single_observation_without_internal_baseline():
     spec=spec_from_file_location('report_preview',Path(__file__).resolve().parents[4]/'scripts/preview_report.py')
     module=module_from_spec(spec);spec.loader.exec_module(module)
     r=module.build_example('ssh')
+    html_timeline=render_report(r).split('id="timeline"')[1].split('</section>')[0]
     for rendered in (render_report(r),render_text(r)):
-        assert '중앙값' not in rendered
+        assert '중앙값' not in (html_timeline if rendered.startswith('<!doctype') else rendered)
         assert rendered.count('query runtime 지연 피크') <= 1
 
 
@@ -110,16 +111,16 @@ def test_validation_diagnostics_are_not_part_of_operator_report():
 
 def test_fallback_has_same_summary_and_cause_slots_as_standard_report():
     html=render_report(report())
-    summary=html.split('id="summary"')[1].split('</section>')[0]
+    summary=html.split('id="conclusion"')[1].split('</section>')[0]
     causes=html.split('id="causes"')[1].split('</section>')[0]
     assert 'class="report-headline"' in summary
-    assert '<h3>' in causes and '판단 근거' in causes
+    assert '<h3>' in causes
 
 
 def test_optional_source_sections_keep_order_and_show_unknown_status_hint():
     r=replace(report(),evidence=())
     html=render_report(r)
-    sections=['summary','query-trend','timeline','query-ranking','master-logs','slowlogs','ssh-logs','system-metrics','causes']
+    sections=['conclusion','query-trend','query-ranking','causes','evidence','timeline','master-logs','slowlogs','ssh-logs','system-metrics']
     assert [html.index(f'id="{s}"') for s in sections]==sorted(html.index(f'id="{s}"') for s in sections)
     for name in ('master-logs','slowlogs','ssh-logs'):
         body=html.split(f'id="{name}"')[1].split('</section>')[0].split('</h2>')[1]
