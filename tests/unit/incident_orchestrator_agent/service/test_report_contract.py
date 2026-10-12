@@ -113,7 +113,7 @@ def test_fallback_has_same_summary_and_cause_slots_as_standard_report():
     summary=html.split('id="summary"')[1].split('</section>')[0]
     causes=html.split('id="causes"')[1].split('</section>')[0]
     assert 'class="report-headline"' in summary
-    assert '<h3>' in causes and '확신도:' in causes and '판단 근거' in causes
+    assert '<h3>' in causes and '판단 근거' in causes
 
 
 def test_optional_source_sections_keep_order_and_show_unknown_status_hint():

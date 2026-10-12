@@ -78,9 +78,8 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     out.append('원인 판단·조치')
     if narrative:
         for index, c in enumerate(narrative.causes):
-            out.append(f'{c.statement} · 확신도 {c.confidence}')
+            out.append(c.statement)
             if c.mechanism: out.append('판단 설명: '+c.mechanism)
-            out.extend('미확인 사항: '+v for v in c.uncertainties)
             actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
             out.extend('확인·조치: '+str(a) for a in actions if str(a).strip())
             supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))

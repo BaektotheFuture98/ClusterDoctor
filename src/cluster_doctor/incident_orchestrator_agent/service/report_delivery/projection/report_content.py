@@ -132,7 +132,7 @@ def display_narrative(report, *, analysis_failed=False):
         refs=tuple(e.evidence_id for e in report.evidence if e.record_key==rows[0].record_key)
     source=citations(refs,report.evidence)
     return Narrative(headline=' '.join(execution_summary(report.observations)),headline_citations=source,
-        causes=(CauseAssessment(statement='수집된 자료로 지연 원인을 확정할 수 없습니다.',confidence='미확인',supporting=source),))
+        causes=(CauseAssessment(statement='수집된 자료로 지연 원인을 확정할 수 없습니다.',supporting=source),))
 
 
 MASTER_DISPLAY_LIMIT = 120

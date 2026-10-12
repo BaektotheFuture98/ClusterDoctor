@@ -25,9 +25,9 @@ def example():
     narrative = Narrative(
         headline='현상과 판단 한계를 연결한 요약', headline_citations=(citation,),
         causes=(CauseAssessment(
-            statement='가능성: 처리 대기', confidence='Low',
+            statement='가능성: 처리 대기',
             mechanism='관측을 설명하는 첫 문단.\n\n조건부 영향 경로 <tag>&.',
-            uncertainties=('요청 대상 연결 미확인',), supporting=(citation,),
+            supporting=(citation,),
         ),),
         recommendations=(Recommendation(
             text='요청 대상을 먼저 식별한다. 대기와 요청 지연을 대조한다.',

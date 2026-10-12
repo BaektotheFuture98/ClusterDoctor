@@ -42,7 +42,6 @@ from cluster_doctor.incident_analysis_agent.model.time_range import (
 _logger = logging.getLogger(__name__)
 
 _SEVERITIES = ("Critical", "Warning", "Info")
-_CONFIDENCES = ("High", "Medium", "Low")
 
 
 def _as_string_list(value: object) -> object:
@@ -116,10 +115,8 @@ class DraftCause(BaseModel):
     코드가 RootCause로 변환한 뒤 실제 근거와의 일관성을 검사한다.
     """
 
-    statement: str = Field(default="", description="가장 유력한 원인 하나. 한두 문장.")
-    confidence: str = Field(default="", description="High / Medium / Low.")
-    mechanism: str = Field(default="", description="관측이 시사하는 병목과 지연을 설명하는 경로. 미확인 연결은 확정하지 않는다.")
-    uncertainties: list[str] = Field(default_factory=list, description="해당 가설에서 확인되지 않은 연결 또는 조건.")
+    statement: str = Field(default="", description="원인 판단 한 문장. 확인되지 않은 연결이 있으면 '~로 보인다'로 쓴다.")
+    mechanism: str = Field(default="", description="관측이 지연을 어떻게 설명하는지 2~3문장.")
     supporting_evidence_refs: list[str] = Field(
         default=[], description="이 결론을 뒷받침하는 Evidence id."
     )
@@ -128,17 +125,10 @@ class DraftCause(BaseModel):
     )
 
     _string_list = field_validator(
-        "uncertainties",
         "supporting_evidence_refs",
         "counter_evidence_refs",
         mode="before",
     )(_as_string_list)
-
-    @field_validator("confidence", mode="before")
-    @classmethod
-    def _normalize(cls, value: object) -> str:
-        text = str(value or "").strip().capitalize()
-        return text if text in _CONFIDENCES else ""
 
 
 class DraftSuspectPick(BaseModel):
@@ -195,8 +185,7 @@ class DraftReport(BaseModel):
     root_causes: list[DraftCause] = Field(
         default=[],
         description=(
-            "가능성이 높은 순서의 원인 후보. 근거가 부족하면 confidence를 Low로 두거나 비운다. "
-            "확정적으로 쓰지 않는다."
+            "가능성이 높은 순서의 원인 판단. 확정할 수 없으면 '~로 보인다'로 쓴다."
         ),
     )
     unresolved_questions: list[str] = Field(
@@ -269,9 +258,7 @@ class DraftReport(BaseModel):
             root_causes=tuple(
                 RootCause(
                     statement=item.statement,
-                    confidence=item.confidence,
                     mechanism=item.mechanism,
-                    uncertainties=tuple(item.uncertainties),
                     supporting_evidence_refs=tuple(item.supporting_evidence_refs),
                     counter_evidence_refs=tuple(item.counter_evidence_refs),
                 )

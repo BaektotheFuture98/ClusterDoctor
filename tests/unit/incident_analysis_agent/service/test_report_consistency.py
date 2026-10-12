@@ -11,7 +11,7 @@ def test_unrelated_findings_do_not_set_global_cause_deadline():
     late=Evidence(evidence_id='late',event_time=T0+timedelta(minutes=3),source=EvidenceSource.NODE_LOG,message='later')
     report=LogAnalysisReport(incident_id='i',analyzed_from=T0,analyzed_to=T0+timedelta(minutes=5),
         findings=(ReportFinding(title='서로 다른 초기 현상',evidence_refs=('early',)),),
-        root_causes=(RootCause(statement='후반 현상에 대한 후보',confidence='Low',supporting_evidence_refs=('late',)),))
+        root_causes=(RootCause(statement='후반 현상에 대한 후보',supporting_evidence_refs=('late',)),))
     assert not any('보다 늦다' in x for x in validate_report(report,[early,late]).issues)
 
 
@@ -31,5 +31,5 @@ def test_rounded_time_is_left_to_prompt_validation():
 
 def test_confidence_and_causal_language_are_left_to_prompt_validation():
     report=LogAnalysisReport(incident_id='i',analyzed_from=T0,analyzed_to=T0,
-        root_causes=(RootCause(statement='원인이다',confidence='High'),))
+        root_causes=(RootCause(statement='원인이다'),))
     assert not validate_report(report,[]).issues

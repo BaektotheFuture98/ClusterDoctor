@@ -11,10 +11,10 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 
 def test_verified_cause_and_action_include_visible_original_source():
     r=report('PASSED'); e=r.evidence[0]; citation=EvidenceCitation(e.evidence_id,e)
-    n=Narrative(causes=(CauseAssessment(statement='가설',confidence='Low',supporting=(citation,),contradicting=(citation,)),),
+    n=Narrative(causes=(CauseAssessment(statement='가설',supporting=(citation,),contradicting=(citation,)),),
         recommendations=(Recommendation('확인 목적',citations=(citation,)),))
     html=render_report(replace(r,narrative=n))
-    assert '가설' in html and '판단 근거' in html and '반증' in html and '확신도: Low' in html
+    assert '가설' in html and '판단 근거' in html and '반증' in html
     assert '확인 목적' in html and '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
     assert e.evidence_id not in html and 'href="#evidence' not in html
 

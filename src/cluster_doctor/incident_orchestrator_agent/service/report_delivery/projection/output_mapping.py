@@ -111,9 +111,7 @@ def to_incident_analysis_report(
             causes=tuple(
                 CauseAssessment(
                     statement=cause.statement,
-                    confidence=cause.confidence,
                     mechanism=cause.mechanism,
-                    uncertainties=cause.uncertainties,
                     supporting=citations(
                         cause.supporting_evidence_refs, tuple(evidence)
                     ),
@@ -128,17 +126,8 @@ def to_incident_analysis_report(
 
 
 def _root_cause_text(report: LogAnalysisReport) -> str:
-    """원인 후보를 한 문단으로. confidence를 함께 싣는다.
-
-    확신도를 빼면 근거가 얇은 결론과 두꺼운 결론이 리포트에서 똑같아 보인다.
-    """
-    if not report.root_causes:
-        return ""
-    parts = []
-    for cause in report.root_causes:
-        confidence = f" (확신도 {cause.confidence})" if cause.confidence else ""
-        parts.append(f"{cause.statement}{confidence}")
-    return " / ".join(parts)
+    """원인 후보를 한 문단으로."""
+    return " / ".join(cause.statement for cause in report.root_causes)
 
 
 def _quote(

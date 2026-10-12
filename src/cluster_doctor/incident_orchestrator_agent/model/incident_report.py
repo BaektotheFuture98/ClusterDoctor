@@ -1,7 +1,7 @@
 """운영자에게 전달되는 관측값, 모델 판단과 구조화된 근거 인용.
 
 관측 수치는 코드가 계산하며 모델 판단과 분리한다. LogAnalysisReport를
-projection으로 변환해 HTML과 평문에서 읽는다. 원인 후보별 확신도와 근거
+projection으로 변환해 HTML과 평문에서 읽는다. 원인 후보별 근거
 참조를 유지하며 모델의 수치 재작성이나 문자열 재파싱에 의존하지 않는다.
 """
 
@@ -21,11 +21,9 @@ from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import (
 @dataclass(frozen=True)
 class CauseAssessment:
     statement: str = ""
-    confidence: str = ""
     supporting: tuple[EvidenceCitation, ...] = ()
     contradicting: tuple[EvidenceCitation, ...] = ()
     mechanism: str = ""
-    uncertainties: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
