@@ -60,6 +60,8 @@ class NodeMetricRow:
     search_rejected_max: int = 0
     write_queue_max: int = 0
     write_rejected_max: int = 0
+    # 쿼리 로그의 target_host와 마스터 로그의 노드 주소를 이 노드에 연결하는 키.
+    node_ip: str = ""
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,7 @@ def merge_node_row(current: NodeMetricRow, new: NodeMetricRow) -> NodeMetricRow:
         search_rejected_max=max(current.search_rejected_max, new.search_rejected_max),
         write_queue_max=max(current.write_queue_max, new.write_queue_max),
         write_rejected_max=max(current.write_rejected_max, new.write_rejected_max),
+        node_ip=current.node_ip or new.node_ip,
     )
 
 
