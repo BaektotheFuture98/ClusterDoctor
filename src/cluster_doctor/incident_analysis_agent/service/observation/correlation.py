@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from statistics import median
+from typing import Literal
 
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry, query_record_key
 from cluster_doctor.incident_analysis_agent.model.observations import (
@@ -29,6 +30,11 @@ from cluster_doctor.incident_analysis_agent.service.observation.query_requests i
 SLOW_QUERY_SECONDS = Decimal("10")
 _PROFILE_ROWS = 8
 _TIER = re.compile(r"tier=([^,}\]]+)")
+# 느린 형태가 아닌 요청의 중앙값이 기준 분보다 이 배수를 넘게 늘면 전반 지연으로 본다.
+_SPREAD_RATIO = Decimal("2")
+_MIN_SAMPLES = 20
+# 기준 중앙값이 0에 가까우면 아주 작은 변화도 배수로는 커진다. 바닥값을 둔다.
+_MEDIAN_FLOOR = Decimal("0.05")
 
 
 @dataclass(frozen=True)
@@ -84,12 +90,26 @@ class QueryProfileRow:
 
 
 @dataclass(frozen=True)
+class Verdict:
+    """지연이 특정 형태의 요청에 한정됐는가, 같은 시각 다른 요청도 느려졌는가.
+
+    기준은 과거가 아니라 같은 분석 구간 안의 "느린 요청이 없던 분"이다.
+    """
+
+    scope: Literal["specific", "cluster_wide", "undetermined", "no_slow"]
+    slow_shapes: tuple[tuple[str, int, int], ...]
+    reference_median: Decimal | None
+    slow_minute_median: Decimal | None
+
+
+@dataclass(frozen=True)
 class CrossLinks:
     slow_threshold: Decimal
     overlaps: tuple[WaitOverlap, ...]
     minutes: tuple[MinuteLink, ...]
     nodes: tuple[NodeCard, ...]
     profile: tuple[QueryProfileRow, ...]
+    verdict: Verdict
 
 
 def _host(value: str | None) -> str:
@@ -195,6 +215,22 @@ def _profile(observations: Observations, slow_seconds: Decimal) -> tuple[QueryPr
     return tuple(rows[:_PROFILE_ROWS])
 
 
+def judge_spread(observations: Observations, *, slow_seconds: Decimal = SLOW_QUERY_SECONDS) -> Verdict:
+    measured = [(r, v) for r in observations.query_requests if (v := valid_runtime(r.run_time)) is not None]
+    slow_shapes = tuple(sorted({query_shape(r) for r, v in measured if v >= slow_seconds}))
+    if not slow_shapes:
+        return Verdict("no_slow", (), None, None)
+    slow_minutes = {_minute(r.timestamp) for r, v in measured if v >= slow_seconds}
+    others = [(r, v) for r, v in measured if query_shape(r) not in slow_shapes]
+    reference = [v for r, v in others if _minute(r.timestamp) not in slow_minutes]
+    during = [v for r, v in others if _minute(r.timestamp) in slow_minutes]
+    reference_median, during_median = _median(reference), _median(during)
+    if len(reference) < _MIN_SAMPLES or len(during) < _MIN_SAMPLES:
+        return Verdict("undetermined", slow_shapes, reference_median, during_median)
+    widened = during_median > max(reference_median, _MEDIAN_FLOOR) * _SPREAD_RATIO
+    return Verdict("cluster_wide" if widened else "specific", slow_shapes, reference_median, during_median)
+
+
 def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLOW_QUERY_SECONDS) -> CrossLinks:
     waits = parse_master_waits(observations.master_events)
     slow = _slow_intervals(observations, slow_seconds)
@@ -204,4 +240,5 @@ def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLO
         minutes=_minute_links(observations, waits, slow),
         nodes=_node_cards(observations, waits),
         profile=_profile(observations, slow_seconds),
+        verdict=judge_spread(observations, slow_seconds=slow_seconds),
     )
