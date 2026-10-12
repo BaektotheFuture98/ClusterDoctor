@@ -78,30 +78,51 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
                 row['conditions'] = row['conditions'][:20]
     # 위 압축으로도 넘칠 때만 선택 행을 뒤에서부터 버린다. 정확한 건수·최댓값은 남기며,
     # 메타데이터가 없다고 정상이나 0으로 읽히면 안 된다.
+    def over_budget() -> bool:
+        return len(encode()) > max_chars - 100
+
+    def shrink_cross_links() -> None:
+        # cross_links는 원본에서 파생한 요약이다. 먼저 줄이지 않으면 큰 cross_links 때문에
+        # 파생이 아닌 1차 데이터(evidence, slow_executions)가 먼저 비워진다.
+        # verdict는 판정 자체이므로 어떤 경우에도 버리지 않는다.
+        links = data['cross_links']
+
+        def drop(field: str, index: int) -> None:
+            links[field].pop(index)
+            omissions[f'cross_links.{field}'] = omissions.get(f'cross_links.{field}', 0) + 1
+
+        # 조용한 분(느린 쿼리·마스터 대기 모두 0)은 정보가 가장 적어 먼저 버린다.
+        minutes = links['minutes']
+        for index in range(len(minutes) - 1, -1, -1):
+            if not over_budget():
+                return
+            if minutes[index]['slow_queries'] == 0 and minutes[index]['master_waits'] == 0:
+                drop('minutes', index)
+        for field in ('minutes', 'master_wait_overlaps', 'node_cards', 'slow_query_profile'):
+            while links[field] and over_budget():
+                drop(field, len(links[field]) - 1)
+
+    if over_budget():
+        shrink_cross_links()
     for field in ('node_metrics', 'evidence', 'source_statuses', 'slow_executions', 'minute_observations'):
-        while data[field] and len(encode()) > max_chars - 100:
+        while data[field] and over_budget():
             data[field].pop()
             omissions[field] = omissions.get(field, 0) + 1
-    while len(encode()) > max_chars - 100:
+    while over_budget():
         # 동률 노드 목록은 클러스터 규모만큼 길어질 수 있다. 목록만 줄이고 최댓값은 코드가 계산한 그대로 둔다.
         ties = [entry['nodes'] for entry in data['node_metric_maxima'].values() if entry['nodes']]
         if not ties:
             break
         max(ties, key=len).pop()
         omissions['maximum_node_names'] = omissions.get('maximum_node_names', 0) + 1
-    # evidence가 위에서 잘렸을 수 있다. 남아 있지 않은 근거 id를 cross_links가 인용하지 않게 지운다.
+    # 모든 줄이기가 끝난 뒤의 evidence 기준으로, 남아 있지 않은 근거 id를 cross_links가 인용하지 않게 지운다.
+    # (id를 null로 바꾸면 글자 수가 줄기만 하므로 예산을 다시 넘지 않는다.)
     kept_ids = {item['evidence_id'] for item in data['evidence']}
     for overlap in data['cross_links']['master_wait_overlaps']:
         for key in ('overlap_under_both_assumptions', 'overlap_under_one_assumption'):
             for interval in overlap[key]:
                 if interval['evidence_id'] not in kept_ids:
                     interval['evidence_id'] = None
-    # cross_links는 마지막에 줄인다. verdict는 판정 자체이므로 어떤 경우에도 버리지 않는다.
-    for field in ('minutes', 'master_wait_overlaps', 'node_cards', 'slow_query_profile'):
-        items = data['cross_links'][field]
-        while items and len(encode()) > max_chars - 100:
-            items.pop()
-            omissions[f'cross_links.{field}'] = omissions.get(f'cross_links.{field}', 0) + 1
     return encode()
 
 

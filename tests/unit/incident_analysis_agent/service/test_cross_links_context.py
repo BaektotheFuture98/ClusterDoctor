@@ -5,7 +5,7 @@ from decimal import Decimal
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry, query_record_key
-from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent, Observations
+from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent, Observations, TimelineRow
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
 
 FOLLOWER = (
@@ -75,7 +75,7 @@ def test_cross_links_shrinks_within_budget_and_records_omissions():
     assert data["cross_links"]["verdict"]["scope"] == "no_slow"
 
 
-def test_cross_links_drops_evidence_id_that_trimming_removed():
+def test_cross_links_only_cite_evidence_ids_that_survived_trimming():
     query = _query(datetime(2026, 10, 11, 19, 3, 28, tzinfo=KST))
     evidence = Evidence(evidence_id="E7", event_time=query.reg_date, source=EvidenceSource.QUERY_LOG,
                         message="run_time=10.88", record_key=query_record_key(query))
@@ -83,11 +83,12 @@ def test_cross_links_drops_evidence_id_that_trimming_removed():
                                 master_events=(_event(37, _follower("RC6-18", "192.168.0.143")),))
     full = len(build_analysis_context(observations, [evidence], max_chars=10**7))
 
-    data = json.loads(build_analysis_context(observations, [evidence], max_chars=full - 50))
-
-    assert data["evidence"] == []
-    [overlap] = data["cross_links"]["master_wait_overlaps"]
-    assert overlap["overlap_under_both_assumptions"][0]["evidence_id"] is None
+    for limit in range(full, 0, -25):
+        data = json.loads(build_analysis_context(observations, [evidence], max_chars=limit))
+        kept = {item["evidence_id"] for item in data["evidence"]}
+        for overlap in data["cross_links"]["master_wait_overlaps"]:
+            for key in ("overlap_under_both_assumptions", "overlap_under_one_assumption"):
+                assert all(i["evidence_id"] in kept | {None} for i in overlap[key])
 
 
 def test_payload_records_omitted_counts_and_keeps_real_waits_first():
@@ -111,3 +112,34 @@ def test_payload_records_omitted_counts_and_keeps_real_waits_first():
     assert len(overlap["overlap_under_both_assumptions"]) == 10
     assert payload["omitted"]["overlap_under_both_assumptions"] == 2
     assert "minutes" not in payload["omitted"]
+
+
+def test_large_cross_links_shrinks_before_primary_fields():
+    events = tuple(_event(37, _follower("RC6-18", "192.168.0.143"), minute=m) for m in range(0, 40))
+    query = _query(datetime(2026, 10, 11, 19, 3, 28, tzinfo=KST))
+    evidence = Evidence(evidence_id="E7", event_time=query.reg_date, source=EvidenceSource.QUERY_LOG,
+                        message="run_time=10.88", record_key=query_record_key(query))
+    observations = Observations(query_requests=(query,), master_events=events)
+    full = len(build_analysis_context(observations, [evidence], max_chars=10**7))
+
+    raw = build_analysis_context(observations, [evidence], max_chars=full - 1500)
+
+    data = json.loads(raw)
+    assert len(raw) <= full - 1500
+    assert data["evidence"] and data["slow_executions"]
+    assert any(key.startswith("cross_links.") for key in data["context_omissions"])
+    assert "evidence" not in data["context_omissions"]
+    assert "slow_executions" not in data["context_omissions"]
+
+
+def test_quiet_minutes_are_dropped_before_active_minutes():
+    # 19시 0~29분은 느린 쿼리도 마스터 대기도 없는 조용한 분, 19시 30분만 마스터 대기가 있는 활성 분이다.
+    timeline = tuple(TimelineRow(minute=datetime(2026, 10, 11, 19, m, tzinfo=KST)) for m in range(0, 30))
+    events = (_event(37, _follower("RC6-18", "192.168.0.143"), minute=30),)
+    observations = Observations(timeline=timeline, master_events=events)
+    full = len(build_analysis_context(observations, [], max_chars=10**7))
+
+    data = json.loads(build_analysis_context(observations, [], max_chars=full - 400))
+
+    assert data["context_omissions"]["cross_links.minutes"] > 0
+    assert any(m["master_waits"] == 1 for m in data["cross_links"]["minutes"])
