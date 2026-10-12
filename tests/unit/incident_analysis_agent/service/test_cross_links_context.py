@@ -37,3 +37,77 @@ def test_context_carries_cross_links_with_evidence_ids():
     assert overlap["overlap_under_both_assumptions"][0]["evidence_id"] == "E7"
     assert data["minutes"][0]["master_waits"] == 1
     assert data["verdict"]["scope"] == "undetermined"
+
+
+def _query(at: datetime, **overrides) -> QueryLogEntry:
+    values = dict(
+        reg_date=at, host="h", run_time=Decimal("10.88"), success="Y", s_date=0, e_date=0,
+        date_range=365, keyword=(), target_host="192.168.1.33", index_name="a", conditions=(),
+        cmd="agg", service="", env="", project="", company="", user="", search_count=0,
+        etc="", cluster="",
+    )
+    values.update(overrides)
+    return QueryLogEntry(**values)
+
+
+def _follower(node: str, ip: str, *, with_sent: bool = True) -> str:
+    line = FOLLOWER.replace("RC6-18", node).replace("192.168.0.143", ip)
+    return line if with_sent else line.replace("sent [13.4s/13415ms] ago, ", "")
+
+
+def _event(second: int, line: str, minute: int = 3) -> MasterEvent:
+    return MasterEvent(timestamp=datetime(2026, 10, 11, 19, minute, second, tzinfo=KST), node="RC13-03",
+                       level="WARN", logger="o.e.t.TransportService", line=line)
+
+
+def test_cross_links_shrinks_within_budget_and_records_omissions():
+    # 분 단위 줄이 많아 cross_links가 예산을 넘기는 입력. 다른 필드는 비어 있다.
+    events = tuple(_event(37, _follower("RC6-18", "192.168.0.143"), minute=m) for m in range(0, 40))
+    observations = Observations(master_events=events)
+    full = len(build_analysis_context(observations, [], max_chars=10**7))
+    limit = full - 1500
+
+    raw = build_analysis_context(observations, [], max_chars=limit)
+
+    assert len(raw) <= limit
+    data = json.loads(raw)
+    assert data["context_omissions"]["cross_links.minutes"] > 0
+    assert data["cross_links"]["verdict"]["scope"] == "no_slow"
+
+
+def test_cross_links_drops_evidence_id_that_trimming_removed():
+    query = _query(datetime(2026, 10, 11, 19, 3, 28, tzinfo=KST))
+    evidence = Evidence(evidence_id="E7", event_time=query.reg_date, source=EvidenceSource.QUERY_LOG,
+                        message="run_time=10.88", record_key=query_record_key(query))
+    observations = Observations(query_requests=(query,),
+                                master_events=(_event(37, _follower("RC6-18", "192.168.0.143")),))
+    full = len(build_analysis_context(observations, [evidence], max_chars=10**7))
+
+    data = json.loads(build_analysis_context(observations, [evidence], max_chars=full - 50))
+
+    assert data["evidence"] == []
+    [overlap] = data["cross_links"]["master_wait_overlaps"]
+    assert overlap["overlap_under_both_assumptions"][0]["evidence_id"] is None
+
+
+def test_payload_records_omitted_counts_and_keeps_real_waits_first():
+    from cluster_doctor.incident_analysis_agent.service.observation.correlation import (
+        build_cross_links,
+        cross_links_payload,
+    )
+
+    # 앞 이름순 노드는 sent_at이 없는 대기, 뒤 이름순 노드 하나만 실제 늦은 응답이다.
+    events = [_event(10 + i, _follower(f"A{i:02d}", f"10.0.0.{i}", with_sent=False)) for i in range(11)]
+    events.append(_event(37, _follower("Z99", "10.0.0.99")))
+    queries = tuple(_query(datetime(2026, 10, 11, 19, 3, 30, i * 50000, tzinfo=KST)) for i in range(12))
+    links = build_cross_links(Observations(query_requests=queries, master_events=tuple(events)))
+
+    payload = cross_links_payload(links, {})
+
+    assert payload["node_cards"][0]["node"] == "Z99"
+    assert len(payload["node_cards"]) == 10
+    assert payload["omitted"]["node_cards"] == 2
+    [overlap] = payload["master_wait_overlaps"]
+    assert len(overlap["overlap_under_both_assumptions"]) == 10
+    assert payload["omitted"]["overlap_under_both_assumptions"] == 2
+    assert "minutes" not in payload["omitted"]

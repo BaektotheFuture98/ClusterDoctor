@@ -89,6 +89,19 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
             break
         max(ties, key=len).pop()
         omissions['maximum_node_names'] = omissions.get('maximum_node_names', 0) + 1
+    # evidence가 위에서 잘렸을 수 있다. 남아 있지 않은 근거 id를 cross_links가 인용하지 않게 지운다.
+    kept_ids = {item['evidence_id'] for item in data['evidence']}
+    for overlap in data['cross_links']['master_wait_overlaps']:
+        for key in ('overlap_under_both_assumptions', 'overlap_under_one_assumption'):
+            for interval in overlap[key]:
+                if interval['evidence_id'] not in kept_ids:
+                    interval['evidence_id'] = None
+    # cross_links는 마지막에 줄인다. verdict는 판정 자체이므로 어떤 경우에도 버리지 않는다.
+    for field in ('minutes', 'master_wait_overlaps', 'node_cards', 'slow_query_profile'):
+        items = data['cross_links'][field]
+        while items and len(encode()) > max_chars - 100:
+            items.pop()
+            omissions[f'cross_links.{field}'] = omissions.get(f'cross_links.{field}', 0) + 1
     return encode()
 
 

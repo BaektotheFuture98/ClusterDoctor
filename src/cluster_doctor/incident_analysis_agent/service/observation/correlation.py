@@ -246,6 +246,8 @@ def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLO
 
 
 _PAYLOAD_LIST_LIMIT = 10
+# 한 번의 분석은 최대 60분이므로 분 단위 목록의 상한도 같다.
+_PAYLOAD_MINUTE_LIMIT = 60
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -256,14 +258,52 @@ def _text(value: Decimal | None) -> str | None:
     return str(value) if value is not None else None
 
 
+def _node_priority(card: NodeCard) -> tuple:
+    # 상한에 걸려도 실제 늦은 응답(sent_at이 있는 대기)이 있는 노드가 먼저 남도록 정렬한다.
+    return (not any(w.sent_at for w in card.waits), -len(card.waits), card.node)
+
+
 def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict:
-    """모델 입력용 투영. 근거 id가 있는 쿼리는 id를 같이 실어 인용할 수 있게 한다."""
+    """모델 입력용 투영. 근거 id가 있는 쿼리는 id를 같이 실어 인용할 수 있게 한다.
+
+    목록을 상한으로 자르면 그 건수를 ``omitted``에 남겨, 잘린 것이 없는 것으로 읽히지 않게 한다.
+    """
+    omitted: dict[str, int] = {}
+
+    def cut(name: str, items: list | tuple, limit: int) -> list:
+        if len(items) > limit:
+            omitted[name] = omitted.get(name, 0) + len(items) - limit
+        return list(items[:limit])
+
     def interval(query: QueryInterval) -> dict:
         return {"evidence_id": evidence_ids.get(query.record_key), "logged_at": _iso(query.logged_at),
                 "execution_seconds": str(query.seconds), "cmd": query.cmd}
 
+    def overlap(o: WaitOverlap) -> dict:
+        return {
+            "master_event_time": _iso(o.wait.event.timestamp),
+            "target_node": o.wait.target_node or o.wait.target_node_id,
+            "action": o.wait.action,
+            "waiting_from": _iso(o.wait.sent_at),
+            "waiting_to": _iso(o.wait.received_at),
+            "timeout_ms": o.wait.timeout_ms,
+            "overlap_under_both_assumptions": [
+                interval(q) for q in cut("overlap_under_both_assumptions", o.both, _PAYLOAD_LIST_LIMIT)],
+            "overlap_under_one_assumption": [
+                interval(q) for q in cut("overlap_under_one_assumption", o.one_assumption, _PAYLOAD_LIST_LIMIT)],
+        }
+
+    def node(c: NodeCard) -> dict:
+        return {
+            "node": c.node, "node_ip": c.node_ip, "tier": c.tier, "master_waits": len(c.waits),
+            "metrics_max": ({"cpu": c.metrics.cpu_max, "jvm_heap": c.metrics.jvm_heap_max,
+                             "search_queue": c.metrics.search_queue_max} if c.metrics else None),
+            "node_log": [{"status": s.status, "row_count": s.row_count, "error": s.error} for s in c.node_log],
+            "queries_targeting_node": c.queries_targeting,
+        }
+
     verdict = links.verdict
-    return {
+    payload = {
         "query_time_basis": "쿼리 로그 reg_date가 시작/종료 중 무엇인지 확정되지 않아 두 가정을 모두 계산했다",
         "slow_threshold_seconds": str(links.slow_threshold),
         "verdict": {
@@ -272,27 +312,16 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict
             "reference_median_seconds": _text(verdict.reference_median),
             "slow_minute_median_seconds": _text(verdict.slow_minute_median),
         },
-        "master_wait_overlaps": [{
-            "master_event_time": _iso(o.wait.event.timestamp),
-            "target_node": o.wait.target_node or o.wait.target_node_id,
-            "action": o.wait.action,
-            "waiting_from": _iso(o.wait.sent_at),
-            "waiting_to": _iso(o.wait.received_at),
-            "timeout_ms": o.wait.timeout_ms,
-            "overlap_under_both_assumptions": [interval(q) for q in o.both[:_PAYLOAD_LIST_LIMIT]],
-            "overlap_under_one_assumption": [interval(q) for q in o.one_assumption[:_PAYLOAD_LIST_LIMIT]],
-        } for o in links.overlaps],
+        "master_wait_overlaps": [overlap(o) for o in cut("master_wait_overlaps", links.overlaps, _PAYLOAD_LIST_LIMIT)],
         "minutes": [{"minute": _iso(m.minute), "slow_queries": m.slow_queries, "master_waits": m.master_waits}
-                    for m in links.minutes],
-        "node_cards": [{
-            "node": c.node, "node_ip": c.node_ip, "tier": c.tier, "master_waits": len(c.waits),
-            "metrics_max": ({"cpu": c.metrics.cpu_max, "jvm_heap": c.metrics.jvm_heap_max,
-                             "search_queue": c.metrics.search_queue_max} if c.metrics else None),
-            "node_log": [{"status": s.status, "row_count": s.row_count, "error": s.error} for s in c.node_log],
-            "queries_targeting_node": c.queries_targeting,
-        } for c in links.nodes[:_PAYLOAD_LIST_LIMIT]],
+                    for m in cut("minutes", links.minutes, _PAYLOAD_MINUTE_LIMIT)],
+        "node_cards": [node(c) for c in cut("node_cards", sorted(links.nodes, key=_node_priority),
+                                            _PAYLOAD_LIST_LIMIT)],
         "slow_query_profile": [{
             "cmd": p.cmd, "date_range": p.date_range, "index_count": p.index_count, "total": p.total,
             "slow": p.slow, "median_seconds": _text(p.median_seconds), "max_seconds": _text(p.max_seconds),
         } for p in links.profile],
     }
+    if omitted:
+        payload["omitted"] = omitted
+    return payload
