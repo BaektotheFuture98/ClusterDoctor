@@ -159,7 +159,7 @@ class DraftWindowSuggestion(BaseModel):
 
 class DraftRecommendation(BaseModel):
     cause_index: int | None = Field(default=None, ge=0, description="대응하는 root_causes의 0부터 시작하는 인덱스. 공통 조사는 null.")
-    text: str = Field(default="", description="근거와 연결된 확인 절차 또는 조치.")
+    text: str = Field(default="", description="대상이 들어간 한 줄 조치(40자 내외).")
     evidence_refs: list[str] = Field(default_factory=list)
 
     _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
@@ -193,7 +193,7 @@ class DraftReport(BaseModel):
     )
     recommendations: list[DraftRecommendation] = Field(
         default=[],
-        description="우선순위 순서로 운영자가 취할 수 있는 확인 절차와 조치. 근거 없는 일반론은 쓰지 않는다.",
+        description="우선순위 순서의 한 줄 조치. 근거 없는 일반론은 쓰지 않는다.",
     )
     suspect_picks: list[DraftSuspectPick] = Field(
         default=[],
