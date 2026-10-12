@@ -4,6 +4,9 @@ from cluster_doctor.incident_analysis_agent.service.observation.correlation impo
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 
 
+_OVERLAP_ROWS = 20
+
+
 def _time(moment, fmt='%H:%M:%S.%f'):
     text = moment.astimezone(KST).strftime(fmt)
     return text[:-3] if fmt.endswith('%f') else text
@@ -20,22 +23,32 @@ def _node_log(card: NodeCard) -> str:
         return '조사 대상 아님'
     texts = []
     for status in card.node_log:
+        # row_count가 비어 있는 것을 0줄로 읽으면 안 된다. 성공이 확인된 0줄만 그렇게 쓴다.
         if status.status == 'failed':
             texts.append(f'수집 실패 · {status.error}')
-        elif not status.row_count:
+        elif status.status == 'ok' and status.row_count == 0:
             texts.append('조회 성공 · 0줄')
-        else:
+        elif status.row_count:
             texts.append(f'{status.row_count}줄 수집')
+        else:
+            texts.append('상태 미확인')
     return ' / '.join(esc(t) for t in texts)
 
 
-def render_cross_source(links: CrossLinks) -> str:
+def _minute_start(query: QueryInterval):
+    return query.logged_at.replace(second=0, microsecond=0)
+
+
+def render_cross_source(links: CrossLinks, *, master_note_text: str = '') -> str:
     out = ['<section id="cross-source"><h2>소스 간 연결</h2>',
            '<p class="hint">쿼리 로그 시각이 요청 시작인지 종료인지 확정되지 않아 두 경우를 모두 계산했습니다.</p>']
-    if links.overlaps:
+    # 겹치는 쿼리가 없는 대기는 표에서 정보가 없다. 건수만 적고 행은 줄인다.
+    shown = [o for o in links.overlaps if o.both or o.one_assumption]
+    empty_count = len(links.overlaps) - len(shown)
+    if shown:
         out.append('<h3>마스터 대기 경고와 느린 쿼리의 겹침</h3><table><thead><tr><th>마스터 경고</th>'
                    '<th>응답 대기 구간</th><th>두 가정 모두 겹침</th><th>한 가정에서만 겹침</th></tr></thead><tbody>')
-        for overlap in links.overlaps:
+        for overlap in shown[:_OVERLAP_ROWS]:
             wait = overlap.wait
             timeout = f' · 제한 {wait.timeout_ms / 1000:.1f}s' if wait.timeout_ms is not None else ''
             out.append(
@@ -43,10 +56,17 @@ def render_cross_source(links: CrossLinks) -> str:
                 f'<td>{esc(_time(wait.sent_at))} ~ {esc(_time(wait.received_at))}</td>'
                 f'<td>{_queries(overlap.both)}</td><td>{_queries(overlap.one_assumption)}</td></tr>')
         out.append('</tbody></table>')
-    else:
-        out.append('<p>연결할 마스터 대기 경고가 수집되지 않았습니다.</p>')
+        if len(shown) > _OVERLAP_ROWS:
+            out.append(f'<p class="hint">외 {len(shown) - _OVERLAP_ROWS}건</p>')
+    if empty_count:
+        out.append(f'<p class="hint">겹치는 느린 쿼리가 없는 마스터 대기 경고 {empty_count}건</p>')
+    if not links.overlaps:
+        out.append(f'<p>마스터 로그 {esc(master_note_text)}</p>' if master_note_text
+                   else '<p>연결할 마스터 대기 경고가 수집되지 않았습니다.</p>')
+    # 그 분에 기록된 느린 쿼리가 어느 대기와도 겹치지 않을 때만 "대응하는 경고 없음"이라고 쓴다.
+    overlapped_minutes = {_minute_start(q) for o in links.overlaps for q in (*o.both, *o.one_assumption)}
     for minute in links.minutes:
-        if minute.slow_queries and not minute.master_waits:
+        if minute.slow_queries and not minute.master_waits and minute.minute not in overlapped_minutes:
             out.append(f'<p>{esc(_time(minute.minute, "%H:%M"))} 지연에는 대응하는 마스터 대기 경고가 수집되지 않았습니다.</p>')
     if links.nodes:
         out.append('<h3>경고 대상 노드</h3><table><thead><tr><th>노드</th><th>IP · 티어</th><th>마스터 경고</th>'

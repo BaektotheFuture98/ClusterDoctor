@@ -9,7 +9,7 @@ from cluster_doctor.incident_analysis_agent.service.observation.query_requests i
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, is_validation_diagnostic, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, query_log_note, summarize_source
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_conclusion, render_metric_cards
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.cross_source import render_cross_source
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
@@ -17,6 +17,8 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import render_ssh_logs, ssh_evidence
 
+# 접힌 근거는 인쇄 시 CSS만으로 열리지 않는 브라우저가 있어 인쇄 직전에 펼친다. 고정 문자열이며 입력을 담지 않는다.
+PRINT_OPEN_SCRIPT = '<script>addEventListener("beforeprint",()=>document.querySelectorAll("details").forEach(d=>d.open=true))</script>'
 DEMO_GAP = "디자인 미리보기용 가상 데이터입니다. 실제 장애 분석 결과가 아닙니다."
 
 _EXTRA_CSS='''
@@ -32,7 +34,7 @@ table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}th,t
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,monospace;margin:0}svg{width:100%;height:auto}svg text{font-size:12px;fill:#35506b}.hint{color:#52657b}
 .timeline-event h3{margin:0 0 8px}.quote{background:#f5f7fb;padding:12px;border-left:3px solid #adc8ee;margin:10px 0}
 @media(max-width:700px){.wrap{padding:12px}section{padding:14px}table{font-size:11px}}
-@media print{body{background:white}.wrap{max-width:none;padding:0}section{border-radius:0;box-shadow:none}svg{display:block!important}thead{display:table-header-group}tr,.quote{break-inside:avoid}pre{overflow:visible}a{text-decoration:none}details#evidence>*{display:block}}
+@media print{body{background:white}.wrap{max-width:none;padding:0}section{border-radius:0;box-shadow:none}svg{display:block!important}thead{display:table-header-group}tr,.quote{break-inside:avoid}pre{overflow:visible}a{text-decoration:none}details#evidence>*{display:block}details::details-content{content-visibility:visible;display:block}}
 '''
 
 
@@ -47,7 +49,7 @@ def render_paragraphs(text: str, *, css_class: str = '') -> str:
                    for paragraph in text.replace('\r\n', '\n').split('\n\n') if paragraph.strip())
 
 
-def _notices(obs, gaps, analysis_failed) -> str:
+def _notices(obs, gaps) -> str:
     out=''
     for status in (s for s in obs.source_statuses if s.status=='failed'):
         out+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
@@ -126,12 +128,13 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     if DEMO_GAP in gaps:header+='<p class="hint">합성 데이터로 실제 보고서 생성 경로를 실행한 예시입니다.</p>'
     header+='</header>'
     headline=render_paragraphs(narrative.headline, css_class='report-headline') if narrative and narrative.headline else ''
-    conclusion=render_conclusion(links,headline_html=headline,notices_html=_notices(obs,gaps,analysis_failed),analysis_failed=analysis_failed)
+    conclusion=render_conclusion(links,headline_html=headline,notices_html=_notices(obs,gaps),analysis_failed=analysis_failed)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report))
-    evidence=('<details id="evidence"><summary>근거 보기</summary>'+render_cross_source(links)+_timeline(report,narrative)
+    master_text=master_note(obs) if summarize_source(obs.source_statuses,'master_log').state=='failed' else ''
+    evidence=('<details id="evidence"><summary>근거 보기</summary>'+render_cross_source(links,master_note_text=master_text)+_timeline(report,narrative)
               +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative)+'</details>')
     body=(header+conclusion+render_metric_cards(rows,links)+render_query_trend(project_query_trend(obs),links)
           +ranking+_causes(narrative)+_actions(narrative)+evidence)
-    return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title><style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'
+    return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'

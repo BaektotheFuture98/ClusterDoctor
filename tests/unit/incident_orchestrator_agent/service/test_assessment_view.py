@@ -1,3 +1,4 @@
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import PRINT_OPEN_SCRIPT
 """Actual-report interpretation and candidate attribution contracts."""
 from dataclasses import replace
 import pytest
@@ -39,7 +40,7 @@ def test_finding_title_detail_are_escaped():
     r=report('PASSED')
     html=render_report(replace(r,narrative=Narrative(findings=(Finding(severity='Warning',title='<b>title</b>',detail='<script>detail</script>'),))))
     assert '&lt;b&gt;title&lt;/b&gt;' in html and '&lt;script&gt;detail&lt;/script&gt;' in html
-    assert '<script>' not in html
+    assert '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
 
 
 def test_pick_reason_is_attached_only_to_unambiguous_actual_record():

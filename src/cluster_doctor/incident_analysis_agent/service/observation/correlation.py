@@ -97,10 +97,12 @@ class Verdict:
     기준은 과거가 아니라 같은 분석 구간 안의 "느린 요청이 없던 분"이다.
     """
 
-    scope: Literal["specific", "cluster_wide", "undetermined", "no_slow"]
+    scope: Literal["specific", "cluster_wide", "undetermined", "no_slow", "no_query_log"]
     slow_shapes: tuple[tuple[str, int, int], ...]
     reference_median: Decimal | None
     slow_minute_median: Decimal | None
+    # no_query_log일 때만 쓴다. 수집 실패와 "수집했지만 비어 있음"을 문장에서 구분하기 위함이다.
+    query_log_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,8 @@ class CrossLinks:
     nodes: tuple[NodeCard, ...]
     profile: tuple[QueryProfileRow, ...]
     verdict: Verdict
+    # 프로파일은 상한으로 잘리므로 자르기 전 형태 수를 남겨 잘린 건수를 알린다.
+    profile_total: int = 0
 
 
 def _host(value: str | None) -> str:
@@ -169,8 +173,13 @@ def _minute_links(observations: Observations, waits: tuple[MasterWait, ...],
         slow_by_minute[_minute(query.logged_at)] += 1
     waits_by_minute: dict[datetime, int] = defaultdict(int)
     for wait in waits:
-        if wait.event.timestamp is not None:
-            waits_by_minute[_minute(wait.event.timestamp)] += 1
+        if wait.sent_at is None or wait.received_at is None:
+            continue
+        # 겹침 표와 같은 기준이 되도록 대기 구간이 걸치는 모든 분에 센다.
+        minute = _minute(wait.sent_at)
+        while minute <= wait.received_at:
+            waits_by_minute[minute] += 1
+            minute += timedelta(minutes=1)
     minutes = {row.minute for row in observations.timeline} | set(slow_by_minute) | set(waits_by_minute)
     return tuple(MinuteLink(m, slow_by_minute.get(m, 0), waits_by_minute.get(m, 0)) for m in sorted(minutes))
 
@@ -213,10 +222,14 @@ def _profile(observations: Observations, slow_seconds: Decimal) -> tuple[QueryPr
             max_seconds=max(measured) if measured else None,
         ))
     rows.sort(key=lambda r: (-r.slow, -(r.max_seconds or 0), -r.total, r.cmd))
-    return tuple(rows[:_PROFILE_ROWS])
+    return tuple(rows)
 
 
 def judge_spread(observations: Observations, *, slow_seconds: Decimal = SLOW_QUERY_SECONDS) -> Verdict:
+    if not observations.query_requests:
+        # 로그가 없는 것은 느린 요청이 없다는 뜻이 아니다. 수집 실패 여부만 따로 남긴다.
+        failed = any(s.source == "es_query_log" and s.status == "failed" for s in observations.source_statuses)
+        return Verdict("no_query_log", (), None, None, query_log_failed=failed)
     measured = [(r, v) for r in observations.query_requests if (v := valid_runtime(r.run_time)) is not None]
     slow_shapes = tuple(sorted({query_shape(r) for r, v in measured if v >= slow_seconds}))
     if not slow_shapes:
@@ -235,13 +248,15 @@ def judge_spread(observations: Observations, *, slow_seconds: Decimal = SLOW_QUE
 def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLOW_QUERY_SECONDS) -> CrossLinks:
     waits = parse_master_waits(observations.master_events)
     slow = _slow_intervals(observations, slow_seconds)
+    profile = _profile(observations, slow_seconds)
     return CrossLinks(
         slow_threshold=slow_seconds,
         overlaps=_wait_overlaps(waits, slow),
         minutes=_minute_links(observations, waits, slow),
         nodes=_node_cards(observations, waits),
-        profile=_profile(observations, slow_seconds),
+        profile=profile[:_PROFILE_ROWS],
         verdict=judge_spread(observations, slow_seconds=slow_seconds),
+        profile_total=len(profile),
     )
 
 
@@ -256,6 +271,11 @@ def _iso(moment: datetime | None) -> str | None:
 
 def _text(value: Decimal | None) -> str | None:
     return str(value) if value is not None else None
+
+
+def _overlap_priority(overlap: WaitOverlap) -> tuple:
+    # 상한에 걸려도 두 가정 모두에서 겹친 대기가 먼저 남도록, 시각순이 아니라 겹침의 확실성 순으로 정렬한다.
+    return (not overlap.both, -len(overlap.both), -len(overlap.one_assumption), overlap.wait.sent_at)
 
 
 def _node_priority(card: NodeCard) -> tuple:
@@ -296,6 +316,7 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict
     def node(c: NodeCard) -> dict:
         return {
             "node": c.node, "node_ip": c.node_ip, "tier": c.tier, "master_waits": len(c.waits),
+            "late_responses": sum(1 for w in c.waits if w.sent_at),
             "metrics_max": ({"cpu": c.metrics.cpu_max, "jvm_heap": c.metrics.jvm_heap_max,
                              "search_queue": c.metrics.search_queue_max} if c.metrics else None),
             "node_log": [{"status": s.status, "row_count": s.row_count, "error": s.error} for s in c.node_log],
@@ -303,6 +324,14 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict
         }
 
     verdict = links.verdict
+    # 겹치는 쿼리가 없는 대기는 정보가 없어 목록에서 빼고 건수만 남긴다.
+    with_queries = sorted((o for o in links.overlaps if o.both or o.one_assumption), key=_overlap_priority)
+    without_queries = len(links.overlaps) - len(with_queries)
+    if without_queries:
+        omitted["master_wait_overlaps_without_queries"] = without_queries
+    profile_cut = links.profile_total - len(links.profile)
+    if profile_cut > 0:
+        omitted["slow_query_profile"] = profile_cut
     payload = {
         "query_time_basis": "쿼리 로그 reg_date가 시작/종료 중 무엇인지 확정되지 않아 두 가정을 모두 계산했다",
         "slow_threshold_seconds": str(links.slow_threshold),
@@ -312,7 +341,7 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict
             "reference_median_seconds": _text(verdict.reference_median),
             "slow_minute_median_seconds": _text(verdict.slow_minute_median),
         },
-        "master_wait_overlaps": [overlap(o) for o in cut("master_wait_overlaps", links.overlaps, _PAYLOAD_LIST_LIMIT)],
+        "master_wait_overlaps": [overlap(o) for o in cut("master_wait_overlaps", with_queries, _PAYLOAD_LIST_LIMIT)],
         "minutes": [{"minute": _iso(m.minute), "slow_queries": m.slow_queries, "master_waits": m.master_waits}
                     for m in cut("minutes", links.minutes, _PAYLOAD_MINUTE_LIMIT)],
         "node_cards": [node(c) for c in cut("node_cards", sorted(links.nodes, key=_node_priority),
