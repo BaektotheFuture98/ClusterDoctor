@@ -75,16 +75,23 @@ def _render_chart(points: tuple[QueryTrendPoint, ...], *, counts: bool) -> str:
     return ''.join(out + marks) + '</svg></figure>'
 
 
-def render_query_trend(points: tuple[QueryTrendPoint, ...]) -> str:
+def render_query_trend(points: tuple[QueryTrendPoint, ...], links=None) -> str:
     if not points:
         return '<section id="query-trend"><h2>쿼리 실행 추이</h2><p>추이 자료 없음</p></section>'
     out = ['<section id="query-trend"><h2>쿼리 실행 추이</h2>',
            _render_chart(points, counts=True), _render_chart(points, counts=False)]
     if any(p.status == 'limited' or (p.end-p.start).total_seconds() < 60 for p in points):
         out.append('<p class="hint">연한 막대: 부분 수집 구간</p>')
-    out.append('<table class="trend-values"><thead><tr><th>관측 구간</th><th>실행 로그</th><th>최대(s)</th><th>수집</th></tr></thead><tbody>')
+    minutes = {m.minute: m for m in links.minutes} if links else {}
+    extra_head = f'<th>≥{_number(links.slow_threshold)}s</th><th>마스터 대기 경고</th>' if links else ''
+    out.append('<table class="trend-values"><thead><tr><th>관측 구간</th><th>실행 로그</th><th>최대(s)</th>'
+               f'<th>수집</th>{extra_head}</tr></thead><tbody>')
     for point in points:
         count = point.count if point.count is not None else '—'
         runtime = _number(point.maximum_seconds) if point.maximum_seconds is not None else '—'
-        out.append(f'<tr><td>{point.start.astimezone(KST):%H:%M:%S} ~ {point.end.astimezone(KST):%H:%M:%S}</td><td>{count}</td><td>{runtime}</td><td>{_NAMES[point.status]}</td></tr>')
+        link = minutes.get(point.minute)
+        extra = (f'<td>{link.slow_queries if link else 0}</td><td>{link.master_waits if link else 0}</td>'
+                 if links else '')
+        out.append(f'<tr><td>{point.start.astimezone(KST):%H:%M:%S} ~ {point.end.astimezone(KST):%H:%M:%S}</td>'
+                   f'<td>{count}</td><td>{runtime}</td><td>{_NAMES[point.status]}</td>{extra}</tr>')
     return ''.join(out) + '</tbody></table></section>'
