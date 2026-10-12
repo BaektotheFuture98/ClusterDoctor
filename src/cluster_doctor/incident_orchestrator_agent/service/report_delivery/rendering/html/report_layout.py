@@ -108,13 +108,19 @@ def _actions(narrative) -> str:
 def _citations(narrative) -> str:
     if not narrative:
         return ''
-    cited=unique_citations(narrative.headline_citations,
-        *(cause.supporting for cause in narrative.causes), *(cause.contradicting for cause in narrative.causes),
+    # 반증 인용은 지지 근거처럼 읽히지 않도록 따로 모으고, 지지와 반증에 모두 걸린 근거는 반증 쪽에만 둔다.
+    contradicting=unique_citations(*(cause.contradicting for cause in narrative.causes))
+    contradicting_ids={c.evidence_id for c in contradicting}
+    cited=tuple(c for c in unique_citations(narrative.headline_citations,
+        *(cause.supporting for cause in narrative.causes),
         *(finding.citations for finding in narrative.findings),
-        *(getattr(action,'citations',()) for action in narrative.recommendations))
-    if not cited:
+        *(getattr(action,'citations',()) for action in narrative.recommendations)) if c.evidence_id not in contradicting_ids)
+    if not cited and not contradicting:
         return ''
-    return '<section id="citations"><h2>판단에 인용된 원문</h2>'+quotes(cited)+'</section>'
+    out='<section id="citations"><h2>판단에 인용된 원문</h2>'+quotes(cited)
+    if contradicting:
+        out+='<h3>반증</h3>'+''.join(f'<pre class="quote">{esc("반증 · "+text)}</pre>' for text in visible_citations(contradicting))
+    return out+'</section>'
 
 
 def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[str,...], analysis_failed: bool, css: str) -> str:
