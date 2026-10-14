@@ -98,7 +98,8 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
                 return
             if minutes[index]['slow_queries'] == 0 and minutes[index]['master_waits'] == 0:
                 drop('minutes', index)
-        for field in ('minutes', 'master_wait_overlaps', 'node_cards', 'slow_query_profile'):
+        for field in ('minutes', 'master_wait_overlaps', 'node_cards', 'slow_query_profile',
+                      'slow_concentration'):
             while links[field] and over_budget():
                 drop(field, len(links[field]) - 1)
 

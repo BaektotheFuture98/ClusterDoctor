@@ -31,7 +31,12 @@ def test_other_requests_unchanged_means_specific():
 
 
 def test_other_requests_slowed_means_cluster_wide():
-    assert judge_spread(_window("1.00")).scope == "cluster_wide"
+    # 늘어난 형태가 2개 이상이어야 전반 지연이므로 두 번째 형태도 함께 올린다.
+    window = _window("1.00")
+    more = [_query(2, i % 60, "0.20", cmd="count") for i in range(25)] + \
+           [_query(3, i % 60, "1.00", cmd="count") for i in range(25)]
+    assert judge_spread(Observations(query_requests=window.query_requests + tuple(more))).scope == "cluster_wide"
+    assert judge_spread(window).scope == "specific"
 
 
 def test_too_few_samples_is_undetermined():

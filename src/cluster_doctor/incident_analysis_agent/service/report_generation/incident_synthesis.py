@@ -1,6 +1,7 @@
 """누적된 사실로 최종 incident 서술을 만든다. 수집과 위임은 하지 않는다."""
 from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
+from cluster_doctor.incident_analysis_agent.service.observation.correlation import concrete_targets
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import GroundingValidator
 
@@ -11,19 +12,23 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
         window_reports=window_reports, observations=observations, evidence=evidence,
     )
     grounding = GroundingValidator(call_llm=seams.call_llm)
+    targets = concrete_targets(observations)
     revisions = 0
     for round_no in range(3):
         structural = validate_report(report, evidence,
-            candidate_ids={c.candidate_id for c in observations.candidates})
+            candidate_ids={c.candidate_id for c in observations.candidates}, targets=targets)
         found = grounding.validate(report, evidence, observations=observations,
                                    candidates=observations.candidates)
         conflicts = structural.issues + [i.reason for i in found
             if i.issue_type is not VerificationIssueType.UNVERIFIABLE]
         unavailable = [i.reason for i in found
             if i.issue_type is VerificationIssueType.UNVERIFIABLE]
-        if not conflicts or round_no == 2:
+        # 권고는 재수정에만 쓰고 최종 판정에는 넣지 않는다. 남아도 원인 판단 전체를 불일치로 만들지 않기 위해서다.
+        # 남은 권고는 verification_issues에도 싣지 않는다(실제 근거 충돌이 아니므로).
+        requests = conflicts + structural.advisories
+        if not requests or round_no == 2:
             break
-        revised = seams.report_writer.revise_report(report, tuple(conflicts), evidence,
+        revised = seams.report_writer.revise_report(report, tuple(requests), evidence,
                                                     observations=observations, incident_final=True)
         if revised is None:
             break

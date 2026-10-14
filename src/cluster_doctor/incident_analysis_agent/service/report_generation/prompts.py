@@ -24,12 +24,21 @@ from cluster_doctor.incident_analysis_agent.service.observation.log_format impor
 _CROSS_LINK_RULES = """
 소스 간 연결(cross_links):
 - cross_links는 코드가 계산한 시각·노드 대조와 판정이다. 시간 겹침, 노드 연결, 지연 범위는 이 값을 근거로 쓰고 직접 다시 계산하지 않는다.
-- verdict.scope가 지연 범위다. specific은 느린 요청이 slow_shapes 형태에 한정되고 같은 시각 다른 요청은 기준 분과 비슷했다는 뜻, cluster_wide는 다른 요청도 함께 느려졌다는 뜻, undetermined는 비교 표본이 부족하다는 뜻이다. 요약과 원인 판단은 이 판정과 모순되지 않게 쓴다.
+- verdict.scope가 지연 범위다. 같은 형태 안에서 기준 미만 요청을 느린 분과 그렇지 않은 분으로 나눠 비교한 결과다(compared_shapes개 비교, 그중 widened_shape_count개가 늘어났고 widened_shapes가 그 형태 목록). specific은 대부분의 형태가 느린 분에도 비슷했다는 뜻, cluster_wide는 늘어난 형태가 2개 이상이면서 비교한 형태의 과반이라 다른 요청도 함께 느려졌다는 뜻(한 형태만 늘었으면 specific), reference_median/slow_minute_median은 비교 형태를 합친 값이라 판정 근거가 아니라 참고값이다, undetermined는 비교할 수 있는 형태가 없다는 뜻이다. 요약과 원인 판단은 이 판정과 모순되지 않게 쓴다.
 - no_slow는 쿼리 로그를 수집했고 느린 요청이 없었다는 뜻이다. no_query_log는 쿼리 로그를 수집하지 못했거나 비어 있어 판정할 수 없다는 뜻이므로 느린 요청이 없었다고 쓰지 않는다.
 - master_wait_overlaps의 waiting_from~waiting_to가 마스터가 응답을 기다린 구간이다. 쿼리와의 동시성은 로그 시각이 아니라 이 구간으로 말한다.
 - overlap_under_both_assumptions는 쿼리 로그 시각 해석과 무관하게 겹친 실행이다. overlap_under_one_assumption은 해석에 따라 달라지므로 동시 실행이 확인됐다고 쓰지 않는다.
 - 늦게 응답한 노드는 node_cards에서 late_responses>0인 노드만이다.
 - node_cards의 node_log status=ok, row_count=0은 조회에 성공했고 0줄이었다는 뜻이다. 수집 실패와 구분한다.
+"""
+
+_CAUSE_TARGET_RULES = """
+원인의 속성과 대상(slow_query_profile, slow_concentration):
+- 지연을 요청의 속성(인덱스 수, 날짜 범위, 키워드 수, cmd)에 돌리려면 slow_query_profile 행을 비교해 일치해야 한다. 그 속성이 더 적은 행의 느린 비율·중앙값이 같거나 더 나쁘면 그 속성을 원인으로 쓰지 않는다. 대부분의 요청이 가진 속성은 느린 요청과 빠른 요청을 가르지 못한다.
+- 느린 요청을 가르는 속성이 있으면 그것을 쓴다. slow_concentration에서 느린 요청이 특정 회사·사용자나 요청 호스트에 몰렸거나 키워드 수가 기준 미만 요청보다 크면 그 대상을 원인 판단과 조치에 쓴다. 이 값은 저장된 일부 키워드와 상위 항목만 보여 주므로 비율·기여도를 새로 계산하지 않는다.
+- 자원 지표는 코드 JSON에 주어진 기준(slow_threshold_seconds 등) 외의 임계치를 만들어 말하지 않는다. 구간 최대값은 느린 요청과 시각이 맞지 않으므로 경합이 있었다는 근거도 없었다는 근거도 아니다. 최대값이 보여 주는 것(그 구간에 도달한 수준)과 보여 주지 못하는 것(느린 요청 시점의 상태)을 나눠 쓴다.
+- 조치 text에는 관측에 나온 구체 대상(예: agg·181일·인덱스 6개 같은 쿼리 형태, 회사·사용자, 요청 호스트, 노드)을 반드시 넣는다. 대상 없는 일반 조치는 쓰지 않으며, 대상을 특정할 수 없으면 unresolved_questions에 남긴다.
+- 같은 관측을 summary, findings, root_causes에 반복하지 않는다. findings가 관측을, root_causes가 해석을 맡고 summary는 이를 짧게 잇는다.
 """
 
 _ANALYSIS_HEADER = """너는 Elasticsearch 장애 분석 시스템 ClusterDoctor의
@@ -168,7 +177,8 @@ summary, findings, root_causes, recommendations, unresolved_questions는 반드�
 점검 과정·내부 검증 이유·메타 설명을 출력하지 않는다.
 """
 
-_INCIDENT_SYNTHESIS_INSTRUCTIONS = _INCIDENT_SYNTHESIS_INSTRUCTIONS.replace("\n원인과 조치의 작성:", _CROSS_LINK_RULES + "\n원인과 조치의 작성:", 1)
+_INCIDENT_SYNTHESIS_INSTRUCTIONS = _INCIDENT_SYNTHESIS_INSTRUCTIONS.replace(
+    "\n원인과 조치의 작성:", _CROSS_LINK_RULES + _CAUSE_TARGET_RULES + "\n원인과 조치의 작성:", 1)
 
 
 _INCIDENT_REVIEW_INSTRUCTIONS = """너는 장애 진단 초안의 사실 범위와 추론을 교정하는 편집자다. 새 원인을 찾는 작성자가 아니다.
@@ -204,7 +214,8 @@ JVM 단일 사용률로 GC를 원인으로 만들지 않는다. rejected 누적�
 응답은 문법적으로 완전한 JSON 객체 하나여야 한다. 문자열·배열·객체의 닫힘을 점검하고, 객체가 끝나면 즉시 종료한다.
 코드 펜스·설명·추가 객체·출력 뒤의 다른 문자를 붙이지 않는다.
 """
-_INCIDENT_REVIEW_INSTRUCTIONS = _INCIDENT_REVIEW_INSTRUCTIONS.replace("\nJVM 단일 사용률로", _CROSS_LINK_RULES + "\nJVM 단일 사용률로", 1)
+_INCIDENT_REVIEW_INSTRUCTIONS = _INCIDENT_REVIEW_INSTRUCTIONS.replace(
+    "\nJVM 단일 사용률로", _CROSS_LINK_RULES + _CAUSE_TARGET_RULES + "\nJVM 단일 사용률로", 1)
 
 
 def build_incident_review_messages(

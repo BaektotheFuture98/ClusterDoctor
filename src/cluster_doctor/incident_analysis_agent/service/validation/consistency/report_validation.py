@@ -8,12 +8,16 @@ from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisRepor
 @dataclass
 class ValidationResult:
     issues: list[str] = field(default_factory=list)
+    # 재수정은 요청하지만 남아도 보고서를 불일치로 만들지 않는 권고. 문자열 매칭처럼 오탐이 가능한 검사가 여기에 쓴다.
+    advisories: list[str] = field(default_factory=list)
 
 
-def validate_report(report: LogAnalysisReport, evidence: list[Evidence], *, candidate_ids: set[str] | None = None) -> ValidationResult:
+def validate_report(report: LogAnalysisReport, evidence: list[Evidence], *, candidate_ids: set[str] | None = None,
+                    targets: frozenset[str] | None = None) -> ValidationResult:
     result=ValidationResult()
     _check_unknown_refs(report,{item.evidence_id:item for item in evidence},result)
     _check_candidate_ids(report,candidate_ids or set(),result)
+    _check_recommendation_targets(report,targets or frozenset(),result)
     if any(a.cause_index is not None and a.cause_index >= len(report.root_causes) for a in report.recommendations):
         result.issues.append("조치의 cause_index가 실제 원인 후보 범위를 벗어났다.")
     return result
@@ -33,6 +37,25 @@ def _check_unknown_refs(
             f"존재하지 않는 근거를 인용했다: {', '.join(unknown)}. "
             "실제 Evidence id로 고치거나, 근거를 댈 수 없으면 그 주장을 빼라."
         )
+
+def _check_recommendation_targets(
+    report: LogAnalysisReport, targets: frozenset[str], result: ValidationResult
+) -> None:
+    """조치가 관측에 나온 구체 대상을 하나도 가리키지 않는가.
+
+    대상 없는 조치("대상 범위를 최적화")는 운영자가 실행할 수 없다. 문자열 포함만 보는 보수적 검사라
+    대상이 바뀐 표기(별칭)를 쓴 조치는 오탐일 수 있으므로, 관측 대상 목록이 있을 때만 적용한다.
+    """
+    if not targets:
+        return
+    missing = [i + 1 for i, action in enumerate(report.recommendations)
+               if action.text.strip() and not any(t in action.text for t in targets)]
+    if missing:
+        result.advisories.append(
+            f"조치 {', '.join(map(str, missing))}번에 관측된 구체 대상(쿼리 형태, 회사·사용자, 요청 호스트, 노드)이 없다. "
+            "관측에 나온 대상을 넣거나, 대상을 특정할 수 없으면 그 조치를 unresolved_questions로 옮겨라."
+        )
+
 
 def _check_candidate_ids(
     report: LogAnalysisReport, known: set[str], result: ValidationResult
