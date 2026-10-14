@@ -111,7 +111,7 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
         return {}
     # 상태를 제자리에서 바꾸지 않고 매번 교체본을 만든다.
     current = state
-    grounding = GroundingValidator(call_llm=seams.call_llm)
+    grounding = GroundingValidator(call_llm=seams.call_llm, metric_thresholds=seams.metric_thresholds)
     revisions = 0
     reanalysis_count = int(state.get("reanalysis_count", 0))
     issues, unverifiable = [], []

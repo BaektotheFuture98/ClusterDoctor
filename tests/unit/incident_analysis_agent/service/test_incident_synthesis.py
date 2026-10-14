@@ -1,3 +1,4 @@
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS
 import json
 import pytest
 from datetime import datetime, timedelta, timezone
@@ -115,7 +116,7 @@ def test_synthesis_validates_new_claims_and_does_not_collect():
         claims=json.loads(messages[0]['content'].split('Claims:\n')[1].split('\nEvidence:\n')[0])
         seen.extend(c['claim_id'] for c in claims)
         return json.dumps([{'claim_id':c['claim_id'],'status':'PASSED','affected_evidence_refs':[]} for c in claims])
-    result=synthesize_incident(seams=SimpleNamespace(report_writer=ReportWriter(call_llm=call),call_llm=call),incident=SimpleNamespace(incident_id='I',cluster='C'),window_reports=[first],observations=Observations(),evidence=[])
+    result=synthesize_incident(seams=SimpleNamespace(report_writer=ReportWriter(call_llm=call),call_llm=call,metric_thresholds=DEFAULT_THRESHOLDS),incident=SimpleNamespace(incident_id='I',cluster='C'),window_reports=[first],observations=Observations(),evidence=[])
     assert result.verification_status is VerificationStatus.PASSED
     assert 'cause:0:mechanism' in seen and not any('uncertainty' in c for c in seen)
 

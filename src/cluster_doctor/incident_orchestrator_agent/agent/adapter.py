@@ -128,6 +128,10 @@ def build_deepagents_incident_analyzer(
     call_llm = build_structured_call(
         provider=provider, model=config.model, api_key=config.api_key
     )
+    thresholds = NodeMetricThresholds(
+        heap_warn_percent=config.heap_warn_percent,
+        queue_warn=config.queue_warn,
+    )
     seams = AnalysisSeams(
         fetch_logs=log_repository.fetch_logs,
         fetch_node_logs=log_repository.fetch_node_logs,
@@ -135,11 +139,8 @@ def build_deepagents_incident_analyzer(
         node_resolver=node_resolver,
         node_log_fetcher=node_log_fetcher,
         call_llm=call_llm,
-        report_writer=ReportWriter(call_llm=call_llm),
-        metric_thresholds=NodeMetricThresholds(
-            heap_warn_percent=config.heap_warn_percent,
-            queue_warn=config.queue_warn,
-        ),
+        report_writer=ReportWriter(call_llm=call_llm, metric_thresholds=thresholds),
+        metric_thresholds=thresholds,
         analysis_concurrency=config.analysis_concurrency,
     )
     return _DeepAgentIncidentAnalyzer(

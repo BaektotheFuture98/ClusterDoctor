@@ -15,6 +15,7 @@ from decimal import Decimal
 from statistics import median
 from typing import Literal
 
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS, NodeMetricThresholds
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry, query_record_key
 from cluster_doctor.incident_analysis_agent.model.observations import (
@@ -392,7 +393,8 @@ def _node_priority(card: NodeCard) -> tuple:
     return (not any(w.sent_at for w in card.waits), -len(card.waits), card.node)
 
 
-def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict:
+def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str],
+                        thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS) -> dict:
     """모델 입력용 투영. 근거 id가 있는 쿼리는 id를 같이 실어 인용할 수 있게 한다.
 
     목록을 상한으로 자르면 그 건수를 ``omitted``에 남겨, 잘린 것이 없는 것으로 읽히지 않게 한다.
@@ -444,6 +446,9 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str]) -> dict
     payload = {
         "query_time_basis": "쿼리 로그 reg_date가 시작/종료 중 무엇인지 확정되지 않아 두 가정을 모두 계산했다",
         "slow_threshold_seconds": str(links.slow_threshold),
+        # 기준을 넘은 노드만 Evidence가 되므로, 넘지 않은 구간에서도 모델이 기준을 알도록 항상 싣는다.
+        "node_metric_thresholds": {"heap_warn_percent": thresholds.heap_warn_percent,
+                                   "queue_warn": thresholds.queue_warn},
         "verdict": {
             "scope": verdict.scope,
             "slow_shapes": [{"cmd": c, "date_range": d, "index_count": n} for c, d, n in verdict.slow_shapes],

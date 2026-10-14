@@ -13,6 +13,7 @@ from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_analysis_agent.model.observations import Observations, SlowCandidate
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssue, VerificationIssueType
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS, NodeMetricThresholds
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
 
 _logger = logging.getLogger(__name__)
@@ -25,8 +26,10 @@ def _unverifiable(description: str) -> VerificationIssue:
 
 
 class GroundingValidator:
-    def __init__(self, *, call_llm: Callable[..., str]) -> None:
+    def __init__(self, *, call_llm: Callable[..., str],
+                 metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS) -> None:
         self._call_llm = call_llm
+        self._thresholds = metric_thresholds
 
     def validate(self, report: LogAnalysisReport, evidence: list[Evidence], *,
         observations: Observations | None = None, candidates: tuple[SlowCandidate, ...] = ()) -> list[VerificationIssue]:
@@ -44,7 +47,7 @@ class GroundingValidator:
                         if candidate.query_record_key and e.record_key == candidate.query_record_key]
                     if candidate.source == 'slowlog':
                         claim['evidence_refs'] = [e.evidence_id for e in evidence if e.source == 'slowlog' and e.event_time == candidate.timestamp and (e.node_name or e.node_id or '') == candidate.node]
-        context = build_analysis_context(obs, [])
+        context = build_analysis_context(obs, [], thresholds=self._thresholds)
         issues = []
         batch = []
         def check(items):
