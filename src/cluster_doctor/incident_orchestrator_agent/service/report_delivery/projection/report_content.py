@@ -8,7 +8,6 @@ from cluster_doctor.incident_analysis_agent.service.observation.query_requests i
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import project_timeline, TimelineCard, TimelineItem
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, slowlog_note
 from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
-from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative
 
 
 def stamp(moment):
@@ -37,18 +36,6 @@ def unique_citations(*groups: Iterable[EvidenceCitation]) -> tuple[EvidenceCitat
         for citation in group:
             by_id.setdefault(citation.evidence_id, citation)
     return tuple(by_id.values())
-
-
-def remaining_summary_citations(narrative: Narrative) -> tuple[EvidenceCitation, ...]:
-    """요약에만 나온 source도 상세 서술 뒤에 계속 보이게 한다."""
-    shown = set()
-    for cause in narrative.causes:
-        shown.update(c.evidence_id for c in (*cause.supporting, *cause.contradicting))
-    for finding in narrative.findings:
-        shown.update(c.evidence_id for c in finding.citations)
-    for action in narrative.recommendations:
-        shown.update(c.evidence_id for c in getattr(action, 'citations', ()))
-    return tuple(c for c in unique_citations(narrative.headline_citations) if c.evidence_id not in shown)
 
 
 def report_timeline(report):
@@ -139,12 +126,31 @@ MASTER_DISPLAY_LIMIT = 120
 SOURCE_DISPLAY_LIMIT = 10
 
 
-def source_log_sections(report):
-    """source slot은 고정이며, master log는 수집 관측값이 우선한다."""
+def shown_slowlog_evidence(report):
+    return tuple(sorted((e for e in report.evidence if e.source=='slowlog'),key=lambda e:e.event_time)[:SOURCE_DISPLAY_LIMIT])
+
+
+def slowlog_nodes(report):
+    """slowlog 근거에 나온 노드 이름. 처음 나온 순서를 유지한다."""
+    return tuple(dict.fromkeys(e.node_name for e in report.evidence if e.source=='slowlog' and e.node_name))
+
+
+def metric_nodes(report, limit=10):
+    """slowlog에 나온 노드를 먼저 두고 나머지는 큐·CPU 최대값 순. 지표 행이 없는 노드는 만들지 않는다."""
+    nodes=tuple(n for n in report.observations.nodes if n.samples > 0)
+    slow=set(slowlog_nodes(report))
+    return tuple(sorted(nodes,key=lambda r:(r.node not in slow,-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:limit])
+
+
+def source_log_sections(report, marks=None):
+    """source slot은 고정이며, master log는 수집 관측값이 우선한다.
+
+    marks는 evidence_id별 표지로, 서술이 인용한 slowlog 줄 앞에 붙여 근거 섹션에서 같은 줄이 두 번 나오지 않게 한다."""
+    marks=marks or {}
     master=tuple(' · '.join(x for x in (
         stamp(e.timestamp) if e.timestamp else '시각 미확인', e.node, e.level, e.logger, e.line or e.rendered) if x)
         for e in report.observations.master_events[:MASTER_DISPLAY_LIMIT])
-    slow=tuple(evidence_text(e) for e in sorted((e for e in report.evidence if e.source=='slowlog'),key=lambda e:e.event_time)[:SOURCE_DISPLAY_LIMIT])
+    slow=tuple((f'[{marks[e.evidence_id]}] ' if e.evidence_id in marks else '')+evidence_text(e) for e in shown_slowlog_evidence(report))
     return (('master-logs','마스터 노드 로그',master),('slowlogs','slowlog 로그',slow))
 
 

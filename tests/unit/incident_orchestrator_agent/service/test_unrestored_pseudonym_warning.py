@@ -5,7 +5,7 @@ import pytest
 
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import unrestored_aliases
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, VerificationStatus
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, RootCause, VerificationStatus
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
@@ -39,6 +39,7 @@ def _rendered(summary: str):
         analyzed_from=_T0,
         analyzed_to=_T0,
         summary=summary,
+        root_causes=(RootCause(statement=summary),),
         verification_status=VerificationStatus.PASSED,
     )
     return to_incident_analysis_report(report, Observations(), [])

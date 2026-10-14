@@ -7,7 +7,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import minute_stamp
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html import report_layout
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
-from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import CauseAssessment, Narrative
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report, T0
@@ -56,7 +56,7 @@ def test_timeline_is_bounded_and_contains_absolute_maximum():
 
 
 def test_verified_headline_and_source_text_are_escaped():
-    r=replace(example(),narrative=Narrative(headline='<script>alert(1)</script> & claim'))
+    r=replace(example(),narrative=Narrative(headline='h',causes=(CauseAssessment(statement='<script>alert(1)</script> & claim'),)))
     html=render_report(r)
     assert '&lt;script&gt;alert(1)&lt;/script&gt; &amp; claim' in html and '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
 

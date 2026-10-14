@@ -1,13 +1,13 @@
 """코드가 만든 사실과 검증된 해석으로 구성한 독립 실행형 리포트.
 
-본문은 결론·지표·추이·느린 요청·원인·조치만 둔다. 소스 간 연결, 원문 로그,
+본문은 결론(판정·원인·조치)·지표·추이·느린 요청만 둔다. 소스 간 연결, 원문 로그,
 인용 근거는 "근거 보기" 안에 접는다. 결론을 의심할 때 펼쳐 보는 자료다.
 """
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, is_validation_diagnostic, unique_citations
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, is_validation_diagnostic, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, query_log_note, summarize_source
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_conclusion, render_metric_cards
@@ -80,7 +80,7 @@ def _metrics(report) -> str:
         return out+'<p>수집된 시스템 지표 없음</p></section>'
     out+=''.join(f'<p>{esc(value)}</p>' for value in system_maxima(nodes))
     out+='<table><thead><tr><th>ES 노드</th><th>CPU(%)</th><th>JVM heap(%)</th><th>Search 큐</th><th>Write 큐</th><th>Search rejected 누적</th><th>Write rejected 누적</th></tr></thead><tbody>'
-    for row in sorted(nodes,key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:
+    for row in metric_nodes(report):
         out+='<tr>'+''.join(f'<td>{esc(str(v))}</td>' for v in (row.node,row.cpu_max,row.jvm_heap_max,row.search_queue_max,row.write_queue_max,row.search_rejected_max,row.write_rejected_max))+'</tr>'
     out+='</tbody></table>'
     metric_sources=tuple(e for e in report.evidence if e.source=='node_metric' and e.provenance)
@@ -89,32 +89,55 @@ def _metrics(report) -> str:
 
 
 def _causes(narrative) -> str:
-    out='<section id="causes"><h2>원인 판단</h2>'
-    if not narrative:
-        return out+'<p>검증을 완료한 원인 판단 없음</p></section>'
-    for cause in narrative.causes:out+=f'<h3>{esc(cause.statement)}</h3>'+render_paragraphs(cause.mechanism)
-    for finding in narrative.findings:out+=f'<h3>{esc(finding.title)}</h3>'+render_paragraphs(finding.detail)
-    if not narrative.causes and not narrative.findings:out+='<p>확인된 원인 없음</p>'
-    return out+'</section>'
+    if not narrative or not narrative.causes:
+        return '<p>검증을 완료한 원인 판단 없음</p>' if not narrative else '<p>확인된 원인 없음</p>'
+    return ''.join(f'<h3>{esc(cause.statement)}</h3>'+render_paragraphs(cause.mechanism) for cause in narrative.causes)
+
+
+def _findings(narrative) -> str:
+    # 원인이 아닌 관측은 결론에서 빼고 근거 안에서 보여 준다.
+    if not narrative or not narrative.findings:
+        return ''
+    return '<section id="findings"><h2>주요 관측</h2>'+''.join(f'<h3>{esc(f.title)}</h3>'+render_paragraphs(f.detail) for f in narrative.findings)+'</section>'
 
 
 def _actions(narrative) -> str:
     items=[str(action).strip() for action in (narrative.recommendations if narrative else ()) if str(action).strip()]
     if not items:
         return ''
-    return '<section id="actions"><h2>권장 조치</h2><ul class="actions">'+''.join(f'<li>{esc(text)}</li>' for text in items)+'</ul></section>'
+    return '<h3>권장 조치</h3><ul class="actions">'+''.join(f'<li>{esc(text)}</li>' for text in items)+'</ul>'
 
 
-def _citations(narrative) -> str:
-    if not narrative:
-        return ''
-    # 반증 인용은 지지 근거처럼 읽히지 않도록 따로 모으고, 지지와 반증에 모두 걸린 근거는 반증 쪽에만 둔다.
+def _citation_groups(narrative):
+    """(지지, 반증) 인용. 지지와 반증에 모두 걸린 근거는 반증 쪽에만 둔다."""
     contradicting=unique_citations(*(cause.contradicting for cause in narrative.causes))
     contradicting_ids={c.evidence_id for c in contradicting}
-    cited=tuple(c for c in unique_citations(narrative.headline_citations,
+    # 요약 문단은 보이지 않으므로 그 인용은 싣지 않는다.
+    cited=tuple(c for c in unique_citations(
         *(cause.supporting for cause in narrative.causes),
         *(finding.citations for finding in narrative.findings),
         *(getattr(action,'citations',()) for action in narrative.recommendations)) if c.evidence_id not in contradicting_ids)
+    return cited,contradicting
+
+
+def _slowlog_marks(report, narrative) -> dict:
+    """원문 섹션에 이미 나오는 slowlog 줄에 붙일 인용 표지."""
+    if not narrative:
+        return {}
+    cited,contradicting=_citation_groups(narrative)
+    shown={e.evidence_id for e in shown_slowlog_evidence(report)}
+    marks={c.evidence_id:'판단 인용' for c in cited if c.evidence_id in shown}
+    marks.update({c.evidence_id:'반증 인용' for c in contradicting if c.evidence_id in shown})
+    return marks
+
+
+def _citations(narrative, report) -> str:
+    if not narrative:
+        return ''
+    shown={e.evidence_id for e in shown_slowlog_evidence(report)}
+    cited,contradicting=_citation_groups(narrative)
+    cited=tuple(c for c in cited if c.evidence_id not in shown)
+    contradicting=tuple(c for c in contradicting if c.evidence_id not in shown)
     if not cited and not contradicting:
         return ''
     out='<section id="citations"><h2>판단에 인용된 원문</h2>'+quotes(cited)
@@ -133,14 +156,13 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     header=f'<header><p>ClusterDoctor · {esc(report.cluster)}</p><h1>Elasticsearch 쿼리·노드 로그 분석</h1><p>{esc(span)}</p><p class="hint">생성 {esc(stamp(now))}</p>'
     if DEMO_GAP in gaps:header+='<p class="hint">합성 데이터로 실제 보고서 생성 경로를 실행한 예시입니다.</p>'
     header+='</header>'
-    headline=render_paragraphs(narrative.headline, css_class='report-headline') if narrative and narrative.headline else ''
-    conclusion=render_conclusion(links,headline_html=headline,notices_html=_notices(obs,gaps),analysis_failed=analysis_failed)
+    conclusion=render_conclusion(links,causes_html=_causes(narrative),actions_html=_actions(narrative),notices_html=_notices(obs,gaps),analysis_failed=analysis_failed)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
-    originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report))
+    originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
     master_text=master_note(obs) if summarize_source(obs.source_statuses,'master_log').state=='failed' else ''
-    evidence=('<details id="evidence"><summary>근거 보기</summary>'+render_cross_source(links,master_note_text=master_text)+_timeline(report,narrative)
-              +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative)+'</details>')
+    evidence=('<details id="evidence"><summary>근거 보기</summary>'+_findings(narrative)+render_cross_source(links,master_note_text=master_text)+_timeline(report,narrative)
+              +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative,report)+'</details>')
     body=(header+conclusion+render_metric_cards(rows,links)+render_query_trend(project_query_trend(obs),links)
-          +ranking+_causes(narrative)+_actions(narrative)+evidence)
+          +ranking+evidence)
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'

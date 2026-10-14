@@ -49,10 +49,10 @@ def _event(at, line=FOLLOWER):
 
 def test_empty_and_failed_query_log_are_not_reported_as_no_slow():
     empty = build_cross_links(Observations())
-    assert verdict_line(empty) == "수집된 쿼리 실행 로그가 없습니다."
+    assert verdict_line(empty).headline == "수집된 쿼리 실행 로그가 없습니다."
     failed = build_cross_links(Observations(source_statuses=(
         SourceWindowStatus("es_query_log", _at(0, 0), _at(1, 0), "failed", None, _at(2, 0), error="x"),)))
-    assert verdict_line(failed) == "쿼리 실행 로그를 수집하지 못해 지연 범위를 판단할 수 없습니다."
+    assert verdict_line(failed).headline == "쿼리 실행 로그를 수집하지 못해 지연 범위를 판단할 수 없습니다."
     cards = render_metric_cards((), failed)
     assert "미확인" in cards.split("이상 실행")[1]
 
@@ -111,7 +111,7 @@ def test_trend_extra_columns_dash_for_failed_points():
 
 def test_conclusion_says_node_not_data_node():
     obs = Observations(master_events=(_event(_at(3, 37)),))
-    html = render_conclusion(build_cross_links(obs), headline_html="")
+    html = render_conclusion(build_cross_links(obs))
     assert "데이터 노드" not in html and "노드 1대(RC6-18)" in html
 
 

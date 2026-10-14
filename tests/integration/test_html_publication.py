@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
+    RootCause,
     VerificationStatus,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
@@ -23,6 +24,7 @@ def _report(summary: str, start, end) -> LogAnalysisReport:
         analyzed_from=start,
         analyzed_to=end,
         summary=summary,
+        root_causes=(RootCause(statement=summary),),
         verification_status=VerificationStatus.PASSED,
     )
 

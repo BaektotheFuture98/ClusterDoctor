@@ -132,7 +132,7 @@ def test_projection_and_html_keep_actions_with_their_cause():
     assert html.index('첫 후보') < html.index('둘째 후보') < html.index('첫 후보 조사') < html.index('둘째 후보 조사')
     assert html.count('첫 후보 조사')==1 and '처리 대기 가능성' in html
     text=render_text(output)
-    assert text.index('첫 후보 조사')<text.index('둘째 후보')
+    assert text.index('둘째 후보')<text.index('첫 후보 조사')<text.index('둘째 후보 조사')
 
 
 def test_unknown_action_link_is_a_structural_error():

@@ -58,16 +58,20 @@ _OBS_WITH_LEFT = replace(_OBS, master_events=_OBS.master_events + (
 
 def test_verdict_lines():
     links = build_cross_links(_OBS)
-    specific = replace(links, verdict=Verdict("specific", (("agg", 365, 12),), Decimal("0.21"), Decimal("0.24")))
-    wide = replace(links, verdict=Verdict("cluster_wide", (("agg", 365, 12),), Decimal("0.21"), Decimal("1.30")))
-    assert "agg · 365일 · 인덱스 12개 형태에 한정" in verdict_line(specific)
-    assert "0.21s에서 1.30s로" in verdict_line(wide)
-    assert "판단할 수 없습니다" in verdict_line(links)
+    shapes = (("agg", 365, 12),)
+    specific = replace(links, verdict=Verdict("specific", shapes, Decimal("0.21"), Decimal("0.24"), 4, (), (5,)))
+    wide = replace(links, verdict=Verdict("cluster_wide", shapes, Decimal("0.21"), Decimal("1.30"), 4, shapes, (5,)))
+    assert "일부 쿼리 형태에서만" in verdict_line(specific).headline
+    assert verdict_line(specific).detail == "주요 형태: agg·365일·인덱스 12개 5건"
+    assert "여러 쿼리 형태" in verdict_line(wide).headline
+    assert verdict_line(wide).detail == "함께 느려진 형태: agg·365일·인덱스 12개"
+    assert "0.21" not in verdict_line(specific).detail and "비교한" not in verdict_line(wide).detail
+    assert "판단할 수 없습니다" in verdict_line(links).headline
 
 
 def test_conclusion_has_no_severity_banner_and_mentions_nodes():
-    html = render_conclusion(build_cross_links(_OBS), headline_html="<p>요약</p>")
-    assert 'id="conclusion"' in html and "<p>요약</p>" in html
+    html = render_conclusion(build_cross_links(_OBS), causes_html="<h3>원인</h3>")
+    assert 'id="conclusion"' in html and "<h3>원인</h3>" in html
     assert "노드 1대(RC6-18)" in html
     assert "LOW" not in html and "HIGH" not in html
 

@@ -25,7 +25,7 @@ def report(status='NOT_VERIFIED'):
 
 def test_actual_html_is_individual_source_backed_report():
     html=render_report(report())
-    sections=['conclusion','metrics','query-trend','query-ranking','causes','evidence','timeline','ssh-logs','system-metrics']
+    sections=['conclusion','metrics','query-trend','query-ranking','evidence','timeline','ssh-logs','system-metrics']
     positions=[html.index(f'id="{name}"') for name in sections]
     assert positions==sorted(positions)
     assert 'Elasticsearch 쿼리·노드 로그 분석' in html and '수집 쿼리 실행 로그' in html
@@ -71,11 +71,10 @@ def test_grouped_timeline_preserves_all_supporting_raw_logs_beyond_ssh_limit():
 def test_unverified_report_has_fact_summary_without_internal_diagnostics():
     r=report()
     html=render_report(r,gaps=('리포트 검증 불일치: summary: internal validator reasoning', 'es_query_log 수집 실패'))
-    assert '관측된 실행 로그에서 search의 최대 실행시간은 1.96초입니다.' in html
+    assert '관측된 실행 로그에서' not in html
     assert 'internal validator reasoning' not in html
     assert 'es_query_log 수집 실패' in html
-    assert '저장된 키워드:' in html.split('id="query-trend"')[0]
-    assert '관측된 실행 로그에서 search의 최대 실행시간은 1.96초입니다.' in render_text(r)
+    assert '관측된 실행 로그에서' not in render_text(r)
     assert 'unverified conclusion' not in html
 
 
@@ -113,15 +112,14 @@ def test_validation_diagnostics_are_not_part_of_operator_report():
 def test_fallback_has_same_summary_and_cause_slots_as_standard_report():
     html=render_report(report())
     summary=html.split('id="conclusion"')[1].split('</section>')[0]
-    causes=html.split('id="causes"')[1].split('</section>')[0]
-    assert 'class="report-headline"' in summary
-    assert '<h3>' in causes
+    assert 'class="report-headline"' not in summary
+    assert '<h3>수집된 자료로 지연 원인을 확정할 수 없습니다.</h3>' in summary
 
 
 def test_optional_source_sections_keep_order_and_show_unknown_status_hint():
     r=replace(report(),evidence=())
     html=render_report(r)
-    sections=['conclusion','query-trend','query-ranking','causes','evidence','timeline','master-logs','slowlogs','ssh-logs','system-metrics']
+    sections=['conclusion','query-trend','query-ranking','evidence','timeline','master-logs','slowlogs','ssh-logs','system-metrics']
     assert [html.index(f'id="{s}"') for s in sections]==sorted(html.index(f'id="{s}"') for s in sections)
     for name in ('master-logs','slowlogs','ssh-logs'):
         body=html.split(f'id="{name}"')[1].split('</section>')[0].split('</h2>')[1]
@@ -205,7 +203,7 @@ def test_validation_execution_failure_reason_is_not_rendered():
 def test_failed_analysis_plain_fallback_does_not_promote_narrative():
     text=render_text(report('PASSED'),analysis_failed=True)
     assert 'unverified conclusion' not in text
-    assert '관측된 실행 로그' in text
+    assert '수집된 자료로 지연 원인을 확정할 수 없습니다.' in text
 
 
 def test_selected_master_and_observed_master_are_one_timeline_event():

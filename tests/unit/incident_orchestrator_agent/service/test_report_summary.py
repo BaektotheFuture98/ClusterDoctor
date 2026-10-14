@@ -30,7 +30,7 @@ def test_summary_shows_total_and_peak_from_all_executions():
 def test_verification_failure_does_not_promote_headline(status):
     summary=summary_of(render_report(report(status)))
     assert status not in summary and 'unverified conclusion' not in summary
-    assert 'class="report-headline"' in summary
+    assert 'class="report-headline"' not in summary
 
 
 def test_counter_is_per_node_cumulative_and_does_not_create_critical():
