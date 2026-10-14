@@ -51,4 +51,4 @@ def test_revision_keeps_summary_and_action_refs_and_context():
 def test_summary_prompt_separates_observation_from_causal_hypotheses():
     from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import _ANALYSIS_RULES
     assert 'summary에는 관측 사실만' in _ANALYSIS_RULES
-    assert 'JVM 사용률만으로 쿼리 지연' in _ANALYSIS_RULES
+    assert '쿼리 지연·특정 키워드의 성능 영향을 주장하지 않는다' in _ANALYSIS_RULES
