@@ -29,31 +29,49 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
     """HTML과 같은 실행 사실과 검증 gate를 갖는 평문 fallback."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, source_log_notes
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, source_log_notes, metric_nodes
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import unique_citations, remaining_summary_citations
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import unique_citations
     from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import node_line, verdict_line
     obs=report.observations
     rows=rank_query_requests(obs.query_requests)
-    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '핵심 요약',
-        f'수집 쿼리 실행 로그 {len(rows)}건',
-        f'최대 실행시간 {str(rows[0].execution_seconds)+"s" if rows and rows[0].execution_seconds is not None else "미확인"}',
-        ]
     narrative=display_narrative(report,analysis_failed=analysis_failed)
+    links=build_cross_links(obs)
+    verdict=verdict_line(links)
+    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '결론', verdict.headline]
+    if verdict.detail:out.append(verdict.detail)
+    if line:=node_line(links):out.append(line)
     if narrative:
-        out.append(narrative.headline)
+        for index, c in enumerate(narrative.causes):
+            out.append(c.statement)
+            if c.mechanism: out.append('판단 설명: '+c.mechanism)
+            actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
+            supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))
+            out.extend('판단 근거: '+s for s in visible_citations(supporting))
+            out.extend('반증: '+s for s in visible_citations(unique_citations(c.contradicting)))
+        if not narrative.causes:out.append('확인된 원인 없음')
+        for a in narrative.recommendations:
+            if str(a).strip():out.append('확인·조치: '+str(a))
+        for a in narrative.recommendations:
+            cause_index=getattr(a,'cause_index',None)
+            if cause_index is None or not 0<=cause_index<len(narrative.causes):
+                out.extend(visible_citations(unique_citations(getattr(a,'citations',()))))
     else:
         out.extend(execution_summary(obs))
-        out.append('분석 해석을 확인하지 못해 관측 사실만 표시합니다.')
-    links=build_cross_links(obs)
-    out.append(verdict_line(links))
-    if line:=node_line(links):out.append(line)
+        out.append('분석 해석을 확인하지 못해 관측값만 표시합니다.')
+    out.extend(('핵심 요약',
+        f'수집 쿼리 실행 로그 {len(rows)}건',
+        f'최대 실행시간 {str(rows[0].execution_seconds)+"s" if rows and rows[0].execution_seconds is not None else "미확인"}'))
     out.append('쿼리 실행 추이')
     for p in project_query_trend(obs):
         out.append(f'{stamp(p.start)} ~ {stamp(p.end)} · {p.count if p.count is not None else "미확인"}건 · 최대 {str(p.maximum_seconds)+"s" if p.maximum_seconds is not None else "미확인"} · {p.status}')
+    if narrative and narrative.findings:
+        out.append('주요 관측')
+        for f in narrative.findings:
+            out.extend((f.title,f.detail,*visible_citations(f.citations)))
     out.append('주요 타임라인')
     for card in report_timeline(report):
         out.append(f'{minute_stamp(card.start)} · {card.representative_event}')
@@ -78,30 +96,8 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     else:out.append(ssh_note(obs))
     out.append('시스템 지표 · 관측 최대값')
     out.extend(system_maxima(obs.nodes))
-    for n in sorted((n for n in obs.nodes if n.samples > 0),key=lambda r:(-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:10]:
+    for n in metric_nodes(report):
         out.append(f'{n.node} · CPU={n.cpu_max}% JVM heap={n.jvm_heap_max}% search_queue={n.search_queue_max} write_queue={n.write_queue_max} search_rejected 누적={n.search_rejected_max} write_rejected 누적={n.write_rejected_max}')
-    out.append('원인 판단·조치')
-    if narrative:
-        for index, c in enumerate(narrative.causes):
-            out.append(c.statement)
-            if c.mechanism: out.append('판단 설명: '+c.mechanism)
-            actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
-            out.extend('확인·조치: '+str(a) for a in actions if str(a).strip())
-            supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))
-            out.extend('판단 근거: '+s for s in visible_citations(supporting))
-            out.extend('반증: '+s for s in visible_citations(unique_citations(c.contradicting)))
-        for f in narrative.findings:
-            out.extend((f.title,f.detail,*visible_citations(f.citations)))
-        for a in narrative.recommendations:
-            cause_index=getattr(a,'cause_index',None)
-            if cause_index is not None and 0<=cause_index<len(narrative.causes):
-                continue
-            if str(a).strip():out.append('확인·조치: '+str(a))
-            out.extend(visible_citations(unique_citations(getattr(a,'citations',()))))
-        if not narrative.causes:out.append('확인된 원인 없음')
-        summary_sources=remaining_summary_citations(narrative)
-        if summary_sources:out.extend(('종합 요약 근거', *visible_citations(summary_sources)))
-    else:out.append('검증을 완료한 원인 판단 없음')
     for s in obs.source_statuses:
         if s.status=='failed':out.append(f'{s.source} {s.host} 수집 실패 · {stamp(s.start)}')
     return scrub('\n'.join(out).rstrip()+'\n')

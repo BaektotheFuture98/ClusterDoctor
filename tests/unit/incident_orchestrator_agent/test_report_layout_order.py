@@ -38,9 +38,11 @@ def _report() -> IncidentAnalysisReport:
 
 def test_sections_are_ordered_conclusion_first_and_evidence_folded():
     html = render_layout(_report(), datetime(2026, 10, 11, 19, 7, tzinfo=KST), gaps=(), analysis_failed=False, css="")
-    order = ['id="conclusion"', 'id="metrics"', 'id="query-trend"', 'id="causes"', 'id="actions"', '<details id="evidence">']
+    order = ['id="conclusion"', 'id="metrics"', 'id="query-trend"', 'id="query-ranking"', '<details id="evidence">']
     positions = [html.index(marker) for marker in order]
     assert positions == sorted(positions)
+    assert 'id="causes"' not in html and 'id="actions"' not in html and "요약 문단" not in html
+    assert html.index("원인 판단") < html.index("판단 설명") < html.index("조치 한 줄") < html.index('id="query-trend"')
     assert html.index('id="cross-source"') > html.index('<details id="evidence">')
     assert html.index('id="master-logs"') > html.index('<details id="evidence">')
 
