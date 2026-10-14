@@ -11,7 +11,7 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
         incident_id=incident.incident_id, cluster=incident.cluster,
         window_reports=window_reports, observations=observations, evidence=evidence,
     )
-    grounding = GroundingValidator(call_llm=seams.call_llm)
+    grounding = GroundingValidator(call_llm=seams.call_llm, metric_thresholds=seams.metric_thresholds)
     targets = concrete_targets(observations)
     revisions = 0
     for round_no in range(3):

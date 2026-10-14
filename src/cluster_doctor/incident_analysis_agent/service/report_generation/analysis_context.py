@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS, NodeMetricThresholds
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
@@ -15,7 +16,8 @@ from cluster_doctor.incident_analysis_agent.service.observation.log_format impor
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import MAX_EVIDENCE_PER_SOURCE, MAX_EVIDENCE_TOTAL, MAX_RAW_LOG_CHARS
 
 
-def build_analysis_context(observations: Observations, evidence: list[Evidence], *, max_chars: int = MAX_RAW_LOG_CHARS) -> str:
+def build_analysis_context(observations: Observations, evidence: list[Evidence], *, max_chars: int = MAX_RAW_LOG_CHARS,
+                           thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS) -> str:
     ranked = rank_query_requests(observations.query_requests)
     data = {
         'report_timezone': 'Asia/Seoul',
@@ -33,7 +35,8 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
         'node_metrics': [asdict(row) for row in observations.nodes],
         'cross_links': cross_links_payload(
             build_cross_links(observations),
-            {e.record_key: e.evidence_id for e in evidence if e.record_key}),
+            {e.record_key: e.evidence_id for e in evidence if e.record_key},
+            thresholds),
         'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.astimezone(KST).isoformat(),
             source=e.source, time_origin=e.time_origin,
             provenance=e.provenance.model_dump(mode='json') if e.provenance else None,

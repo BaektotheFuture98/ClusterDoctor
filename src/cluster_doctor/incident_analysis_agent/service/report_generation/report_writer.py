@@ -16,6 +16,7 @@ from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
 from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import llm_label
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS, NodeMetricThresholds
 from cluster_doctor.incident_analysis_agent.model.analysis_contract import LogAnalysisRequest
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
@@ -49,8 +50,10 @@ def _incident_response_format() -> dict:
 class ReportWriter:
     """구조화된 초안 작성과 단일 수정 호출. LLM 호출 하나만 의존한다."""
 
-    def __init__(self, *, call_llm: Callable[..., str]) -> None:
+    def __init__(self, *, call_llm: Callable[..., str],
+                 metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS) -> None:
         self._call_llm = call_llm
+        self._thresholds = metric_thresholds
 
     def draft_report(
         self,
@@ -79,7 +82,7 @@ class ReportWriter:
             candidates_for_prompt=state.candidates_for_prompt(),
             prior_summary=self._prior_summary(request.prior_report),
             gaps=tuple(state.gaps),
-            analysis_context=build_analysis_context(state.to_observations(), evidence),
+            analysis_context=build_analysis_context(state.to_observations(), evidence, thresholds=self._thresholds),
         )
         try:
             with llm_label("report_draft"):
@@ -114,7 +117,7 @@ class ReportWriter:
         messages = build_incident_synthesis_messages(
             cluster=cluster, analyzed_from=start, analyzed_to=end,
             previous_windows_json=previous_json,
-            analysis_context=build_analysis_context(observations, evidence, max_chars=40000),
+            analysis_context=build_analysis_context(observations, evidence, max_chars=40000, thresholds=self._thresholds),
         )
         if sum(len(message['content']) for message in messages) > 60000:
             raise ValueError("사건 종합 입력이 예산을 초과했다")
@@ -134,7 +137,7 @@ class ReportWriter:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
         review_messages = build_incident_review_messages(
             analyzed_from=start, analyzed_to=end, draft_json=editable,
-            analysis_context=build_analysis_context(observations, evidence, max_chars=context_budget),
+            analysis_context=build_analysis_context(observations, evidence, max_chars=context_budget, thresholds=self._thresholds),
         )
         if sum(len(message['content']) for message in review_messages) > 60000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
@@ -176,7 +179,7 @@ class ReportWriter:
         incident_final: bool = False,
     ) -> LogAnalysisReport | None:
         prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence,
-            analysis_context=build_analysis_context(observations or Observations(), evidence),
+            analysis_context=build_analysis_context(observations or Observations(), evidence, thresholds=self._thresholds),
             incident_final=incident_final)
         messages = ([{"role": "system", "content": _INCIDENT_REVIEW_INSTRUCTIONS}]
                     if incident_final else []) + [{"role": "user", "content": prompt}]

@@ -1,3 +1,4 @@
+from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS
 import json
 from datetime import datetime
 from decimal import Decimal
@@ -43,7 +44,7 @@ def test_synthesis_and_review_share_the_cause_target_rules():
 def test_cause_target_rules_cover_each_requirement():
     rules = prompts._CAUSE_TARGET_RULES
     assert "더 나쁘면" in rules and "속성" in rules
-    assert "임계치" in rules and "시각이 맞지 않" in rules
+    assert "임계치" in rules and "겹친다" in rules
     assert "구체 대상" in rules
     assert "반복하지 않는다" in rules
 
@@ -137,7 +138,7 @@ def _synthesize(monkeypatch, writer, grounding_issues=()):
 
     monkeypatch.setattr(incident_synthesis, "GroundingValidator", _Grounding)
     return incident_synthesis.synthesize_incident(
-        seams=SimpleNamespace(report_writer=writer, call_llm=None), incident=SimpleNamespace(incident_id="i", cluster="c"),
+        seams=SimpleNamespace(report_writer=writer, call_llm=None, metric_thresholds=DEFAULT_THRESHOLDS), incident=SimpleNamespace(incident_id="i", cluster="c"),
         window_reports=[], observations=_observations(), evidence=[])
 
 
