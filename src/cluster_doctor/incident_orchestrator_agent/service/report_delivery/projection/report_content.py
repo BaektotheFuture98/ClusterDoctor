@@ -121,14 +121,52 @@ def metric_nodes(report, limit=10):
     return tuple(sorted(nodes,key=lambda r:(r.node not in slow,-max(r.search_queue_max,r.write_queue_max),-r.cpu_max,r.node))[:limit])
 
 
+def _strip_brackets(text):
+    """중첩 포함 대괄호 내용을 []로 접는다."""
+    out=[];depth=0
+    for ch in text:
+        if ch=='[':
+            if depth==0:out.append('[]')
+            depth+=1
+        elif ch==']':
+            depth=max(depth-1,0)
+        elif depth==0:
+            out.append(ch)
+    return ''.join(out)
+
+
+def _master_key(e):
+    text=_strip_brackets(e.line or e.rendered or '')
+    text=re.sub(r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?','',text)
+    return (e.level.strip().upper(),e.logger,re.sub(r'\d+','',text).strip())
+
+
+def _master_groups(events):
+    """같은 모양의 master 로그를 한 묶음으로 모은다. ERROR, WARN, 그 외 순이며 같은 레벨 안에서는 첫 시각순."""
+    groups={}
+    for e in events:
+        groups.setdefault(_master_key(e),[]).append(e)
+    rank=lambda g:0 if g[0].level.strip().upper()=='ERROR' else 1 if g[0].level.strip().upper() in ('WARN','WARNING') else 2
+    far=max((e.timestamp for e in events if e.timestamp),default=None)
+    return sorted(groups.values(),key=lambda g:(rank(g),g[0].timestamp is None,g[0].timestamp or far))
+
+
+def _master_group_line(group):
+    e=group[0]
+    line=' · '.join(x for x in (stamp(e.timestamp) if e.timestamp else '시각 미확인',e.node,e.level,e.logger,e.line or e.rendered) if x)
+    if len(group)>1:
+        times=[x.timestamp for x in group if x.timestamp]
+        span=f' ({min(times).astimezone(KST):%H:%M:%S}~{max(times).astimezone(KST):%H:%M:%S})' if times else ''
+        line+=f' · 외 {len(group)-1}건{span}'
+    return line
+
+
 def source_log_sections(report, marks=None):
     """source slot은 고정이며, master log는 수집 관측값이 우선한다.
 
     marks는 evidence_id별 표지로, 서술이 인용한 slowlog 줄 앞에 붙여 근거 섹션에서 같은 줄이 두 번 나오지 않게 한다."""
     marks=marks or {}
-    master=tuple(' · '.join(x for x in (
-        stamp(e.timestamp) if e.timestamp else '시각 미확인', e.node, e.level, e.logger, e.line or e.rendered) if x)
-        for e in report.observations.master_events[:MASTER_DISPLAY_LIMIT])
+    master=tuple(_master_group_line(g) for g in _master_groups(report.observations.master_events)[:MASTER_DISPLAY_LIMIT])
     slow=tuple((f'[{marks[e.evidence_id]}] ' if e.evidence_id in marks else '')+evidence_text(e) for e in shown_slowlog_evidence(report))
     return (('master-logs','마스터 노드 로그',master),('slowlogs','slowlog 로그',slow))
 
