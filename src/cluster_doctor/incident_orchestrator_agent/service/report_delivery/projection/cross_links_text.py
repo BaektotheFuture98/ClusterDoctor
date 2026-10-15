@@ -57,3 +57,23 @@ def node_line(links: CrossLinks) -> str:
         return ''
     names = ', '.join(card.node for card in late[:4])
     return f'분석 구간에 노드 {len(late)}대({names})가 마스터 요청에 늦게 응답했습니다.'
+
+
+_EVENT_LABEL = {'health': 'health 전환', 'shard': '샤드 실패', 'node_left': '노드 이탈'}
+
+
+def cluster_event_line(links: CrossLinks) -> str:
+    events = links.cluster_events
+    if not events.kinds:
+        return ''
+    parts = []
+    for kind in events.kinds:
+        text = f'{_EVENT_LABEL[kind.kind]} {kind.count}건'
+        if kind.transitions:
+            text += '(' + ', '.join(f'{a}→{b} {n}' for a, b, n in kind.transitions[:3]) + ')'
+        parts.append(text)
+    line = f'클러스터 이벤트: {" · ".join(parts)}'
+    spans = [f'{label} {total}개 중 {hit}개' for label, total, hit in (
+        ('느린 분', events.slow_minutes, events.slow_minutes_with_events),
+        ('느리지 않은 분', events.other_minutes, events.other_minutes_with_events)) if total]
+    return f'{line} — {", ".join(spans)}에서 발생' if spans else line
