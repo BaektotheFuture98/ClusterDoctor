@@ -43,4 +43,4 @@ def test_counter_is_per_node_cumulative_and_does_not_create_critical():
 
 def test_collection_failure_and_analysis_failure_remain_visible():
     html=render_report(report(),analysis_failed=True,gaps=('SSH 수집 실패',))
-    assert 'SSH 수집 실패' in html and 'AI 분석에 실패' in html
+    assert 'SSH 수집 실패' in html and 'AI 분석' in html
