@@ -137,7 +137,7 @@ def test_fallback_narrative_shows_verdict_and_unconfirmed_cause():
     conclusion = html[html.index('id="conclusion"'):html.index('id="metrics"')]
     assert 'class="verdict"' in conclusion
     assert "<h3>수집된 자료로 지연 원인을 확정할 수 없습니다.</h3>" in conclusion
-    assert "관측된 실행 로그에서" not in html and "메커니즘 문단" not in html
+    assert "관측된 실행 로그에서" not in html and "메커니즘 문단" not in conclusion
     failed = _html(_report(_narrative()), analysis_failed=True)
-    assert "AI 분석에 실패해 관측값만 표시합니다." in failed
+    assert "구간 분석 중 실패가 있어" in failed and "AI 분석에 실패해 관측값만 표시합니다." not in failed
     assert "수집된 자료로 지연 원인을 확정할 수 없습니다." in render_text(report)

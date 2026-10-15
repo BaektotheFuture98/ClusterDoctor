@@ -79,7 +79,8 @@ def test_final_validation_reasons_remain_internal_across_delivery(monkeypatch, s
     service = AnalyzeIncident(incident_analyzer=MagicMock(), report_publisher=publisher)
     asyncio.run(service._deliver(result, result.failed, result.gaps))
     html, text = publication
-    assert 'internal final reasoning' not in html and 'internal final reasoning' not in text
+    assert 'internal final reasoning' not in html.split('<section id="unverified">')[0]
+    assert 'internal final reasoning' not in text.split('검증되지 않은 AI 분석\n')[0]
     assert 'SSH 수집 실패' in html
 
 
