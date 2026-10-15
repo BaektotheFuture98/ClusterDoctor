@@ -92,11 +92,10 @@ class Evidence(BaseModel):
 
 
 class ProblemNodeCandidate(BaseModel):
-    """마스터 로그가 지목한, 더 들여다볼 노드.
+    """마스터 로그에 ID가 적힌, 더 들여다볼 노드.
 
-    ``evidence_refs``가 비어 있으면 후보가 아니다. 근거 없이 노드를 지목하면
-    SSH 접속 비용을 추측에 쓰게 된다 — Node Investigation이 조건부인 이유가
-    그것이다.
+    ``evidence_refs``는 그 ID를 담은 선별 근거이며, 선별에서 빠진 줄만 있었다면
+    비어 있을 수 있다. ``node_name``·``ip``는 로그 줄에 함께 적혀 있을 때만 있다.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -104,3 +103,5 @@ class ProblemNodeCandidate(BaseModel):
     node_id: str
     reason: str = ""
     evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
+    node_name: str = ""
+    ip: str = ""

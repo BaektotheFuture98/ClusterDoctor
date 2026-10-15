@@ -43,10 +43,33 @@ class NodeResolver(Protocol):
         """
         ...
 
+    def cluster_log_defaults(self) -> tuple[str | None, str]:
+        """현재 클러스터 노드가 공통으로 쓰는 (로그 디렉터리, 클러스터 이름).
+
+        ES 목록에 없는 노드의 로그를 로그에 적힌 주소로 읽을 때 쓴다. 알 수
+        없으면 ``(None, "")``.
+        """
+        ...
+
 
 class ElasticsearchNodeResolver:
     def __init__(self, client: Elasticsearch) -> None:
         self._client = client
+
+    def cluster_log_defaults(self) -> tuple[str | None, str]:
+        response = self._client.nodes.info(
+            filter_path=[
+                "nodes.*.settings.path.logs",
+                "nodes.*.settings.cluster.name",
+            ]
+        )
+        for data in dict(response).get("nodes", {}).values():
+            settings = data.get("settings") or {}
+            log_path = (settings.get("path") or {}).get("logs")
+            cluster_name = (settings.get("cluster") or {}).get("name")
+            if log_path and cluster_name:
+                return log_path, cluster_name
+        return None, ""
 
     def resolve(self, node_id: str) -> ResolvedNode | None:
         identifier = (node_id or "").strip()
