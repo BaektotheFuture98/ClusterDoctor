@@ -725,6 +725,14 @@ def _master_signals(
             and event.level.strip().upper() in ("ERROR", "WARN", "WARNING")
         ]
         if not raw:
+            # ERROR/WARN이 없으면 수집된 같은 key의 전 레벨 관측으로 건수·구간을 센다.
+            raw = [
+                event
+                for event in observations.master_events
+                if event.timestamp is not None
+                and _master_key_from_event(event) == key
+            ]
+        if not raw:
             raw = [
                 MasterEvent(
                     timestamp=item.event_time,

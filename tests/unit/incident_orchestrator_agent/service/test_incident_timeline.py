@@ -175,3 +175,15 @@ def test_mixed_counter_annotation_is_not_rendered():
     cards = project_timeline(Observations(timeline=(TimelineRow(minute=_MINUTE, counts={"slowlog": 1}),)), (counter, slow), (annotation,), verification_status="PASSED")
     assert "누적값" not in texts(cards)
     assert "slowlog" in texts(cards)
+
+
+def test_info_only_master_key_counts_all_collected_events():
+    from datetime import timedelta
+    from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent
+    events = tuple(MasterEvent(timestamp=_MINUTE + timedelta(seconds=i * 10), node='m1', level='INFO',
+                               logger='o.e.c.r.a.AllocationService', line=f'status changed [x{i}]') for i in range(5))
+    ref = Evidence(evidence_id='M-1', event_time=events[0].timestamp, source=EvidenceSource.MASTER_LOG,
+                   node_name='m1', severity='Info', message=events[0].line)
+    cards = project_timeline(Observations(master_events=events), (ref,))
+    text = ' '.join(i.text for c in cards for i in (*c.impacts, *c.causes)) + ' '.join(c.representative_event for c in cards)
+    assert '5건' in text
