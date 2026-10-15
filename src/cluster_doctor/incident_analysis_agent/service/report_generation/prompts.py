@@ -24,7 +24,8 @@ from cluster_doctor.incident_analysis_agent.service.observation.log_format impor
 _CROSS_LINK_RULES = """
 소스 간 연결(cross_links):
 - cross_links는 코드가 계산한 시각·노드 대조와 판정이다. 시간 겹침, 노드 연결, 지연 범위는 이 값을 근거로 쓰고 직접 다시 계산하지 않는다.
-- verdict.scope가 지연 범위다. 같은 형태 안에서 기준 미만 요청을 느린 분과 그렇지 않은 분으로 나눠 비교한 결과다(compared_shapes개 비교, 그중 widened_shape_count개가 늘어났고 widened_shapes가 그 형태 목록). specific은 대부분의 형태가 느린 분에도 비슷했다는 뜻, cluster_wide는 늘어난 형태가 2개 이상이면서 비교한 형태의 과반이라 다른 요청도 함께 느려졌다는 뜻(한 형태만 늘었으면 specific), reference_median/slow_minute_median은 비교 형태를 합친 값이라 판정 근거가 아니라 참고값이다, undetermined는 비교할 수 있는 형태가 없다는 뜻이다. 요약과 원인 판단은 이 판정과 모순되지 않게 쓴다.
+- verdict.scope가 지연 범위다. 같은 형태 안에서 기준 미만 요청을 느린 분과 그렇지 않은 분으로 나눠 비교한 결과다(compared_shapes개 비교, 그중 widened_shape_count개가 늘어났고 widened_shapes가 그 형태 목록). specific은 대부분의 형태가 느린 분에도 비슷했다는 뜻, cluster_wide는 늘어난 형태가 2개 이상이면서 비교한 형태의 과반이라 다른 요청도 함께 느려졌다는 뜻(한 형태만 늘었으면 specific), reference_median/slow_minute_median은 비교 형태를 합친 값이라 판정 근거가 아니라 참고값이다, undetermined는 비교할 수 있는 형태가 없다는 뜻이다. 이 판정은 쿼리 사이의 분포만 말한다. 쿼리 분포에 대한 서술은 이 판정과 모순되지 않게 쓴다.
+- cluster_events는 마스터 로그의 health 전환·샤드 실패·노드 이탈을 코드가 센 값이다. 느린 분에 몰려 있고 느리지 않은 분에는 거의 없으면 원인 후보로 검토하고, 느리지 않은 분에도 비슷하게 있으면 함께 일어난 배경으로만 적는다.
 - no_slow는 쿼리 로그를 수집했고 느린 요청이 없었다는 뜻이다. no_query_log는 쿼리 로그를 수집하지 못했거나 비어 있어 판정할 수 없다는 뜻이므로 느린 요청이 없었다고 쓰지 않는다.
 - master_wait_overlaps의 waiting_from~waiting_to가 마스터가 응답을 기다린 구간이다. 쿼리와의 동시성은 로그 시각이 아니라 이 구간으로 말한다.
 - overlap_under_both_assumptions는 쿼리 로그 시각 해석과 무관하게 겹친 실행이다. overlap_under_one_assumption은 해석에 따라 달라지므로 동시 실행이 확인됐다고 쓰지 않는다.
@@ -185,7 +186,7 @@ _INCIDENT_REVIEW_INSTRUCTIONS = """너는 장애 진단 초안의 사실 범위�
    더 짧은 실행 표본 하나만으로 회복이나 정상화를 단정하지 않는다.
 3. 지표: 구간 최대값은 상승이나 동시 관측이 아니다. 시각별 표본 없는 상승·증가 표현을 최대 관측값으로 고친다.
 4. 동작: 관리 작업 로그만으로 실제 데이터 이동·자원 경합·처리 차단이 발생했다고 쓰지 않는다. 가능한 경로는 조건부 가설로 쓴다.
-5. 판정 일치: cross_links.verdict와 모순되는 범위 표현(클러스터 전반 지연 / 특정 요청 지연)을 고친다.
+5. 판정 일치: cross_links.verdict와 모순되는 쿼리 분포 표현(클러스터 전반 지연 / 특정 요청 지연)을 고친다.
 6. 관련 지표: 입력에 있는 큐·CPU·메모리 중 후보와 관련된 값이 어디까지 후보를 설명하고 어떤 연결을 설명하지 못하는지 명시한다.
    자원 경합·병목 후보를 남기려면 관련 지표의 실제 값과 관측 범위를 제시한다. 기간 최대값이면 그렇게 명시한다.
    지표와 요청의 연결이 없으면 확정하지 않는다. 관측으로 설명할 경로가 없는 일반적인 자원 경합 표현은 제거한다.

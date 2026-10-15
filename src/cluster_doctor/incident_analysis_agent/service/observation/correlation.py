@@ -23,6 +23,7 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
     Observations,
     SourceWindowStatus,
 )
+from cluster_doctor.incident_analysis_agent.service.observation.cluster_events import ClusterEvents, parse_cluster_events
 from cluster_doctor.incident_analysis_agent.service.observation.master_wait import (
     MasterWait,
     parse_master_waits,
@@ -144,6 +145,7 @@ class CrossLinks:
     # 프로파일은 상한으로 잘리므로 자르기 전 형태 수를 남겨 잘린 건수를 알린다.
     profile_total: int = 0
     concentration: tuple[ShapeConcentration, ...] = ()
+    cluster_events: ClusterEvents = ClusterEvents()
 
 
 def _host(value: str | None) -> str:
@@ -358,15 +360,17 @@ def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLO
     waits = parse_master_waits(observations.master_events)
     slow = _slow_intervals(observations, slow_seconds)
     profile = _profile(observations, slow_seconds)
+    minutes = _minute_links(observations, waits, slow)
     return CrossLinks(
         slow_threshold=slow_seconds,
         overlaps=_wait_overlaps(waits, slow),
-        minutes=_minute_links(observations, waits, slow),
+        minutes=minutes,
         nodes=_node_cards(observations, waits),
         profile=profile[:_PROFILE_ROWS],
         verdict=judge_spread(observations, slow_seconds=slow_seconds),
         profile_total=len(profile),
         concentration=_concentration(observations, slow_seconds),
+        cluster_events=parse_cluster_events(observations.master_events, minutes),
     )
 
 
@@ -475,6 +479,19 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str],
             "keyword_count_max_not_slow": c.keyword_count_max_other,
         } for c in links.concentration],
     }
+    events = links.cluster_events
+    if events.kinds:
+        payload["cluster_events"] = {
+            "kinds": [{
+                "kind": k.kind, "count": k.count, "first": _iso(k.first), "last": _iso(k.last),
+                **({"transitions": [{"from": a, "to": b, "count": n} for a, b, n in k.transitions]}
+                   if k.transitions else {}),
+            } for k in events.kinds],
+            "slow_minutes": events.slow_minutes,
+            "slow_minutes_with_events": events.slow_minutes_with_events,
+            "not_slow_minutes": events.other_minutes,
+            "not_slow_minutes_with_events": events.other_minutes_with_events,
+        }
     if omitted:
         payload["omitted"] = omitted
     return payload

@@ -3,7 +3,7 @@
 심각도 배지는 두지 않는다. 첫 줄은 코드 판정이고 그 아래가 모델의 해석이다. 모델 요약 문단은 보이지 않는다.
 """
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import CrossLinks
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import late_nodes, node_line, verdict_line
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, late_nodes, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 
 
@@ -15,6 +15,8 @@ def render_conclusion(links: CrossLinks, *, causes_html: str = '', actions_html:
         out.append(f'<p class="hint">{esc(verdict.detail)}</p>')
     if line := node_line(links):
         out.append(f'<p class="verdict">{esc(line)}</p>')
+    if line := cluster_event_line(links):
+        out.append(f'<p class="hint">{esc(line)}</p>')
     out.append(causes_html)
     out.append(actions_html)
     if analysis_failed:
