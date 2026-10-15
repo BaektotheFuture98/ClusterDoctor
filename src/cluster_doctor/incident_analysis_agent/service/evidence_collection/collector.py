@@ -6,7 +6,7 @@
         └── node metric ─ 규칙 ─┤                                  │
                                 ↓                                  ↓
                           Evidence[] ←───────────────────── Node Investigation
-                                                            (후보가 있을 때만)
+                                              (마스터 로그에 노드 ID가 있을 때만)
 
 **어느 단계도 예외를 밖으로 내보내지 않는다.** 소스 하나가 실패해도 나머지
 소스의 근거는 유효하고, 그 사실은 ``gaps``로 남아 리포트의 배너가 된다.
@@ -416,8 +416,8 @@ class EvidenceCollector:
         window: TimeRange,
         state: ObservationBuilder,
     ) -> node_investigation.NodeInvestigationResult:
-        candidates = node_investigation.find_problem_nodes(
-            master_evidence, self._call_llm
+        candidates = node_investigation.select_problem_nodes(
+            state.master_logs.values(), master_evidence
         )
         result = node_investigation.investigate_nodes(
             candidates,

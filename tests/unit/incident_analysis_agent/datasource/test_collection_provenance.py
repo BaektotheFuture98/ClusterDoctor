@@ -243,7 +243,7 @@ def _unreachable(_):
     "resolve, reason",
     [
         (_raise_lookup, "노드 정보 조회 실패 (id=node-id): lookup down"),
-        (lambda _: None, "노드를 찾지 못했다 (id=node-id)"),
+        (lambda _: None, "ES 노드 목록에 없는 노드라 로그를 수집하지 못했다 (id=node-id)"),
         (_unreachable, "node-id 노드의 접속 정보가 불완전해 로그를 보지 못했다"),
     ],
 )
@@ -252,6 +252,7 @@ def test_unreachable_candidate_records_failed_node_log_status(resolve, reason):
     (status,) = result.source_statuses
     assert (status.source, status.status, status.row_count) == ("node_log", "failed", None)
     assert status.error == reason
+    assert status.host == ("" if reason.startswith("node-id 노드의 접속") else "node-id")
     assert reason in result.gaps
     assert (status.start, status.end) == (WINDOW.start, WINDOW.end)
 

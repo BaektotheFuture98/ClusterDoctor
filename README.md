@@ -131,7 +131,7 @@ cause를 확정하지 않는다. 모든 datasource evidence가 모인 뒤 cross-
 
 노드 metric은 LLM을 거치지 않는다. heap, queue, rejected의 임계값을 넘은 최고점을 code가
 evidence로 만든다. master node log는 ClickHouse에서 매 window 읽고, data node log는 master
-evidence로 후보가 생겼을 때만 `NodeResolver`와 SSH를 통해 읽는다.
+log에 노드 ID가 적혀 있을 때만 `NodeResolver`와 SSH를 통해 읽는다.
 
 ## 보고서
 
