@@ -59,7 +59,7 @@ def build_example(variant='default'):
             provenance=EvidenceProvenance(method='clickhouse',table='demo.slowlog',query_from=window.start,query_to=window.end)))
     report=LogAnalysisReport(incident_id='DEMO',analyzed_from=window.start,analyzed_to=window.end,
         summary='수집 실행 로그에서 search 1.96초와 bulk 1.94초가 관측됐습니다.',summary_evidence_refs=query_refs[:2],
-        root_causes=(RootCause(statement='수집된 실행 기록만으로 지연 원인을 확정할 수 없습니다.',confidence='Low',supporting_evidence_refs=query_refs[:2]),),
+        root_causes=(RootCause(statement='수집된 실행 기록만으로 지연 원인을 확정할 수 없습니다.',supporting_evidence_refs=query_refs[:2]),),
         recommendations=(ReportRecommendation(text='1.96초 search의 대상과 조건을 확인하고 해당 대상 노드의 같은 시각 로그를 비교합니다.',evidence_refs=query_refs[:1]),),
         evidence_refs=tuple(e.evidence_id for e in evidence),verification_status=VARIANTS[variant])
     return to_incident_analysis_report(report,builder.to_observations(),evidence,cluster='demo-es')

@@ -88,7 +88,7 @@ def test_log_file_rotates_and_keeps_only_the_configured_backups(tmp_path):
 
 
 def test_log_rotation_defaults_to_ten_megabytes_and_five_backups(tmp_path, monkeypatch):
-    from cluster_doctor.bootstrap.configuration.settings import LoggingSettings
+    from cluster_doctor.bootstrap.settings import LoggingSettings
 
     monkeypatch.chdir(tmp_path)
     for key in ("LOG_MAX_BYTES", "LOG_BACKUP_COUNT"):
@@ -102,7 +102,7 @@ def test_log_rotation_defaults_to_ten_megabytes_and_five_backups(tmp_path, monke
 
 @pytest.mark.parametrize("name", ["LOG_MAX_BYTES", "LOG_BACKUP_COUNT"])
 def test_empty_rotation_setting_uses_the_default(tmp_path, monkeypatch, name):
-    from cluster_doctor.bootstrap.configuration.settings import LoggingSettings
+    from cluster_doctor.bootstrap.settings import LoggingSettings
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(name, "")
@@ -119,7 +119,7 @@ def test_empty_rotation_setting_uses_the_default(tmp_path, monkeypatch, name):
 def test_non_positive_rotation_setting_is_rejected(tmp_path, monkeypatch, name, value):
     from pydantic import ValidationError
 
-    from cluster_doctor.bootstrap.configuration.settings import LoggingSettings
+    from cluster_doctor.bootstrap.settings import LoggingSettings
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(name, value)

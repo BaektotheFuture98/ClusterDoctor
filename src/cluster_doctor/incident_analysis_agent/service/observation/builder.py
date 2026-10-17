@@ -98,12 +98,10 @@ class ObservationBuilder:
         self.candidates: dict[object, SlowCandidate] = {}
         self.query_requests: tuple[QueryLogEntry, ...] = ()
 
-        # 수집하지 못한 보조 근거. 리포트는 유효하지만 일부가 빠졌다는 사실이
-        # 운영자에게 반드시 도달해야 한다 — notifier가 배너로 그린다.
+        # 소스별 수집 상태와 공백. 렌더러가 수집 실패·미수집 안내에 사용한다.
         self.source_statuses: list[SourceWindowStatus] = []
         self.gaps: list[str] = []
-        # 분석 자체가 성립하지 않았는가. 리포트를 버리지는 않지만 재트리거를
-        # 막는 유일한 조건이다.
+        # 수집 단계의 심각한 실패 여부. 확보한 근거와 함께 분석 결과 판정에 사용한다.
         self.degraded = False
         self.master_log_total = 0
 

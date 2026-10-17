@@ -9,7 +9,7 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 class ReportPublisher(ABC):
     """운영자용 IncidentAnalysisReport를 실제 전달 매체로 게시하는 포트.
 
-    호출부는 매체 구현 대신 게시 결과와 분석 누락 여부를 주고받는다.
+    호출부는 리포트·수집 공백·분석 실패 여부를 넘기고 게시 결과를 받는다.
     """
 
     @abstractmethod
@@ -20,29 +20,15 @@ class ReportPublisher(ABC):
         gaps: tuple[str, ...] = (),
         analysis_failed: bool = False,
     ) -> ReportPublication:
-        """리포트를 운영자에게 전달한다.
+        """관측값과 모델 판단을 담은 리포트를 게시한다.
 
-        ``gaps``와 ``analysis_failed``를 본문에 섞어 넘기지 않고 따로 받는
-        이유: 그것을 어떻게 보여줄지는 표현의 관심사다. 문자열에 이어 붙이면
-        모델이 쓴 본문과 시스템이 덧붙인 것이 구별되지 않는다.
-
-        기본값을 둔 것은 두 값이 없는 호출을 허용하기 위해서다 — 알림 자체는
-        분석 결과의 완전성을 모르고도 성립한다.
-
-        ``report``가 문자열이 아니라 객체인 이유: 리포트에는 코드가 관측한
-        사실(분 단위 건수·노드 최대값·마스터 로그·상태 이력)과 모델의 판단이
-        함께 실린다. 문자열 하나로 만들면 그 둘을 모델이 옮겨 적어야 하고,
-        옮겨 적으면 틀린다.
-
-        구조화가 실패해도 이 타입은 바뀌지 않는다. "모델의 판단이 있는가"는
-        ``IncidentAnalysisReport`` 안의 ``narrative``/``narrative_text``가
-        표현하므로, 구현체는 언제나 같은 타입을 받고 관측값은 언제나 그릴 수
-        있다.
+        ``gaps``와 ``analysis_failed``는 본문과 분리해 전달하며, 표시 방식은
+        구현체가 정한다. 모델 판단이 없거나 검증을 통과하지 못해도 관측값은
+        표시할 수 있다. 로컬 저장 경로와 SFTP 경로는 게시 결과에 담는다.
 
         Args:
-            report:          리포트. 분석이 실패했더라도 항상 전달된다.
-            gaps:            수집하지 못한 보조 근거. 리포트는 유효하다.
-            analysis_failed: 분석 자체가 실패했는가. 본문을 신뢰할 수 없다는
-                             뜻이므로 눈에 띄게 알려야 한다.
+            report: 관측값과 선택적인 모델 판단.
+            gaps: 수집 공백과 진단 정보. 내부 검증 사유는 본문에서 제외한다.
+            analysis_failed: 분석 실패 안내와 관측 기반 대체 표시가 필요한가.
         """
         ...

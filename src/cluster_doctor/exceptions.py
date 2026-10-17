@@ -36,8 +36,6 @@ class LlmResponseError(ClusterDoctorError):
 class GuardrailViolation(ClusterDoctorError):
     """런타임 상한이 행동을 거절했다.
 
-    예외로 두는 것은 **호출자가 우회할 수 없게** 하기 위해서다. 판정 결과를
-    bool로 돌려주면 확인을 빠뜨린 경로가 조용히 상한을 넘는다. 다만 Supervisor
-    사이클은 이것을 잡아 다음 행동으로 넘어간다 — 거절은 Incident의 실패가
-    아니다.
+    Main Agent의 도구·미들웨어가 거절 메시지로 변환한다.
+    거절된 행동을 중단하며, 거절 자체를 Incident 실패로 처리하지 않는다.
     """

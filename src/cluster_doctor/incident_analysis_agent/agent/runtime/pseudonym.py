@@ -1,7 +1,8 @@
 """LLM에 보내는 글의 식별 정보를 가명으로 바꾸고, 응답에서 되돌린다.
 
 대상: IPv4, 이메일, 그리고 수집 단계에서 등록한 회사·사용자·요청 ID.
-진단 품질에 직접 쓰이는 값(키워드, 노드 이름, 쿼리 본문 등)은 가리지 않는다.
+키워드·노드 이름·쿼리 본문 자체를 별도 가명으로 등록하지는 않는다.
+이 문자열에 포함된 IP·이메일·등록 식별 값에는 동일한 치환 규칙을 적용한다.
 
 호출 경로가 둘이라 가명 규칙은 하나로 모은다. 같은 값은 어느 호출에서나 같은
 가명(``ip-0001``, ``user-0001`` 등)을 받는다 — 모델이 "같은 노드·같은 사용자"를 구분할 수 있어야 하고,
@@ -10,9 +11,11 @@ tool loop에서 이전 대화가 다시 전송될 때도 가명이 어긋나면 
 조회·분 단위 분석은 contextvars로 같은 대응표를 공유한다.
 
 - ``litellm_client.complete()``: 메시지를 직접 마스킹하고 응답 텍스트를 복원한다.
-- DeepAgent(Main/Sub): ``PseudonymizeMiddleware``가 모델 호출 직전과 직후에 같은 일을 한다.
+- DeepAgent(Main/Sub): ``PseudonymizeMiddleware``가 ``request.messages``의 본문과
+  도구 호출 값을 변환하고 응답을 복원한다. 별도 ``request.system_message``는
+  현재 변환하지 않는다.
 
-State와 도구는 원래 값을 그대로 다룬다. 가명은 모델 경계 안쪽에만 존재한다.
+State와 도구는 원래 값을 그대로 다룬다.
 """
 
 from __future__ import annotations
@@ -82,7 +85,7 @@ class Pseudonymizer:
             return alias
 
     def register(self, kind: str, value: object) -> None:
-        """수집 단계에서 알게 된 식별 값을 등록한다. 이후 모든 발신 글에서 가려진다."""
+        """수집 단계에서 알게 된 식별 값을 등록한다. 이후 mask()에 전달되는 글에서 가려진다."""
         text = str(value or "").strip()
         if len(text) < _MIN_REGISTERED_LENGTH:
             return
@@ -198,7 +201,7 @@ def _map_message(message: Any, fn: Callable[[str], str]) -> Any:
 
 
 class PseudonymizeMiddleware(AgentMiddleware):
-    """모델 호출 직전에 IP를 가명으로, 직후에 응답의 가명을 원래 IP로."""
+    """대화 메시지의 식별 값을 가명으로 바꾸고 모델 응답에서 복원한다."""
 
     def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
         with pseudonym_scope():

@@ -20,8 +20,8 @@ def scrub(text: str) -> str:
     로그에 남기려 해도 파일 핸들러가 같은 이유로 실패해 리포트가 통째로
     사라진다. 글자 하나를 ``?``로 바꾸는 편이 진단을 잃는 것보다 낫다.
 
-    치환은 입력 시점에 한 번만 한다. 렌더 결과와 원문 블록, 폴백 로그가
-    모두 같은 문자열에서 나오므로 여기서 걸러야 전부 안전해진다.
+    평문 렌더링과 HTML escape, 발행 경계에서 사용한다.
+    이미 치환한 문자열에 다시 적용해도 결과는 같다.
     """
     return text.encode("utf-8", "replace").decode("utf-8")
 
@@ -29,7 +29,7 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
     """HTML과 같은 실행 사실과 검증 gate를 갖는 평문 fallback."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, execution_summary, display_narrative, source_log_sections, source_log_notes, metric_nodes
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, metric_nodes
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
@@ -44,24 +44,20 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '결론', verdict.headline]
     if verdict.detail:out.append(verdict.detail)
     if line:=node_line(links):out.append(line)
-    if narrative:
-        for index, c in enumerate(narrative.causes):
-            out.append(c.statement)
-            if c.mechanism: out.append('판단 설명: '+c.mechanism)
-            actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
-            supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))
-            out.extend('판단 근거: '+s for s in visible_citations(supporting))
-            out.extend('반증: '+s for s in visible_citations(unique_citations(c.contradicting)))
-        if not narrative.causes:out.append('확인된 원인 없음')
-        for a in narrative.recommendations:
-            if str(a).strip():out.append('확인·조치: '+str(a))
-        for a in narrative.recommendations:
-            cause_index=getattr(a,'cause_index',None)
-            if cause_index is None or not 0<=cause_index<len(narrative.causes):
-                out.extend(visible_citations(unique_citations(getattr(a,'citations',()))))
-    else:
-        out.extend(execution_summary(obs))
-        out.append('분석 해석을 확인하지 못해 관측값만 표시합니다.')
+    for index, c in enumerate(narrative.causes):
+        out.append(c.statement)
+        if c.mechanism: out.append('판단 설명: '+c.mechanism)
+        actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
+        supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))
+        out.extend('판단 근거: '+s for s in visible_citations(supporting))
+        out.extend('반증: '+s for s in visible_citations(unique_citations(c.contradicting)))
+    if not narrative.causes:out.append('확인된 원인 없음')
+    for a in narrative.recommendations:
+        if str(a).strip():out.append('확인·조치: '+str(a))
+    for a in narrative.recommendations:
+        cause_index=getattr(a,'cause_index',None)
+        if cause_index is None or not 0<=cause_index<len(narrative.causes):
+            out.extend(visible_citations(unique_citations(getattr(a,'citations',()))))
     out.extend(('핵심 요약',
         f'수집 쿼리 실행 로그 {len(rows)}건',
         f'최대 실행시간 {str(rows[0].execution_seconds)+"s" if rows and rows[0].execution_seconds is not None else "미확인"}'))

@@ -55,8 +55,8 @@ def test_timeline_is_bounded_and_contains_absolute_maximum():
     assert 'E29' not in html
 
 
-def test_verified_headline_and_source_text_are_escaped():
-    r=replace(example(),narrative=Narrative(headline='h',causes=(CauseAssessment(statement='<script>alert(1)</script> & claim'),)))
+def test_verified_cause_and_source_text_are_escaped():
+    r=replace(example(),narrative=Narrative(causes=(CauseAssessment(statement='<script>alert(1)</script> & claim'),)))
     html=render_report(r)
     assert '&lt;script&gt;alert(1)&lt;/script&gt; &amp; claim' in html and '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
 

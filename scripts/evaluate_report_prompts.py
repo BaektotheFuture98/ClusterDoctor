@@ -64,7 +64,7 @@ def evaluate(*,mode='offline',cases_path=DEFAULT_CASES,env_file=None):
     cases=json.loads(Path(cases_path).read_text(encoding='utf-8'))
     call=None
     if mode=='live':
-        from cluster_doctor.bootstrap.configuration.settings import Settings
+        from cluster_doctor.bootstrap.settings import Settings
         settings=Settings(_env_file=env_file or '.env')
         call=build_structured_call(provider=settings.llm_provider,model=settings.llm_model,api_key=settings.llm_api_key)
     results=[]

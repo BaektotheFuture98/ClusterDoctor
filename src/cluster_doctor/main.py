@@ -10,12 +10,12 @@ import clickhouse_connect
 from clickhouse_connect.driver.client import Client
 from elasticsearch import Elasticsearch
 
-from cluster_doctor.bootstrap.configuration.settings import (
+from cluster_doctor.bootstrap.settings import (
     LoggingSettings,
     Settings,
     get_settings,
 )
-from cluster_doctor.bootstrap.lifecycle.app_lifecycle import RuntimeResources
+from cluster_doctor.bootstrap.resources import RuntimeResources
 from cluster_doctor.incident_analysis_agent.agent.subagent import AnalysisAgent
 from cluster_doctor.incident_analysis_agent.agent.dependencies import AnalysisSeams
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
@@ -44,7 +44,7 @@ from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
 from cluster_doctor.incident_orchestrator_agent.agent.analysis_subagent import (
     AnalysisSubagentAdapter,
 )
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.chat_model import (
+from cluster_doctor.incident_orchestrator_agent.agent.chat_model import (
     build_chat_model,
 )
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analyze_incident import (

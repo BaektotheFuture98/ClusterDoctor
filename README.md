@@ -36,7 +36,7 @@ KafkaConsumerAdapter
 ```text
 src/cluster_doctor/
 ├── main.py                 # Composition Root: 명시적 실행 객체 조립
-├── bootstrap/              # configuration, shared client lifecycle
+├── bootstrap/              # 환경 설정(settings.py), 공유 client 수명(resources.py)
 ├── kafka_consumer/         # Kafka 수신 + 정착(settling)
 ├── incident_orchestrator_agent/   # Main Agent: 분석 범위·수명 관리, 리포트 전달
 └── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증
@@ -51,6 +51,11 @@ Orchestrator에 의존하지 않는다. `main.py`가 구체 구현을 직접 생
 
 - Kafka inbound는 record를 `ProblemLogSignal`로 파싱해 `ProblemLogProcessor`에 넘긴다.
   `aiokafka` 의존성은 `kafka_consumer/consumer/kafka`에만 있다.
+- `incident_orchestrator_agent/agent/chat_model.py`가 Main·Analysis 공용 chat model을 만든다.
+  `incident_analysis_agent/agent/runtime/`의 `harness.py`, `litellm_client.py`,
+  `rate_limit_retry.py`, `pseudonym.py`, `llm_call_log.py`, `tool_batch.py`는
+  harness 제한, 직접 LLM 호출, 재시도, 가명화, 호출 로그, 도구 실행 제어에 사용하는
+  활성 공용 유틸리티다.
 - `incident_analysis_agent/datasource`가 ClickHouse(`clickhouse/client.py`),
   Elasticsearch(`elasticsearch/cluster_health.py`, `node_resolver.py`),
   SSH(`ssh/node_log.py`)를 구현한다.
@@ -65,7 +70,7 @@ Orchestrator에 의존하지 않는다. `main.py`가 구체 구현을 직접 생
   `KafkaConsumerAdapter`도 직접 만든다. 같은 `main.py`의
   `build_runtime_resources(settings)`가 공유 client를 만들고,
   `build_report_publisher(settings)`가 로컬 HTML 및 선택적 SFTP publisher를 만든다.
-  client 종료와 부분 초기화 실패 시 정리는 `bootstrap/lifecycle/app_lifecycle.py`의
+  client 종료와 부분 초기화 실패 시 정리는 `bootstrap/resources.py`의
   `RuntimeResources`와 생성 시의 `ExitStack`이 맡는다.
 
 실행 객체와 model·seams는 기동 시 한 번 생성한다. 모델 검증과 harness 등록도
@@ -97,7 +102,8 @@ Analysis SubAgent는 승인된 window 하나를 끝까지 처리한다. evidence
 Analysis의 시스템 프롬프트도 실행 순서·근거 해석·추가 구간 판단을 맡고, 세 도구의
 사용법과 인자 형식은 tool description과 schema에 둔다. 수집 재호출은 캐시를 반환하며,
 리포트 작성은 실패 후 남은 시도 횟수가 있을 때 재시도하도록 안내한다.
-`validate_report`는 근거 및 candidate 참조 ID의 유효성만 확인하고,
+`validate_report`는 근거·candidate 참조와 원인·조치 연결의 구조를 확인한다.
+사건 종합에서는 조치의 구체 대상 누락도 수정 권고로 남긴다.
 `GroundingValidator`가 Claim을 수집된 evidence·observation과 대조한다. 표현 불일치는 `revise_report`로
 최대 2회 고치고, 분석 불일치는 같은 window를 1회 다시 분석한다. 그래도 남으면
 `MISMATCH`로, 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
@@ -140,7 +146,7 @@ Incident 하나당 `REPORT_DIR` 아래 HTML 파일 하나를 쓴다. `IncidentAn
 
 SSH 로그에는 실제 파일 경로와 원문을 근거 영역에 표시한다. `time_origin=parsed`만 정확한 타임라인 시각으로 사용하며 inherited/fallback은 시각 미확인 문맥이다. 수집 실패 분은 0건으로 그리지 않는다. `rejected`는 누적값이며 이번 구간의 실패나 회복으로 해석하지 않는다. 시스템 지표는 측정된 노드별 최대값을 표시한다. 조회 시점 cluster health는 과거 사고 상태로 보고서에 싣지 않는다. 지표 경고 임계값은 수집·리포트 작성·검증에 같은 설정을 전달한다.
 
-요약·finding 제목/상세·원인/반증·권고·후보 선정 이유를 claim별 원문과 대조한다. 원문과 명확히 충돌할 때만 `MISMATCH`, 나머지는 `PASSED`다. 근거 부족·원문 미확보·절단·인과 미입증은 자동 탈락 사유가 아니다. `PASSED`는 사실 입증이 아닌 명확한 모순 미발견을 의미한다. 모든 claim_id에 완전한 판정이 있어야 하며 호출 실패·잘못된 JSON·빈/누락/중복/알 수 없는 응답은 검증 실행 오류로 남긴다. 가장 느린 실행 상위 5개는 코드가 분석 근거에 포함한다. 검증 실행 오류가 있으면 분석을 승격하지 않고 같은 요약·원인 슬롯에 관측 기반 내용을 채운다. 내부 검증 상태·사유는 본문에 표시하지 않고 로그에 남긴다. SVG와 원문은 인쇄 시에도 표시하고 외부 웹폰트·CDN을 사용하지 않는다.
+요약·finding 제목/상세·원인/반증·권고·후보 선정 이유를 claim별 원문과 대조한다. 원문과 명확히 충돌할 때만 `MISMATCH`, 나머지는 `PASSED`다. 근거 부족·원문 미확보·절단·인과 미입증은 자동 탈락 사유가 아니다. `PASSED`는 사실 입증이 아닌 명확한 모순 미발견을 의미한다. 모든 claim_id에 완전한 판정이 있어야 하며 호출 실패·잘못된 JSON·빈/누락/중복/알 수 없는 응답은 검증 실행 오류로 남긴다. 가장 느린 실행 상위 5개는 코드가 분석 근거에 포함한다. 검증 실행 오류가 있으면 분석을 승격하지 않고 같은 결론 영역에 관측 기반 대체 판단을 표시한다. 내부 검증 상태·사유는 본문에 표시하지 않고 로그에 남긴다. SVG와 원문은 인쇄 시에도 표시하고 외부 웹폰트·CDN을 사용하지 않는다.
 
 합성 DTO와 고정 분석문으로 실제 publisher 결과를 확인하려면:
 
@@ -157,11 +163,14 @@ preview는 HTML과 같은 이름의 평문을 함께 저장한다. offline의 10
 없으면 scrubbed plain text를 log로 남긴다. 모든 text는 escape하며 report 파일은 쿼리 조건과
 company/user 식별자를 담을 수 있으므로 `reports/`는 Git에 넣지 않는다.
 
-LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가명으로 바꾸고 응답에서
-복원한다. 가명 대응표는 Incident마다 새로 만들며, 같은 Incident의 Main/SubAgent와
-병렬 조회·분 단위 분석이 공유한다. 분석이 성공하거나 실패해 종료되면 대응표를
-해제하므로, 상시 실행 중 이전 Incident의 식별자가 누적되지 않는다. 키워드·노드 이름·
-쿼리 본문과 저장된 원본 데이터는 이 가명 처리의 대상이 아니다.
+직접 LiteLLM 호출의 메시지 본문과 DeepAgent 대화 메시지·도구 호출 값에서
+IPv4·이메일·등록된 회사·사용자·요청 ID를 가명으로 바꾸고 응답에서 복원한다.
+현재 DeepAgent의 별도 `system_message`는 변환하지 않는다.
+가명 대응표는 Incident마다 새로 만들며, 같은 Incident의 Main/SubAgent와
+병렬 조회·분 단위 분석이 공유한다. 분석 종료 시 대응표를 해제한다.
+키워드·노드 이름·쿼리 본문 자체를 별도 가명으로 등록하지는 않지만,
+그 안에 포함된 IP·이메일·등록 식별 값에는 치환 규칙을 적용한다.
+저장된 원본 데이터는 변경하지 않는다.
 
 ## 요구 사항
 
@@ -174,8 +183,8 @@ LLM에 전달하는 IP·이메일·등록된 회사·사용자·요청 ID는 가
 
 ## 설정
 
-환경 변수 또는 project root `.env`를 `src/cluster_doctor/bootstrap/configuration/settings.py`가 읽는다.
-`.env.example`을 `.env`로 복사하고 실제 key는 commit하지 않는다. 필수 설정이 없으면 첫
+환경 변수 또는 project root `.env`를 `src/cluster_doctor/bootstrap/settings.py`가 읽는다.
+`.env.example`을 `.env`로 복사하고 실제 key는 commit하지 않는다. 필수 설정이 없으면
 첫 문제성 로그 신호까지 기다리지 않고 기동 시점에 실패하며, 오류는 secret value를 출력하지 않는다.
 
 | 변수 | 기본값 | 설명 |
@@ -245,14 +254,26 @@ consumer가 담당하는 partition leader 장애로 종료하지 않는다. 리�
 
 ### 재시도와 rate limit
 
-LLM 호출은 `litellm.completion(num_retries=0)` 경로만 쓴다. 가장 흔한 실패는 429이고, 같은 큰
-prompt를 재시도해도 quota를 회복하지 못하며 token 소비만 증가한다. Gemini free tier의
-분당 입력 token 250,000에 대해 5분 window가 약 513,122 input token을 쓴 실측이 있다.
-추가 window 분석, 리포트 수정·재분석, 원문 대조 검증도 추가 token을 소비한다.
+직접 호출은 `litellm_client.complete()`를, Main·Analysis DeepAgent는
+`ChatLiteLLM`을 쓴다. LiteLLM과 ChatLiteLLM의 내부 재시도는 끄고, 애플리케이션에서
+429·503 오류만 최대 한 번 재시도한다. 직접 호출 루프와 DeepAgent의
+`RateLimitRetryMiddleware`는 같은 `_retry_wait(exc, status)` 정책을 사용한다.
 
-client는 status와 whitelist된 rate-limit header만 log로 남긴다. response body, request URL,
-`str(exc)`는 key를 포함할 수 있어 기록하지 않는다. retry를 끈 대가로 일시적인 5xx도 자동
-retry하지 않지만, failed minute은 전체 incident를 버리지 않고 gap으로 보고된다.
+숫자로 읽을 수 있는 `Retry-After` 헤더를 우선하고, 없거나 숫자가 아니면 오류의
+`retryDelay`(초)를 읽는다. 제공된 대기 시간에는 1초 여유를 더한다. 제공값 자체가
+60초를 넘으면 재시도하지 않는다(60초이면 실제 대기는 61초).
+대기 시간이 없고 429 오류의 `quotaId`에 Token이 포함되면 재시도하지 않는다.
+그 밖의 429·503은 5초 후 한 번 재시도하며, 다른 상태나 재시도 실패는 그대로 실패로 처리한다.
+실패한 minute은 gap으로 남기므로 해당 실패만으로 incident 전체를 버리지는 않는다.
+
+직접 `complete()`를 거치는 Gemini 호출에만 공유 최소 호출 간격 5초(분당 12회)를
+적용한다. DeepAgent의 ChatLiteLLM 호출에는 이 throttle이 적용되지 않는다.
+추가 window 분석, 리포트 수정·재분석, 원문 대조 검증도 token을 소비하므로
+호출 간격과 재시도만으로 token quota 초과를 막을 수는 없다.
+
+직접 호출 client는 status, 짧은 오류 code/type과 whitelist된 rate-limit header만
+진단 log에 남긴다. response body, request URL, `str(exc)`는 기록하지 않는다.
+오류 본문은 재시도 대기 시간과 token quota 여부를 판단할 때만 읽는다.
 
 ## 설치와 실행
 
@@ -385,7 +406,7 @@ flowchart TD
 | 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
 | 분석 의존성 조립 | datasource·model·seams·agents·AnalyzeIncident 직접 생성 | `src/cluster_doctor/main.py: compose_analysis_service` |
 | client·publisher 조립 | 공유 client 생성과 공개 build_report_publisher, SFTP 설정 | `src/cluster_doctor/main.py` |
-| client 수명 관리 | 실행 종료 시 정리 | `src/cluster_doctor/bootstrap/lifecycle/app_lifecycle.py` |
+| client 수명 관리 | 실행 종료 시 정리 | `src/cluster_doctor/bootstrap/resources.py` |
 | Kafka 수신 | JSON에서 event time을 읽어 `ProblemLogSignal`로 변환 | `src/cluster_doctor/kafka_consumer/consumer/kafka/consumer.py` |
 | Incident 묶기·대기 | quiet period 정착과 순차 분석 루프 | `src/cluster_doctor/kafka_consumer/trigger_settling/service/problem_log_processor.py` |
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달 | `src/cluster_doctor/incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py` |

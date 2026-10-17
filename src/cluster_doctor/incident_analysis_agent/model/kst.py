@@ -1,7 +1,7 @@
 """KST 시각 하나를 문자열로, 문자열 하나를 KST 시각으로.
 
-Supervisor와 진단 쪽이 함께 쓴다. 두 계층이 서로를 import하지 않아야 하므로
-공통분을 여기에 둔다. 구간 대수(합·차·분할)는 도메인의 ``time_range``에 있다.
+Main Agent와 Analysis가 함께 사용하는 시각 변환 함수다.
+구간의 합·차·분할은 ``time_range``에 있다.
 """
 from __future__ import annotations
 

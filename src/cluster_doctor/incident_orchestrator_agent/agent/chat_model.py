@@ -1,4 +1,4 @@
-"""Main DeepAgent가 쓰는 chat model.
+"""Main·Analysis DeepAgent가 공유하는 chat model 구성.
 
 ``litellm_client.complete()``는 **왕복 한 번에 텍스트 하나**를 돌려주는
 함수다. tool loop를 돌 수 없으므로 DeepAgent는 그것을 쓸 수 없고,
@@ -10,7 +10,7 @@ LangChain ``BaseChatModel``이 필요하다.
 
 1. 자체 재시도 0회 (429 증폭 방지). 429/503은 ``RateLimitRetryMiddleware``가
    오류 종류를 가려 한 번만 다시 부른다
-2. 요청 타임아웃 600초
+2. 요청 타임아웃은 ``litellm_client``의 설정을 공유한다
 3. temperature를 비롯한 샘플링 인자를 보내지 않는다
 
 여기에 하나가 더 붙는다. Main DeepAgent는 tool call로만 움직이므로, tool
@@ -31,7 +31,7 @@ import litellm  # noqa: E402
 from langchain_core.language_models import BaseChatModel  # noqa: E402
 from langchain_litellm import ChatLiteLLM  # noqa: E402
 
-from cluster_doctor.bootstrap.configuration.settings import (  # noqa: E402
+from cluster_doctor.bootstrap.settings import (  # noqa: E402
     ConfigurationError,
 )
 
@@ -79,10 +79,7 @@ def require_tool_calling(provider: str, model: str) -> None:
 
     - litellm 레지스트리(``model_cost``)에 항목이 **있고** 그 항목이 function
       calling을 지원하지 않는다고 말하면, 그것은 실제 부정이므로 끊는다.
-    - 항목이 **없으면** 그것은 부정이 아니라 침묵이다. litellm의 nvidia_nim
-      항목은 reranker 셋뿐이라 우리가 쓰는 모델은 애초에 등재되어 있지 않다.
-      침묵을 부정으로 읽으면 근거 없이 provider 하나가 통째로 쓸 수 없게
-      되므로, 경고만 남기고 통과시킨다.
+    - 항목이 **없으면** 지원 여부를 알 수 없으므로 경고만 남기고 통과시킨다.
 
     실패 메시지에는 고쳐야 할 설정의 **이름**만 담는다(``_SETTING_HINT``).
     """
@@ -117,12 +114,8 @@ def build_chat_model(*, provider: str, model: str, api_key: str) -> BaseChatMode
         model=f"{_PROVIDER_PREFIX[provider]}/{model}",
         # 키는 파라미터로만 전달한다. 모델 문자열이나 URL에 싣지 않는다.
         api_key=api_key,
-        # LangChain 계층의 재시도. 기본값이 1이라 **끄지 않으면 켜져 있다.**
-        # 이 경로의 실패는 대부분 429이고 원인은 분당 입력 토큰 한도 초과라,
-        # 같은 프롬프트를 다시 보내면 실패가 보장된 채 소비만 배로 늘어난다
-        # (실측: 513,122 토큰 → 재시도 포함 2,052,488 토큰, 한도 250,000의
-        # 821%). tenacity stop_after_attempt(0)은 첫 호출은 그대로 하고 재시도
-        # 없이 원래 예외를 그대로 올린다.
+        # LangChain 자체 재시도는 끈다. 429/503 재시도는
+        # RateLimitRetryMiddleware가 오류 종류와 대기 시간을 확인해 관리한다.
         max_retries=0,
         request_timeout=_REQUEST_TIMEOUT_SECONDS,
         # litellm 계층의 재시도. ``max_retries``와 별개의 층이고 이쪽은

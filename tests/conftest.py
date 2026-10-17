@@ -1,6 +1,6 @@
 import pytest
 
-from cluster_doctor.bootstrap.configuration.settings import Settings
+from cluster_doctor.bootstrap.settings import Settings
 
 
 @pytest.fixture(autouse=True)

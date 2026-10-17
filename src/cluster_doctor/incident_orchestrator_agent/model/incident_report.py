@@ -28,19 +28,13 @@ class CauseAssessment:
 
 @dataclass(frozen=True)
 class Finding:
-    """모델이 지목한 문제 하나.
+    """모델이 지목한 관측 사항과 원문 인용.
 
-    ``severity``가 필드인 것이 요점이다. 모델이 ``"Critical: …"``처럼 본문에
-    섞어 쓰게 두면 notifier가 정규식으로 앞머리를 떼야 하고, 본문에 우연히 들어간
-    "Info"까지 배지로 승격된다.
-
-    비어 있을 수 있다. 그때는 렌더러가 "모델이 분류하지 않음"으로 그린다 —
-    코드가 대신 채우지 않는다. 이 필드는 **모델의 판단**이다.
+    ``severity``는 모델의 분류를 보존하며, 코드가 대신 채우지 않는다.
     """
 
     severity: str
     title: str
-    evidence: tuple[str, ...] = ()
     citations: tuple[EvidenceCitation, ...] = ()
     detail: str = ""
 
@@ -57,23 +51,16 @@ class Recommendation:
 
 @dataclass(frozen=True)
 class Narrative:
-    """모델의 판단.
+    """표시할 관측 사항·원인 판단·후보 선택 이유·조치와 그 근거 인용.
 
-    관측값은 하나도 담지 않는다. 담으면 모델이 옮겨 적어야 하고, 옮겨 적으면
-    틀린다 — 관측값과 최종 출력의 경계를 분리한다.
+    건수·최대값·시계열 등 코드가 계산한 값은 Observations에서 별도로 읽는다.
+    내부 분석의 요약과 미해결 질문은 LogAnalysisReport에 보관한다.
     """
 
-    headline: str = ""
-    context: tuple[str, ...] = ()
     findings: tuple[Finding, ...] = ()
-    root_cause: str = ""
-    supporting: tuple[str, ...] = ()
-    contradicting: tuple[str, ...] = ()
-    unverified: tuple[str, ...] = ()
     suspect_picks: tuple[SuspectPick, ...] = ()
     recommendations: tuple[Recommendation | str, ...] = ()
     causes: tuple[CauseAssessment, ...] = ()
-    headline_citations: tuple[EvidenceCitation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,20 +81,12 @@ class TimelineAnnotation:
 class IncidentAnalysisReport:
     """운영자에게 전달되는 리포트 한 건.
 
-    ``narrative``와 ``narrative_text``는 배타적이다.
-
-      narrative 있음        구조화 출력 성공. 정상 경로.
-      narrative_text 있음   호출자가 평문 참고 자료를 제공했다.
-                            렌더러가 평문 자료로 표시한다.
-      둘 다 없음            모델이 아무것도 남기지 못했다. 관측값만 그린다.
-
-    셋 중 어느 경우든 ``observations``는 그대로 렌더된다. 그것이 이 설계의
-    요점이다 — 모델이 실패해도 운영자는 그 시각에 무슨 일이 있었는지 본다.
+    ``narrative``는 구조화된 모델 판단이며, 검증을 통과해야 표시된다.
+    판단이 없거나 표시할 수 없어도 ``observations``는 그대로 렌더된다.
     """
 
     observations: Observations
     narrative: Narrative | None = None
-    narrative_text: str = ""
     evidence: tuple[Evidence, ...] = ()
     timeline_annotations: tuple[TimelineAnnotation, ...] = ()
     verification_status: str = "NOT_VERIFIED"

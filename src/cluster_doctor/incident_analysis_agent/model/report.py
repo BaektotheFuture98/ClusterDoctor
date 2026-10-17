@@ -1,11 +1,8 @@
-"""SubAgent가 한 번의 분석 Scope에서 만든 리포트.
+"""구간 분석과 사건 전체 종합이 사용하는 구조화된 리포트.
 
-표현은 여기 없다. HTML도 PDF도 이 타입을 읽어 그릴 뿐이고, 그 경계를 지키는
-것이 ``notifier``다.
-
-모든 주장이 ``evidence_refs``를 달고 다니는 것이 이 타입의 요점이다. 근거
-참조가 비어 있는 주장은 Validator가 "unsupported claim"으로 잡는다 — 검증을
-가능하게 하는 것이 구조이지 프롬프트가 아니다.
+초안에서 변환한 주장과 근거 참조를 보관하며 일관성 검증의 입력이 된다.
+HTML·평문은 이 타입을 전달용 IncidentAnalysisReport로 변환한 결과를 읽는다.
+근거 ID와 원인·조치 연결은 코드가 검사하고, 주장의 의미는 grounding이 대조한다.
 """
 
 from __future__ import annotations
@@ -21,7 +18,7 @@ class LogAnalysisStatus(StrEnum):
     """SubAgent가 한 번의 분석을 어떻게 끝냈는가."""
 
     COMPLETED = "COMPLETED"
-    # 현재 요청 범위 밖의 시간이 필요하다. Scope 확장은 Supervisor가 승인한다.
+    # 현재 요청 범위 밖의 시간이 필요하다. 추가 구간은 Main Agent가 승인한다.
     NEED_MORE_CONTEXT = "NEED_MORE_CONTEXT"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"

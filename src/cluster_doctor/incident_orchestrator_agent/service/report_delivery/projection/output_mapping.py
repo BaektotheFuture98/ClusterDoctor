@@ -1,22 +1,13 @@
-"""``LogAnalysisReport``를 ``IncidentAnalysisReport``로 옮기는 projection.
+"""분석 리포트와 누적 관측값·근거를 운영자 전달 모델로 변환한다.
 
-표현 계층(HTML 렌더러, report_text)은 ``IncidentAnalysisReport``를 읽는다. 그쪽을
-새 타입에 맞춰 다시 쓰지 않는 이유는 그 코드가 잘 돌고 있고, 바꿔야 할 이유가
-"모양이 달라서"뿐이기 때문이다. 대신 경계에 매핑 함수 하나를 둔다.
-
-Analysis Agent의 최종 리포트와 MainAgentState가 누적한 관측값·근거를 결합해
-운영자 전달용 값을 만드는 것이 이 함수의 일이다. rendering 어댑터는 이
-결과만 읽는다.
-
-**근거 참조를 사람이 읽을 인용으로 바꾸는 것이 이 함수의 일이다.** 리포트에
-``E-abc-3``이라고 적히면 운영자는 그것이 무엇인지 알 수 없다. 참조를 실제 근거
-줄로 푸는 것은 코드가 해야 하고, 모델에게 시키면 옮겨 적다 틀린다.
+주장의 근거 ID는 EvidenceCitation으로 연결하고, 원인·조치의 연결과
+타임라인·검증 상태를 보존한다. HTML·평문에 표시하지 않는 내부 분석 요약과
+미해결 질문은 전달 모델에 복제하지 않는다. 표시 여부는 렌더링 투영에서 결정한다.
 """
 
 from __future__ import annotations
 
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
-from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
@@ -29,7 +20,6 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import (
     citations,
-    cite,
 )
 
 
@@ -40,18 +30,12 @@ def to_incident_analysis_report(
     *,
     cluster: str = "",
 ) -> IncidentAnalysisReport:
-    """최종 전달용 리포트를 만든다.
-
-    ``report``가 ``None``이어도 관측값 섹션은 그대로 렌더된다. "리포트는 항상
-    전달된다" 원칙이 그것을 요구한다 — 모델이 아무 말도 남기지 못해도 그 시각에
-    무슨 일이 있었는지는 남아야 한다.
-    """
+    """분석 리포트가 없어도 관측값과 수집 근거를 전달한다."""
     if report is None:
         return IncidentAnalysisReport(
             observations=observations, evidence=tuple(evidence), cluster=cluster
         )
 
-    evidence_by_id = {item.evidence_id: item for item in evidence}
     return IncidentAnalysisReport(
         observations=observations,
         evidence=tuple(evidence),
@@ -69,45 +53,24 @@ def to_incident_analysis_report(
         analyzed_from=report.analyzed_from,
         analyzed_to=report.analyzed_to,
         narrative=Narrative(
-            headline=report.summary,
-            headline_citations=citations(report.summary_evidence_refs, tuple(evidence)),
-            context=tuple(
-                f"{event.at.astimezone(KST):%H:%M:%S} KST {event.description}"
-                for event in report.timeline
-            ),
             findings=tuple(
                 Finding(
                     severity=item.severity,
                     title=item.title,
-                    evidence=_quote(
-                        item.evidence_refs, evidence_by_id, extra=item.detail
-                    ),
                     citations=citations(item.evidence_refs, tuple(evidence)),
                     detail=item.detail,
                 )
                 for item in report.findings
             ),
-            root_cause=_root_cause_text(report),
-            supporting=_quote(
-                tuple(
-                    ref
-                    for cause in report.root_causes
-                    for ref in cause.supporting_evidence_refs
-                ),
-                evidence_by_id,
-            ),
-            contradicting=_quote(
-                tuple(
-                    ref
-                    for cause in report.root_causes
-                    for ref in cause.counter_evidence_refs
-                ),
-                evidence_by_id,
-            ),
-            unverified=report.unresolved_questions,
             suspect_picks=report.suspect_picks,
-            recommendations=tuple(Recommendation(text=item.text, cause_index=item.cause_index, citations=citations(item.evidence_refs, tuple(evidence)))
-                for item in report.recommendations),
+            recommendations=tuple(
+                Recommendation(
+                    text=item.text,
+                    cause_index=item.cause_index,
+                    citations=citations(item.evidence_refs, tuple(evidence)),
+                )
+                for item in report.recommendations
+            ),
             causes=tuple(
                 CauseAssessment(
                     statement=cause.statement,
@@ -123,27 +86,3 @@ def to_incident_analysis_report(
             ),
         ),
     )
-
-
-def _root_cause_text(report: LogAnalysisReport) -> str:
-    """원인 후보를 한 문단으로."""
-    return " / ".join(cause.statement for cause in report.root_causes)
-
-
-def _quote(
-    refs: tuple[str, ...], evidence_by_id: dict[str, Evidence], *, extra: str = ""
-) -> tuple[str, ...]:
-    """근거 참조를 원문 인용으로 푼다. 없는 참조는 그 사실을 적는다.
-
-    **조용히 버리지 않는다.** 모델이 없는 id를 인용한 것은 운영자가 알아야 할
-    사실이고, 그것이 사라지면 리포트가 근거를 댄 것처럼 보인다.
-    """
-    lines = [extra.strip()] if extra.strip() else []
-    seen: set[str] = set()
-    for ref in refs:
-        if ref in seen:
-            continue
-        seen.add(ref)
-        found = evidence_by_id.get(ref)
-        lines.append(cite(found) if found else f"[{ref}] (존재하지 않는 근거 참조)")
-    return tuple(lines)

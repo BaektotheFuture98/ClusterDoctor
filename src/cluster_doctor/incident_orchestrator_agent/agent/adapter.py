@@ -95,7 +95,7 @@ class MainAgent:
 
     @pseudonym_scope(fresh=True)
     def analyze(self, request: IncidentAnalysisRequest) -> IncidentAnalysisResult:
-        """Incident 하나의 분석을 끝까지 진행한다. 예외를 올리지 않는다.
+        """Incident를 분석하며 그래프·최종 종합 실행 오류는 실패 결과로 반환한다.
 
         호출부와 mutable State를 공유하지 않는다. 예외가 나도 마지막
         커밋된 snapshot의 근거를 보존한다. 최종 리포트는 누적 근거로

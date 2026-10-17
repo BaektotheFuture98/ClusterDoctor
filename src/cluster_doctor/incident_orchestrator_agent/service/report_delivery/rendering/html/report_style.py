@@ -25,9 +25,7 @@ padding-bottom:24px}
 header .hint{margin:0}
 h1{margin:0;font-size:clamp(26px,4vw,30px);font-weight:700;line-height:1.25;
 letter-spacing:-.01em;text-wrap:balance}
-.stamp{margin:0;font-family:var(--mono);font-size:12px;color:var(--ink-2);
-font-variant-numeric:tabular-nums}
-.stamp,.headline,h1,.hint,li,p{overflow-wrap:anywhere}
+h1,.hint,li,p{overflow-wrap:anywhere}
 a{color:var(--accent-ink);text-underline-offset:3px}
 section{margin-top:48px}
 h2{margin:0 0 16px;font-size:19px;font-weight:700;line-height:1.3;padding-bottom:8px;
@@ -52,15 +50,8 @@ height:10px;border-radius:50%;background:var(--page);border:3px solid var(--line
 color:var(--ink-2)}
 .event-time time{display:block}
 .event-time time:first-child{font-weight:600;color:var(--ink)}
-.event-body{min-width:0;padding-bottom:24px;border-bottom:1px solid var(--line)}
-.event-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin:0 0 4px}
-.event-node{font-size:12px;color:var(--ink-2)}
-.event-body h3{margin:0 0 8px;font-size:16px;line-height:1.5}
-.event-observation{margin:0 0 8px}
 .analysis-note{margin:0 0 8px;padding:2px 0 2px 16px;border-left:2px solid var(--accent);
 font-size:13px}
-.event-refs{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;font-family:var(--mono);
-font-size:12px}
 summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (max-width:700px){
 .incident-timeline{padding-left:20px}.incident-timeline::before{left:4px}

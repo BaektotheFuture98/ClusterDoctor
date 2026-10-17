@@ -112,7 +112,6 @@ def _citation_groups(narrative):
     """(지지, 반증) 인용. 지지와 반증에 모두 걸린 근거는 반증 쪽에만 둔다."""
     contradicting=unique_citations(*(cause.contradicting for cause in narrative.causes))
     contradicting_ids={c.evidence_id for c in contradicting}
-    # 요약 문단은 보이지 않으므로 그 인용은 싣지 않는다.
     cited=tuple(c for c in unique_citations(
         *(cause.supporting for cause in narrative.causes),
         *(finding.citations for finding in narrative.findings),

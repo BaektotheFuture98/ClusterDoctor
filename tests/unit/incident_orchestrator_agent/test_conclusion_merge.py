@@ -7,7 +7,6 @@ from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import CrossLinks, Verdict
-from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     CauseAssessment, Finding, IncidentAnalysisReport, Narrative, Recommendation,
 )
@@ -38,7 +37,6 @@ def _report(narrative, status="PASSED", evidence=()):
 
 def _narrative(**kw):
     return Narrative(
-        headline="숨겨질 요약",
         causes=(CauseAssessment(statement="원인 문장", mechanism="메커니즘 문단"),),
         recommendations=(Recommendation(text="조치 하나"), Recommendation(text="조치 둘")),
         findings=(Finding("Info", "관측 제목", detail="관측 설명"),), **kw)
@@ -58,18 +56,30 @@ def test_section_order_and_removed_sections():
     assert html.count("<li>조치 하나</li>") == 1
 
 
+def _summary_report(evidence=()):
+    from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, RootCause, VerificationStatus
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
+    source = LogAnalysisReport(
+        incident_id="I", analyzed_from=NOW, analyzed_to=NOW,
+        summary="숨겨질 요약", summary_evidence_refs=tuple(e.evidence_id for e in evidence),
+        root_causes=(RootCause(statement="원인 문장", mechanism="메커니즘 문단"),),
+        verification_status=VerificationStatus.PASSED,
+    )
+    return to_incident_analysis_report(source, _report(None).observations, list(evidence))
+
+
 def test_summary_is_not_shown_in_html_or_text():
-    report = _report(_narrative())
+    report = _summary_report()
     assert "숨겨질 요약" not in _html(report)
     assert "숨겨질 요약" not in render_text(report)
     assert 'class="report-headline"' not in _html(report)
 
 
-def test_headline_citations_are_not_listed():
+def test_internal_summary_only_citations_are_not_listed():
     ev = Evidence(evidence_id="E1", event_time=datetime(2026, 10, 14, 14, 0, tzinfo=KST),
                   source=EvidenceSource.MASTER_LOG, message="요약에만 인용된 원문")
-    narrative = _narrative(headline_citations=(EvidenceCitation("E1", ev),))
-    report = _report(narrative, evidence=(ev,))
+    report = _summary_report((ev,))
+    assert report.evidence == (ev,)
     assert 'id="citations"' not in _html(report)
     assert "요약에만 인용된 원문" not in render_text(report).split("결론")[1].split("핵심 요약")[0]
 

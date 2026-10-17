@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cluster_doctor.bootstrap.lifecycle.app_lifecycle import RuntimeResources
+from cluster_doctor.bootstrap.resources import RuntimeResources
 
 
 @pytest.fixture
