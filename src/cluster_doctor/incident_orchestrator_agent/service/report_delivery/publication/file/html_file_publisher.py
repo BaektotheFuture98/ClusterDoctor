@@ -6,14 +6,18 @@
 
 from __future__ import annotations
 
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import is_validation_diagnostic
-
 import asyncio
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import (
+    is_validation_diagnostic,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import (
+    render_report,
+)
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
     unrestored_aliases,
 )
@@ -23,7 +27,7 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 from cluster_doctor.incident_orchestrator_agent.model.report_delivery import (
     ReportPublication,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.report_publisher import (
     ReportPublisher,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
@@ -57,9 +61,8 @@ def _warn_unrestored_aliases(html: str) -> None:
 class HtmlFileReportPublisher(ReportPublisher):
     """리포트를 ``output_dir`` 아래 HTML 파일 한 건으로 저장한다.
 
-    디렉터리는 생성자가 아니라 첫 저장 시점에 만든다. 생성자에서 만들면
-    ``build_trigger_service``를 부르는 것만으로 디렉터리가 생겨, 의존성 조립을
-    검증하는 테스트가 작업 디렉터리에 흔적을 남긴다.
+    디렉터리는 첫 저장 시점에 만든다. 의존성 조립만으로 파일시스템에
+    흔적이 남지 않도록 생성자에서는 경로만 보관한다.
     """
 
     def __init__(self, output_dir: str | Path = "reports") -> None:
@@ -132,34 +135,3 @@ def _unique_path(output_dir: Path, now: datetime) -> Path:
         path = output_dir / f"{stem}-{suffix}.html"
         suffix += 1
     return path
-
-
-def render_report(
-    report: IncidentAnalysisReport,
-    generated_at: datetime | None = None,
-    gaps: tuple[str, ...] = (),
-    analysis_failed: bool = False,
-) -> str:
-    """리포트를 완결된 HTML 문서 한 장으로 만든다.
-
-    ``generated_at``은 테스트가 시각을 고정할 수 있게 열어 뒀다.
-
-    ``gaps``와 ``analysis_failed``는 별도 안내 영역으로 그린다. 모델이 쓴 본문에 섞지
-    않는 이유는 두 가지다 — 본문과 시스템이 덧붙인 사실이 구별되어야 하고,
-    모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이 안내는 반드시 남는다.
-    """
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import (
-        render_layout,
-    )
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_style import (
-        REPORT_CSS,
-    )
-
-    return render_layout(
-        report,
-        generated_at or datetime.now(_KST),
-        gaps=gaps,
-        analysis_failed=analysis_failed,
-        css=REPORT_CSS,
-    )
-

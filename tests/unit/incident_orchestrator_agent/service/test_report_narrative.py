@@ -7,7 +7,7 @@ from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import E
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     CauseAssessment, Finding, Narrative, Recommendation,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report
 

@@ -57,10 +57,10 @@ from cluster_doctor.kafka_consumer.trigger_settling.service.problem_log_processo
 from cluster_doctor.exceptions import KafkaUnavailableError
 from cluster_doctor.log_context import IncidentIdLogFilter
 
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.html_file_publisher import (
     HtmlFileReportPublisher,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.report_publisher import (
     ReportPublisher,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_report_publisher import (

@@ -141,6 +141,11 @@ HTML은 핵심 요약, 주요 타임라인, 원인 판단, 접힌 상세 자료,
 근거로 지지되는 검증된 원인 후보를 연결한다. 평문 출력도 같은 인용 정보를 사용한다. 출력 시각은 KST이며, 원인 확신도와
 근거 검증 상태를 별도로 표시한다.
 
+`report_delivery/publication/report_publisher.py`의 `ReportPublisher`는 발행 매체 공통 계약이다.
+`publication/file/html_file_publisher.py`가 로컬 파일 저장·실패 처리를 맡으며,
+`rendering/html/report_renderer.py`의 `render_report`는 파일 저장 없이 HTML 문자열을 만든다.
+SFTP 발행은 같은 계약을 구현한 게시자를 감싸 로컬 저장 결과를 업로드한다.
+
 검증은 `uv run pytest`로 실행하며 collection I/O와 LLM 호출은 테스트에서 대체한다.
 실제 외부 시스템의 연결 상태나 실제 사고의 원인 정확성을 보장하는 검사는 아니다.
 

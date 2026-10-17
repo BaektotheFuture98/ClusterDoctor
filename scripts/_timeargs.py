@@ -21,7 +21,7 @@ def force_utf8_console() -> None:
     치게 안내하는 것으로는 부족하다 — 파이썬이 뜨기 전에 정해져야 하는 값이라
     .env로는 해결되지 않고, 빠뜨리면 조용히 깨진 글자만 남는다.
 
-    ``errors="replace"``를 주는 이유는 html_file_notifier._scrub과 같다 —
+    ``errors="replace"``를 주는 이유는 report_delivery/rendering/text/report_text.scrub과 같다 —
     인코딩할 수 없는 문자 하나가 출력 전체를 죽이면 안 된다.
 
     import 시점에 부르는 것은 side effect지만, 이 모듈을 쓰는 것은 같은

@@ -79,12 +79,24 @@ Main graph와 `analysis_subagent.bind(incident)`로 묶은 delegate는 Incident�
 
 Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼저 후보 window를
 열거하고, 허용된 window를 선택·승인(`propose_analysis`)한 뒤 Analysis SubAgent에 `task`로
-위임한다. 위임 결과(`LogAnalysisResponse`)의 요약을 읽고 공백이 남았으면 추가 window를
-분석하고, 없으면 `finish_incident`로 종료한다. Main Agent의 도구는 `list_candidate_windows`,
-`propose_analysis`, `finish_incident` 셋뿐이며, 시간·분·호출 상한은 runtime guardrail이 강제한다.
+위임한다. 위임 결과(`LogAnalysisResponse`)를 읽고 추가 조사의 필요성을 판단하거나
+`finish_incident`로 종료한다. Main Agent의 도구는 `list_candidate_windows`,
+`propose_analysis`, `task`, `finish_incident` 네 가지이며, 시간·분·호출 상한은 runtime guardrail이 강제한다.
+
+시작 메시지는 트리거 시각과 최초·마지막 관측 시각을 KST로 구분해 전달한다.
+프롬프트는 첫 분석에 최초 관측 분의 5분 전부터 해당 분의 끝까지 포함하도록 안내한다.
+예를 들어 최초 관측이 14:00:37이면 13:55~14:01을 제안한다. 이후에는 다른 시간대에서
+확인할 구체적인 질문이 있고 예산이 남았을 때만 추가 분석한다. `completed`와 검증 통과를
+구분하며, 검증 미통과로 요약이 생략됐을 때 보이지 않는 원인을 추측해 범위를 넓히지 않는다.
+시스템 프롬프트에는 판단 기준과 도구 사이의 사용 순서를 두고, 개별 도구의 입력·반환·승인
+규칙은 tool description과 인자 schema에서 안내한다. Main의 `task` 설명도 승인된 구간·goal을
+사용하는 계약에 맞추며, DeepAgents 기본의 병렬 위임·자유 형식 지시 안내를 교체한다.
 
 Analysis SubAgent는 승인된 window 하나를 끝까지 처리한다. evidence를 모으고 Window Report를
 작성한 뒤, 같은 DeepAgent의 `after_agent` middleware가 리포트를 검증한다.
+Analysis의 시스템 프롬프트도 실행 순서·근거 해석·추가 구간 판단을 맡고, 세 도구의
+사용법과 인자 형식은 tool description과 schema에 둔다. 수집 재호출은 캐시를 반환하며,
+리포트 작성은 실패 후 남은 시도 횟수가 있을 때 재시도하도록 안내한다.
 `validate_report`는 근거 및 candidate 참조 ID의 유효성만 확인하고,
 `GroundingValidator`가 Claim을 수집된 evidence·observation과 대조한다. 표현 불일치는 `revise_report`로
 최대 2회 고치고, 분석 불일치는 같은 window를 1회 다시 분석한다. 그래도 남으면
@@ -383,7 +395,12 @@ flowchart TD
 | 근거 일관성 검증 | evidence 및 candidate 참조 ID 유효성을 확인하는 구조 검사 | `src/cluster_doctor/incident_analysis_agent/service/validation/consistency/report_validation.py` |
 | 원문 대조 검증 | Claim을 수집된 evidence·observation과 대조하고 불일치를 분류 | `src/cluster_doctor/incident_analysis_agent/service/validation/grounding/grounding_validator.py` |
 | 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/incident_analysis_agent/agent/subagent.py` |
-| HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/html_file_notifier.py` |
+| HTML 저장 | 전달받은 리포트를 `reports/`에 기록 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/publication/file/html_file_publisher.py` |
+| HTML 렌더링 | 파일 저장 없이 HTML 문자열 생성 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/report_renderer.py` |
+
+`report_delivery/publication/report_publisher.py`는 로컬 파일·SFTP 발행의 공통 계약이다.
+파일 저장과 실패 시 평문 로그 대체는 `publication/file`이 맡고,
+`rendering/html`과 `rendering/text`는 전달받은 리포트를 문자열로 변환한다.
 
 Kafka를 거치지 않는 수동 실행은 `scripts/run_analysis.py`에서 같은
 `compose_analysis_service(settings, resources)`의 결과를 `RunManualAnalysis`에
@@ -461,6 +478,8 @@ uv run pytest
 ```
 
 `tests/unit`은 각 Agent의 model·datasource·service·agent 단위를 외부 의존 없이
-검증하고, `tests/integration`은 Agent 결과/HTML publication처럼 여러 모듈이
-맞물리는 경로를 확인한다. 실제 외부 시스템과 보고서 생성은 위 Docker Compose
-통합 실행으로 확인한다.
+검증한다. State 초기화와 결과 DTO 검사는 해당 owner의 unit 테스트에 둔다.
+`tests/integration/test_html_publication.py`는 전달받은 리포트의 projection부터
+HTML 렌더링·파일 저장까지 연결해 검사하며, 최종 리포트 선택·합성 정책은 검사하지 않는다.
+테스트 분류는 외부 서비스 호출 여부보다 연결해서 검증하는 범위를 따른다.
+실제 외부 시스템과 보고서 생성은 위 Docker Compose 통합 실행으로 확인한다.

@@ -1,5 +1,5 @@
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
 
 
 def test_report_does_not_include_offender_grouping():
@@ -11,3 +11,11 @@ def test_ssh_source_is_visible_without_evidence_ids_or_links():
     html=render_report(report())
     assert '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
     assert 'INTERNAL_ID' not in html and 'href="#evidence' not in html
+
+
+def test_rendering_does_not_create_files_or_directories(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    html = render_report(report())
+
+    assert html.startswith("<!doctype html>")
+    assert not tuple(tmp_path.iterdir())
