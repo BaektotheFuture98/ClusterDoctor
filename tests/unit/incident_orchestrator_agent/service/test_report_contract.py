@@ -6,7 +6,7 @@ from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEnt
 from cluster_doctor.incident_analysis_agent.model.observations import Observations, SourceWindowStatus
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource, EvidenceProvenance
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport, Narrative
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 
 T0=datetime(2026,10,1,tzinfo=UTC)

@@ -30,7 +30,7 @@ from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.incid
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.report_publisher import (
     ReportPublisher,
 )
 from cluster_doctor.log_context import bind_incident_id

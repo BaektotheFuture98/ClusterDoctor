@@ -8,13 +8,13 @@ from cluster_doctor.incident_orchestrator_agent.model.report_delivery import Rep
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.report_publisher import (
     ReportPublisher,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_report_publisher import (
     SftpReportPublisher,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.html_file_publisher import (
     HtmlFileReportPublisher,
 )
 

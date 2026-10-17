@@ -8,12 +8,12 @@ from cluster_doctor.incident_analysis_agent.model.report import (
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
+
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.html_file_publisher import (
     HtmlFileReportPublisher,
 )
 
 _T0 = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
-_T1 = datetime(2024, 1, 1, 13, 10, tzinfo=UTC)
 _T2 = datetime(2024, 1, 1, 13, 20, tzinfo=UTC)
 
 
@@ -27,20 +27,16 @@ def _report(summary: str, start, end) -> LogAnalysisReport:
     )
 
 
-async def test_last_verified_report_is_published_as_html(tmp_path):
-    # 여러 window의 리포트가 MainAgentState.window_results에 순서대로 쌓이고,
-    # 대표로는 마지막 window의 리포트를 쓴다.
-    reports = [
-        _report("cpu spike in window A", _T0, _T1),
-        _report("query timeout in window B", _T1, _T2),
-    ]
-    representative = reports[-1]
-    rendered = to_incident_analysis_report(representative, Observations(), [])
+async def test_supplied_incident_report_is_projected_and_published_as_html(tmp_path):
+    supplied = _report("incident summary across windows", _T0, _T2)
+    rendered = to_incident_analysis_report(supplied, Observations(), [])
 
     publication = await HtmlFileReportPublisher(output_dir=tmp_path).publish(rendered)
 
     files = list(tmp_path.glob("*.html"))
     assert len(files) == 1
+    assert publication.path == files[0]
     assert publication.text_length > 0
     content = files[0].read_text(encoding="utf-8")
-    assert "query timeout in window B" in content
+    assert content.startswith("<!doctype html>")
+    assert "incident summary across windows" in content

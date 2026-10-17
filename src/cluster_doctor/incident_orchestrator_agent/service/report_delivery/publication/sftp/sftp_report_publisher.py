@@ -18,7 +18,7 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 from cluster_doctor.incident_orchestrator_agent.model.report_delivery import (
     ReportPublication,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.report_publisher import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.report_publisher import (
     ReportPublisher,
 )
 

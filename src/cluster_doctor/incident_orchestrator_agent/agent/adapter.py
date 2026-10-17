@@ -68,9 +68,9 @@ _KICKOFF = """Incident가 열렸다. 분석을 시작한다.
 
 클러스터: {cluster}
 트리거 시각: {trigger}
-
-먼저 list_candidate_windows로 아직 보지 않은 구간과 남은 예산을 확인한 뒤
-판단한다."""
+최초 관측 시각: {observed_start}
+마지막 관측 시각: {observed_end}
+모든 시각은 KST(UTC+09:00)다."""
 
 
 class MainAgent:
@@ -109,6 +109,8 @@ class MainAgent:
                     content=_KICKOFF.format(
                         cluster=incident.cluster,
                         trigger=format_kst(incident.trigger_time),
+                        observed_start=format_kst(request.observed_start),
+                        observed_end=format_kst(request.observed_end),
                     )
                 )
             ],
