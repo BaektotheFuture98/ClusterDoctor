@@ -9,12 +9,12 @@ from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisRepor
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.html_file_publisher import (
     HtmlFileReportPublisher,
 )
 
 _T0 = datetime(2026, 10, 6, 9, 6, tzinfo=UTC)
-_LOGGER = "cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier"
+_LOGGER = "cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.html_file_publisher"
 
 
 @pytest.mark.parametrize(

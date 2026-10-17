@@ -126,3 +126,70 @@ def test_non_positive_rotation_setting_is_rejected(tmp_path, monkeypatch, name, 
 
     with pytest.raises(ValidationError):
         LoggingSettings()
+
+
+def _run_entrypoint_probe(tmp_path, body):
+    env = os.environ.copy()
+    root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = os.pathsep.join((str(root / "src"), str(root / "scripts")))
+    env["LOG_DIR"] = str(tmp_path / "logs")
+    return subprocess.run(
+        [sys.executable, "-c", body], cwd=tmp_path, env=env,
+        text=True, capture_output=True, timeout=30,
+    )
+
+
+@pytest.mark.parametrize("entrypoint", ["main", "sftp", "manual-dry-run"])
+def test_imports_and_manual_dry_run_do_not_configure_logging(tmp_path, entrypoint):
+    body = {
+        "main": "import cluster_doctor.main",
+        "sftp": "import upload_report_sftp",
+        "manual-dry-run": (
+            "import run_analysis, sys; "
+            "sys.argv = ['run_analysis.py', '--at', '2026-09-16T04:22:00', '--dry-run']; "
+            "assert run_analysis.main() == 0"
+        ),
+    }[entrypoint]
+    result = _run_entrypoint_probe(
+        tmp_path,
+        "import logging; before = tuple(logging.getLogger().handlers); " + body + "; "
+        "assert tuple(logging.getLogger().handlers) == before, 'import/dry-run changed root handlers'; "
+        "assert not any(getattr(h, '_cluster_doctor_owned_handler', False) "
+        "for h in logging.getLogger().handlers), 'import/dry-run installed handlers'",
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "logs").exists()
+
+
+@pytest.mark.parametrize("entrypoint", ["auto", "manual"])
+def test_real_entrypoint_starts_logging_before_settings_and_is_idempotent(tmp_path, entrypoint):
+    import textwrap
+
+    body = textwrap.dedent('''
+        import asyncio
+        import logging
+        import cluster_doctor.main as app
+        import run_analysis as manual
+
+        def stop_before_clients():
+            logging.getLogger('entrypoint-test').warning('entrypoint-log-marker')
+            raise RuntimeError('stop-before-clients')
+
+        app.get_settings = manual.get_settings = stop_before_clients
+        for _ in range(2):
+            try:
+                RUN_ENTRYPOINT
+            except RuntimeError as exc:
+                assert str(exc) == 'stop-before-clients'
+        owned = [h for h in logging.getLogger().handlers
+                 if getattr(h, '_cluster_doctor_owned_handler', False)]
+        assert len(owned) == 2
+        logging.shutdown()
+    ''').replace(
+        "RUN_ENTRYPOINT",
+        "asyncio.run(app.main())" if entrypoint == "auto" else "manual.run([])",
+    )
+    result = _run_entrypoint_probe(tmp_path, body)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "logs/app.log").read_text(encoding="utf-8").count("entrypoint-log-marker") == 2
+    assert result.stderr.count("entrypoint-log-marker") == 2

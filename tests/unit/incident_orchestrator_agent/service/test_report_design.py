@@ -8,7 +8,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html import report_layout
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import CauseAssessment, Narrative
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report, T0
 

@@ -24,6 +24,10 @@ from cluster_doctor.incident_orchestrator_agent.agent.state import (
     ANALYSIS_SUBAGENT,
 )
 from cluster_doctor.incident_orchestrator_agent.model.incident import IncidentStatus
+from cluster_doctor.incident_orchestrator_agent.agent.tools import (
+    TASK_TOOL_NAME,
+    describe_analysis_task,
+)
 from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrails import (
     MAX_REJECTED_DECISIONS,
     check_analysis_budget,
@@ -33,6 +37,27 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrai
 )
 
 _MUTATING = frozenset({"propose_analysis", "task", "finish_incident"})
+
+
+class AnalysisTaskDescriptionMiddleware(AgentMiddleware):
+    """Main 모델이 읽는 task 명세를 승인 기반 위임 계약에 맞춘다."""
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._describe(request))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(self._describe(request))
+
+    @staticmethod
+    def _describe(request):
+        return request.override(
+            tools=[
+                describe_analysis_task(tool)
+                if getattr(tool, "name", None) == TASK_TOOL_NAME
+                else tool
+                for tool in request.tools
+            ]
+        )
 
 
 class DelegationGuardrailMiddleware(AgentMiddleware):
@@ -48,7 +73,7 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
                 if state["status"].is_terminal()
                 else (
                     IncidentStatus.COMPLETED
-                    if state.get("window_results")
+                    if state.get("window_results")  
                     else IncidentStatus.FAILED
                 )
             )

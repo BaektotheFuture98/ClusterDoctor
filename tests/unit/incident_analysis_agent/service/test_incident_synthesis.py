@@ -12,7 +12,7 @@ START = datetime(2026, 10, 5, 8, 16, tzinfo=timezone.utc)
 def test_reviewed_paragraphs_and_summary_sources_reach_the_rendered_report():
     from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
     first = LogAnalysisReport(incident_id='I', analyzed_from=START, analyzed_to=START+timedelta(minutes=1))
     evidence = [Evidence(evidence_id='S1', event_time=START, source=EvidenceSource.QUERY_LOG, message='query-source'),
                 Evidence(evidence_id='S2', event_time=START, source=EvidenceSource.MASTER_LOG, message='master-source')]
@@ -41,19 +41,19 @@ def test_final_validation_reasons_remain_internal_across_delivery(monkeypatch, s
     import asyncio
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
-    from cluster_doctor.incident_orchestrator_agent.agent.adapter import _DeepAgentIncidentAnalyzer
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
     from cluster_doctor.incident_orchestrator_agent.model.incident import Incident, IncidentStatus
     from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
     from cluster_doctor.incident_orchestrator_agent.model.report_delivery import ReportPublication
     from cluster_doctor.incident_orchestrator_agent.model.window_result import WindowResult
     from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
     from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.analyze_incident import AnalyzeIncident
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
     first = LogAnalysisReport(incident_id='I', analyzed_from=START, analyzed_to=START+timedelta(minutes=1))
     issues = () if status is VerificationStatus.PASSED else ('internal final reasoning',)
     final = first.model_copy(update={'summary': '최종 서술', 'verification_status': status, 'verification_issues': issues})
-    analyzer = object.__new__(_DeepAgentIncidentAnalyzer)
+    analyzer = object.__new__(MainAgent)
     analyzer._seams = SimpleNamespace()
     analyzer._recursion_limit = 40
     def stream(state, *a, **k):
@@ -125,7 +125,7 @@ def test_projection_and_html_keep_actions_with_their_cause():
     from cluster_doctor.incident_analysis_agent.service.report_generation.schema import DraftReport
     from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
     report=DraftReport(summary='요약',root_causes=[{'statement':'첫 후보','mechanism':'처리 대기 가능성'},{'statement':'둘째 후보'}],recommendations=[{'text':'첫 후보 조사','cause_index':0},{'text':'둘째 후보 조사','cause_index':1},{'text':'공통 조사'}]).to_domain(incident_id='I',window=TimeRange(START,START+timedelta(minutes=1)),evidence_refs=()).model_copy(update={'verification_status':VerificationStatus.PASSED})
     output=to_incident_analysis_report(report,Observations(),[])
@@ -163,7 +163,7 @@ def test_incident_prompt_is_bounded_with_explicit_omissions():
 
 def test_analyzer_delivers_synthesis_instead_of_last_window(monkeypatch):
     from types import SimpleNamespace
-    from cluster_doctor.incident_orchestrator_agent.agent.adapter import _DeepAgentIncidentAnalyzer
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
     from cluster_doctor.incident_orchestrator_agent.model.incident import Incident, IncidentStatus
     from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
     from cluster_doctor.incident_orchestrator_agent.model.window_result import WindowResult
@@ -171,7 +171,7 @@ def test_analyzer_delivers_synthesis_instead_of_last_window(monkeypatch):
     first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=5),summary='초기 지연')
     last=first.model_copy(update={'analyzed_from':first.analyzed_to,'analyzed_to':START+timedelta(minutes=6),'summary':'마지막 정상'})
     whole=first.model_copy(update={'analyzed_to':last.analyzed_to,'summary':'초기 장애 후 정상 구간','verification_status':VerificationStatus.PASSED})
-    analyzer=object.__new__(_DeepAgentIncidentAnalyzer)
+    analyzer=object.__new__(MainAgent)
     analyzer._seams=SimpleNamespace()
     analyzer._recursion_limit=40
     windows=(WindowResult(window=TimeRange(first.analyzed_from,first.analyzed_to),report=first),WindowResult(window=TimeRange(last.analyzed_from,last.analyzed_to),report=last))

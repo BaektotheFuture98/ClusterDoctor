@@ -7,7 +7,7 @@ from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import E
 from cluster_doctor.incident_analysis_agent.model.report import SuspectPick
 from cluster_doctor.incident_analysis_agent.service.observation.compute import slow_candidates
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import render_report
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
 
 
 def test_verified_cause_and_action_include_visible_original_source():

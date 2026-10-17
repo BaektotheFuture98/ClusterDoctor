@@ -6,6 +6,7 @@ import logging
 
 from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from cluster_doctor.incident_analysis_agent.agent.dependencies import AnalysisSeams
@@ -280,49 +281,55 @@ def project_result(state: dict) -> WindowAnalysisResult:
     )
 
 
-@pseudonym_scope()
-def run_analysis_agent(
-    *, seams: AnalysisSeams, request: LogAnalysisRequest, model
-) -> WindowAnalysisResult:
-    restrict_harness(model)
-    graph = create_deep_agent(
-        model=model,
-        tools=_build_tools(seams),
-        state_schema=AnalysisAgentState,
-        middleware=[
-            AnalysisToolAdmissionMiddleware(),
-            AnalysisValidationMiddleware(seams),
-            HideHarnessToolsMiddleware(),
-            AgentRoleLogMiddleware("subagent"),
-            RateLimitRetryMiddleware(),
-            PseudonymizeMiddleware(),
-            RefuseDelegationMiddleware(),
-        ],
-        system_prompt=build_subagent_prompt(
-            cluster=request.cluster,
-            window=request.analysis_window,
-            goal=request.analysis_goal,
-        ),
-        name="analysis_deepagent",
-        permissions=DENY_ALL_FILESYSTEM,
-    )
-    final = {
-        **initial_analysis_agent_state(request),
-        "messages": [
-            HumanMessage(content=request.analysis_goal or "이 구간을 분석해라.")
-        ],
-    }
-    try:
-        for snapshot in graph.stream(
-            final, {"recursion_limit": 24}, stream_mode="values"
-        ):
-            final = snapshot
-    except Exception as exc:
-        _logger.exception("Analysis Agent 실행 실패")
+class AnalysisAgent:
+    """고정 의존성을 재사용하고 요청마다 독립된 분석 그래프를 실행한다."""
+
+    def __init__(self, *, model: BaseChatModel, seams: AnalysisSeams) -> None:
+        self._model = model
+        self._seams = seams
+        restrict_harness(self._model)
+
+    @pseudonym_scope()
+    def analyze(self, request: LogAnalysisRequest) -> WindowAnalysisResult:
+        restrict_harness(self._model)
+        graph = create_deep_agent(
+            model=self._model,
+            tools=_build_tools(self._seams),
+            state_schema=AnalysisAgentState,
+            middleware=[
+                AnalysisToolAdmissionMiddleware(),
+                AnalysisValidationMiddleware(self._seams),
+                HideHarnessToolsMiddleware(),
+                AgentRoleLogMiddleware("subagent"),
+                RateLimitRetryMiddleware(),
+                PseudonymizeMiddleware(),
+                RefuseDelegationMiddleware(),
+            ],
+            system_prompt=build_subagent_prompt(
+                cluster=request.cluster,
+                window=request.analysis_window,
+                goal=request.analysis_goal,
+            ),
+            name="analysis_deepagent",
+            permissions=DENY_ALL_FILESYSTEM,
+        )
         final = {
-            **final,
-            "execution_failed": True,
-            "gaps": tuple(final.get("gaps", ()))
-            + (f"진단 루프가 실패했다: {type(exc).__name__}",),
+            **initial_analysis_agent_state(request),
+            "messages": [
+                HumanMessage(content=request.analysis_goal or "이 구간을 분석해라.")
+            ],
         }
-    return project_result(final)
+        try:
+            for snapshot in graph.stream(
+                final, {"recursion_limit": 24}, stream_mode="values"
+            ):
+                final = snapshot
+        except Exception as exc:
+            _logger.exception("Analysis Agent 실행 실패")
+            final = {
+                **final,
+                "execution_failed": True,
+                "gaps": tuple(final.get("gaps", ()))
+                + (f"진단 루프가 실패했다: {type(exc).__name__}",),
+            }
+        return project_result(final)

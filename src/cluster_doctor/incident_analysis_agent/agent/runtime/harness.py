@@ -48,6 +48,7 @@ from deepagents import (
 # 직접 가져다 쓴다 — 우리가 키를 따로 만들면 deepagents가 조회하는 키와
 # 어긋나는 순간 등록이 조용히 무시되고, 조용히 무시된 차단은 아무도 모른다.
 from deepagents._models import get_model_identifier, get_model_provider
+from deepagents.profiles.harness.harness_profiles import _harness_profile_for_model
 from langchain_core.language_models.chat_models import BaseChatModel
 
 # 파일시스템 접근을 전부 거절한다. 이 저장소의 Agent가 하는 일에 파일은
@@ -72,7 +73,8 @@ def restrict_harness(model: BaseChatModel) -> None:
 
     **모델마다 한 번 등록하면 그 뒤 조립 전부에 걸린다.** 등록은 프로세스
     전역이지만 키를 이 모델에 한정하므로 다른 모델의 조립에는 닿지 않는다.
-    그래서 호출부는 Agent를 만들기 **전에** 이것을 한 번 부르면 된다.
+    시작 시 등록하고, 독립 Analysis 실행에서도 필요한 제한이 있는지 확인한다.
+    이미 제한되어 있으면 재등록하지 않는다.
 
     general-purpose SubAgent도 함께 끈다. 켜 두면 ``task``의 위임처가 둘이 되고,
     모델이 그쪽을 고르는 순간 분 단위 선별도 Evidence 선별도 검증도 없이 만들어진
@@ -88,6 +90,16 @@ def restrict_harness(model: BaseChatModel) -> None:
             "chat model에서 harness profile 키를 얻지 못해 "
             "기본 SubAgent와 셸·파일시스템 도구를 끌 수 없습니다."
         )
+
+    # graph와 같은 resolver로 확인해 모델별 override까지 반영한다.
+    # 별도 캐시 없이 실제 설정을 읽으므로 이후 바뀐 제한도 복구할 수 있다.
+    profile = _harness_profile_for_model(model, None)
+    if (
+        profile.general_purpose_subagent is not None
+        and profile.general_purpose_subagent.enabled is False
+        and _TOOLS_TO_HIDE <= profile.excluded_tools
+    ):
+        return
 
     register_harness_profile(
         key,
