@@ -1,7 +1,8 @@
 """프로세스 시작/종료 시 정리해야 하는 자원.
 
-composition 자체(``dependency/wiring.py``)와 나누는 이유는 "무엇을 조립하는가"와
-"언제 놓아주는가"가 다른 관심사이기 때문이다.
+``main.py``는 실행 객체를 조립하고 공유 클라이언트와 report/SFTP 구현을 만든다.
+이 모듈은 공유 클라이언트를 언제 놓아주는지 맡는다. 정상 종료에서는
+processor의 분석 정리가 끝난 뒤 닫고, 수동 실행도 같은 자원 수명을 사용한다.
 """
 
 from contextlib import ExitStack

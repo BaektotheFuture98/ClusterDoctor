@@ -6,7 +6,7 @@ from cluster_doctor.incident_analysis_agent.model.report import (
 )
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_orchestrator_agent.agent.adapter import (
-    _DeepAgentIncidentAnalyzer,
+    MainAgent,
 )
 from cluster_doctor.incident_orchestrator_agent.agent.state import (
     initial_main_agent_state,
@@ -49,7 +49,7 @@ def test_projection_preserves_previous_issues_and_latest_mismatch_failure():
         ),
         "latest_verification_status": VerificationStatus.MISMATCH,
     }
-    result = _DeepAgentIncidentAnalyzer._result_from(None, state)
+    result = MainAgent._result_from(None, state)
     assert result.failed
     assert result.report is None  # Incident narrative is assembled after state projection.
     assert any("old issue" in gap for gap in result.gaps)

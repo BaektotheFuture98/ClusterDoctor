@@ -24,21 +24,16 @@ import asyncio
 import time
 from pathlib import Path
 
-# _timeargs를 가장 먼저 import한다. 그 안의 force_utf8_console()이 콘솔
-# 인코딩을 고치는데, 아래 cluster_doctor.main이 stderr를 붙잡는 로깅 핸들러를
-# 만들기 때문이다. reconfigure는 스트림 객체를 제자리에서 바꾸므로 순서가
-# 뒤바뀌어도 동작하지만, 의도를 순서로 드러내 둔다.
+# 로깅을 시작하기 전에 콘솔 인코딩을 UTF-8로 맞춘다.
 import _timeargs
 from _timeargs import KST
 
-# import 시점에 configure_logging()이 돌아 stderr와 LOG_DIR/app.log에 로그가 붙는다.
-import cluster_doctor.main  # noqa: F401
-
-from cluster_doctor.bootstrap.configuration.settings import Settings, get_settings
-from cluster_doctor.bootstrap.dependency.wiring import (
-    build_manual_analysis,
+from cluster_doctor.main import (
     build_runtime_resources,
+    compose_analysis_service,
+    configure_logging,
 )
+from cluster_doctor.bootstrap.configuration.settings import Settings, get_settings
 from cluster_doctor.bootstrap.lifecycle.app_lifecycle import RuntimeResources
 from cluster_doctor.incident_orchestrator_agent.service.manual_analysis.manual_analysis import (
     RunManualAnalysis,
@@ -212,6 +207,7 @@ def _snapshot_reports(report_dir: Path) -> set:
 
 
 def run(moments: list) -> int:
+    configure_logging()
     settings = get_settings()
     with build_runtime_resources(settings) as runtime_resources:
         return _run_analysis(moments, settings, runtime_resources)
@@ -223,7 +219,10 @@ def _run_analysis(
     report_dir = Path(settings.report_dir)
     before = _snapshot_reports(report_dir)
 
-    manual_analysis: RunManualAnalysis = build_manual_analysis(settings, runtime_resources)
+    manual_analysis = RunManualAnalysis(
+        analyze_incident=compose_analysis_service(settings, runtime_resources),
+        cluster=settings.cluster_name,
+    )
 
     started = time.monotonic()
     try:

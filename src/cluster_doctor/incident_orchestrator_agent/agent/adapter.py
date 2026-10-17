@@ -12,55 +12,28 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from cluster_doctor.incident_analysis_agent.agent.dependencies import AnalysisSeams
 from cluster_doctor.incident_orchestrator_agent.agent.analysis_subagent import (
-    build_analysis_subagent,
-)
-from cluster_doctor.incident_analysis_agent.datasource.clickhouse.client import (
-    LogRepository,
-)
-from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import (
-    NodeMetricThresholds,
-)
-from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_health import (
-    ClusterRepository,
-)
-from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
-    NodeResolver,
-)
-from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
-    NodeLogFetcher,
+    AnalysisSubagentAdapter,
 )
 from cluster_doctor.incident_analysis_agent.model.kst import format_kst
-from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
-    MAX_CONCURRENCY,
-)
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisStatus,
     VerificationStatus,
-)
-from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
-    ReportWriter,
-    build_structured_call,
 )
 from cluster_doctor.incident_orchestrator_agent.agent.graph import build_main_agent
 from cluster_doctor.incident_orchestrator_agent.agent.middleware import (
     DelegationGuardrailMiddleware,
 )
-from cluster_doctor.incident_orchestrator_agent.agent.runtime.chat_model import (
-    build_chat_model,
-)
 from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     restrict_harness,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import pseudonym_scope
-from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (
-    require_supported_provider,
-)
 from cluster_doctor.incident_orchestrator_agent.agent.tools import (
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
@@ -78,9 +51,6 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrai
 )
 from cluster_doctor.incident_orchestrator_agent.service.analysis_window.window_planner import (
     initial_windows,
-)
-from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.incident_analyzer import (
-    IncidentAnalyzer,
 )
 from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
     IncidentAnalysisRequest,
@@ -103,73 +73,24 @@ _KICKOFF = """Incident가 열렸다. 분석을 시작한다.
 판단한다."""
 
 
-@dataclass(frozen=True)
-class DeepAgentsConfig:
-    """Composite Main Agent adapter가 소유하는 설정."""
-
-    provider: str
-    model: str
-    api_key: str
-    heap_warn_percent: int
-    queue_warn: int
-    analysis_concurrency: int = MAX_CONCURRENCY
-
-
-def build_deepagents_incident_analyzer(
-    *,
-    config: DeepAgentsConfig,
-    log_repository: LogRepository,
-    cluster_repository: ClusterRepository,
-    node_resolver: NodeResolver,
-    node_log_fetcher: NodeLogFetcher,
-) -> IncidentAnalyzer:
-    """incident-analyzer port 뒤에 놓일 DeepAgents 엔진 전체를 조립한다."""
-    provider = require_supported_provider(config.provider)
-    call_llm = build_structured_call(
-        provider=provider, model=config.model, api_key=config.api_key
-    )
-    seams = AnalysisSeams(
-        fetch_logs=log_repository.fetch_logs,
-        fetch_node_logs=log_repository.fetch_node_logs,
-        cluster=cluster_repository,
-        node_resolver=node_resolver,
-        node_log_fetcher=node_log_fetcher,
-        call_llm=call_llm,
-        report_writer=ReportWriter(call_llm=call_llm),
-        metric_thresholds=NodeMetricThresholds(
-            heap_warn_percent=config.heap_warn_percent,
-            queue_warn=config.queue_warn,
-        ),
-        analysis_concurrency=config.analysis_concurrency,
-    )
-    return _DeepAgentIncidentAnalyzer(
-        provider=provider,
-        model=config.model,
-        api_key=config.api_key,
-        seams=seams,
-    )
-
-
-class _DeepAgentIncidentAnalyzer:
+class MainAgent:
     """Main DeepAgent 구현. ``IncidentAnalyzer`` 포트를 만족한다."""
 
     def __init__(
         self,
         *,
-        provider: str,
-        model: str,
-        api_key: str,
+        model: BaseChatModel,
         seams: AnalysisSeams,
+        analysis_subagent: AnalysisSubagentAdapter,
         recursion_limit: int = _RECURSION_LIMIT,
     ) -> None:
-        # 모델은 한 번만 만든다. tool calling 지원 검증도 여기서 끝난다 —
-        # 기동 시점에 실패해야 하고, 첫 Incident가 들어온 뒤가 아니다.
-        self._model = build_chat_model(provider=provider, model=model, api_key=api_key)
+        self._model = model
         # 그래프를 만들기 **전에** 한 번 건다. Main과 Analysis가 같은 모델을
         # 쓰므로 등록 하나가 둘 다에 걸린다. 조립 순서에 기대지 않으려고
         # 여기서 부른다 — 어느 쪽이 먼저 만들어지든 이미 등록되어 있다.
         restrict_harness(self._model)
         self._seams = seams
+        self._analysis_subagent = analysis_subagent
         self._recursion_limit = recursion_limit
 
     @pseudonym_scope(fresh=True)
@@ -250,11 +171,7 @@ class _DeepAgentIncidentAnalyzer:
             make_finish_incident_tool(),
         ]
         middleware = [DelegationGuardrailMiddleware()]
-        analysis_subagent = build_analysis_subagent(
-            seams=self._seams,
-            incident=incident,
-            model=self._model,
-        )
+        analysis_subagent = self._analysis_subagent.bind(incident)
         return build_main_agent(
             model=self._model,
             tools=tools,

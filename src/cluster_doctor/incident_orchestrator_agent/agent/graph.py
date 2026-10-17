@@ -20,7 +20,6 @@ from cluster_doctor.incident_orchestrator_agent.agent.prompts.system_prompt impo
 from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
-    restrict_harness,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
     PseudonymizeMiddleware,
@@ -46,8 +45,6 @@ def build_main_agent(
     부품을 만들기 시작하면 테스트가 진짜 LLM과 진짜 ClickHouse를 필요로 하게
     된다.
     """
-    restrict_harness(model)
-
     return create_deep_agent(
         model,
         tools,

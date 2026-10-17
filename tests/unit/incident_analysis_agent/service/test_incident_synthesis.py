@@ -40,7 +40,7 @@ def test_final_validation_reasons_remain_internal_across_delivery(monkeypatch, s
     import asyncio
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
-    from cluster_doctor.incident_orchestrator_agent.agent.adapter import _DeepAgentIncidentAnalyzer
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
     from cluster_doctor.incident_orchestrator_agent.model.incident import Incident, IncidentStatus
     from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
     from cluster_doctor.incident_orchestrator_agent.model.report_delivery import ReportPublication
@@ -52,7 +52,7 @@ def test_final_validation_reasons_remain_internal_across_delivery(monkeypatch, s
     first = LogAnalysisReport(incident_id='I', analyzed_from=START, analyzed_to=START+timedelta(minutes=1))
     issues = () if status is VerificationStatus.PASSED else ('internal final reasoning',)
     final = first.model_copy(update={'summary': '최종 서술', 'verification_status': status, 'verification_issues': issues})
-    analyzer = object.__new__(_DeepAgentIncidentAnalyzer)
+    analyzer = object.__new__(MainAgent)
     analyzer._seams = SimpleNamespace()
     analyzer._recursion_limit = 40
     def stream(state, *a, **k):
@@ -163,7 +163,7 @@ def test_incident_prompt_is_bounded_with_explicit_omissions():
 
 def test_analyzer_delivers_synthesis_instead_of_last_window(monkeypatch):
     from types import SimpleNamespace
-    from cluster_doctor.incident_orchestrator_agent.agent.adapter import _DeepAgentIncidentAnalyzer
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
     from cluster_doctor.incident_orchestrator_agent.model.incident import Incident, IncidentStatus
     from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
     from cluster_doctor.incident_orchestrator_agent.model.window_result import WindowResult
@@ -171,7 +171,7 @@ def test_analyzer_delivers_synthesis_instead_of_last_window(monkeypatch):
     first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=5),summary='초기 지연')
     last=first.model_copy(update={'analyzed_from':first.analyzed_to,'analyzed_to':START+timedelta(minutes=6),'summary':'마지막 정상'})
     whole=first.model_copy(update={'analyzed_to':last.analyzed_to,'summary':'초기 장애 후 정상 구간','verification_status':VerificationStatus.PASSED})
-    analyzer=object.__new__(_DeepAgentIncidentAnalyzer)
+    analyzer=object.__new__(MainAgent)
     analyzer._seams=SimpleNamespace()
     analyzer._recursion_limit=40
     windows=(WindowResult(window=TimeRange(first.analyzed_from,first.analyzed_to),report=first),WindowResult(window=TimeRange(last.analyzed_from,last.analyzed_to),report=last))
