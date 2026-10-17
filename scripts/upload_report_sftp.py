@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from cluster_doctor.bootstrap.configuration.settings import get_settings  # noqa: E402
-from cluster_doctor.bootstrap.dependency.wiring import build_sftp_uploader  # noqa: E402
+from cluster_doctor.main import build_sftp_uploader  # noqa: E402
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_uploader import (  # noqa: E402
     SftpUploadError,
 )

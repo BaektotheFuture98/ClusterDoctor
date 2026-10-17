@@ -6,7 +6,6 @@
 """
 
 import logging
-from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 from datetime import UTC, datetime, timedelta
@@ -49,59 +48,6 @@ def clamp_node_log_limit(limit: int) -> int:
     반대로 ``0``은 1로 조여지는데 그것을 모르면 "상한 0줄에 걸려"라고 쓴다.
     """
     return max(1, min(int(limit), MAX_NODE_LOG_LIMIT))
-
-
-class LogRepository(ABC):
-    """진단에 필요한 로그와 메트릭을 조회하는 외부 저장소 포트.
-
-    어댑터가 소스 데이터를 LogEntry 계열로 매핑하며 근거 선별은 호출자가 맡는다.
-    fetch_logs는 LogFetchResult에 성공 레코드와 소스별 실패를 함께 담는다.
-    """
-
-    @abstractmethod
-    def fetch_logs(self, time_range: TimeRange) -> LogFetchResult:
-        """세 소스의 로그와 소스별 조회 실패를 함께 반환한다."""
-        ...
-
-    @abstractmethod
-    def fetch_node_logs(
-        self,
-        start: datetime,
-        end: datetime,
-        *,
-        node: str = "",
-        node_role: str = "",
-        levels: tuple[str, ...] = (),
-        loggers: tuple[str, ...] = (),
-        keyword: str = "",
-        limit: int = DEFAULT_NODE_LOG_LIMIT,
-    ) -> list[NodeLogEntry]:
-        """ES 노드 로그를 조건으로 걸러 시간순으로 돌려준다.
-
-        ``TimeRange``를 받지 않는 것은 의도적이다. 그 타입은 10분 상한을
-        강제하는데, 그 상한은 "소스당 1분마다 쿼리 하나 + 분마다 LLM 호출
-        하나"라는 분석 파이프라인의 팬아웃 비용에서 온 것이다. 이 조회는
-        단일 쿼리이고 비용이 ``limit``으로 이미 묶여 있어 같은 상한을 물려받을
-        이유가 없다 — 사고 전체 구간을 한 번에 보는 것이 이 조회의 용도다.
-
-        빈 문자열·빈 튜플은 "그 조건으로 걸러내지 않는다"는 뜻이다.
-
-        ``levels``와 ``loggers``만 서로 **OR**로 묶이고, 나머지 조건은 AND다.
-        레벨이 높으면 로거와 무관하게 받고, INFO라도 지정한 로거면 받는다는
-        뜻이다.
-
-        Args:
-            start:     조회 시작(포함). timezone-aware여야 한다.
-            end:       조회 종료(제외). timezone-aware여야 한다.
-            node:      노드 이름 정확히 일치.
-            node_role: 노드 역할 정확히 일치. 마스터 로그는 여기에 "master".
-            levels:    로그 레벨. ``("WARN", "ERROR")`` 형태. 대소문자 무시.
-            loggers:   ES 로거 이름. 축약형이다. ``("o.e.c.c.Coordinator",)``.
-                       대소문자를 구분한다 — 클래스 이름이기 때문이다.
-            keyword:   ``line`` 부분 일치. 대소문자 무시.
-            limit:     최대 줄 수. ``MAX_NODE_LOG_LIMIT``으로 잘린다.
-        """
-        ...
 
 
 def query_segment(
@@ -181,7 +127,7 @@ def split_by_minute(time_range: TimeRange) -> list[TimeRange]:
     return segments
 
 
-class ClickHouseLogAdapter(LogRepository):
+class ClickHouseLogAdapter:
     def __init__(
         self,
         client,
@@ -197,6 +143,7 @@ class ClickHouseLogAdapter(LogRepository):
         self._node_log_table = node_log_table
 
     def fetch_logs(self, time_range: TimeRange) -> LogFetchResult:
+        """세 소스의 로그와 소스별 조회 실패를 함께 반환한다."""
         from cluster_doctor.incident_analysis_agent.datasource.clickhouse import (
             node_metric,
             query_log,
@@ -242,6 +189,12 @@ class ClickHouseLogAdapter(LogRepository):
         limit: int = DEFAULT_NODE_LOG_LIMIT,
     ) -> list[NodeLogEntry]:
         """노드 로그를 조건으로 걸러 시간순으로 조회한다.
+
+        시작 시각은 포함하고 종료 시각은 제외한다. ``TimeRange``의 10분 상한은
+        적용하지 않는다. 단일 쿼리이며 조회량은 ``limit``으로 제한하므로 사건
+        전체 구간을 조회할 수 있다. 빈 문자열·튜플은 해당 조건을 생략한다.
+        ``levels``와 ``loggers``는 OR로, 나머지 조건은 AND로 묶는다.
+        레벨은 대소문자를 무시하고 노드·로거는 정확히, 키워드는 부분 일치한다.
 
         조건은 전부 바인딩 파라미터로 넘긴다. 노드 이름·키워드는 LLM이 정하는
         값이므로 SQL에 이어 붙이면 그대로 주입 경로가 된다. 테이블 이름만

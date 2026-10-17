@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from typing import Annotated
 
 from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage
@@ -130,7 +131,12 @@ def _response(runtime: ToolRuntime, update: dict, payload: dict) -> Command:
 def _build_tools(seams: AnalysisSeams) -> list:
     @tool
     def collect_evidence(runtime: ToolRuntime) -> Command:
-        """승인된 window의 증거를 한 번 수집한다. 성공 결과와 source/window 실패 공백을 보존한다."""
+        """승인된 고정 구간의 근거를 수집한다. 실제 수집은 한 번만 수행한다.
+
+        재호출은 cached=true인 기존 결과를 반환하며 근거를 추가하지 않는다.
+        응답에는 근거 수, 관측 요약, 의심 후보, 실패한 분 수와 gaps가 포함된다.
+        일부 소스가 실패해도 다른 소스의 성공 결과와 실패 공백을 보존한다.
+        """
         state = runtime.state
         update = collect_update(seams, state)
         projected = {**state, **update}
@@ -156,9 +162,20 @@ def _build_tools(seams: AnalysisSeams) -> list:
             },
         )
 
-    @tool
-    def write_report(focus: str, runtime: ToolRuntime) -> Command:
-        """검증 전 보고서를 작성한다. 증거가 필요하며 최대 두 번까지 시도한다."""
+    @tool(
+        description=f"""수집된 근거로 검증 전 리포트를 작성해 저장한다. 먼저 수집한 근거가 있어야 한다.
+작성 시도는 최대 {_MAX_REPORT_ATTEMPTS}회다. 실패했고 attempts_left가 남았을 때만 재시도한다.
+성공한 리포트를 같은 입력으로 반복 작성하지 않는다.
+응답의 verification_status는 작성 직후 상태이며 최종 검증 결과가 아니다.
+finding_count, error, attempts_left와 draft_suggested_windows도 반환한다.
+초안의 제안 구간은 자동 채택되지 않는다."""
+    )
+    def write_report(
+        focus: Annotated[
+            str, "이번 조사 목표에 맞춰 리포트에서 답할 질문. 빈 문자열이면 승인된 조사 목표를 사용한다."
+        ],
+        runtime: ToolRuntime,
+    ) -> Command:
         state = runtime.state
         if not state.get("collected") or not state.get("evidence"):
             return _response(
@@ -194,9 +211,24 @@ def _build_tools(seams: AnalysisSeams) -> list:
 
     @tool
     def report_insufficient(
-        reason: str, suggested_windows: list[str], runtime: ToolRuntime
+        reason: Annotated[
+            str, "확인하지 못한 내용과 부족한 근거. 다른 구간을 제안하면 그 시간대가 필요한 이유도 적는다."
+        ],
+        suggested_windows: Annotated[
+            list[str],
+            '추가 확인이 필요한 구간 목록. 각 항목은 시간대 오프셋을 포함한 ISO 8601 시작/종료 문자열이다. '
+            '예: "2026-10-18T13:50:00+09:00/2026-10-18T13:55:00+09:00". '
+            "타당한 추가 구간을 특정할 수 없으면 빈 목록을 사용한다.",
+        ],
+        runtime: ToolRuntime,
     ) -> Command:
-        """부족한 context를 보고하고, 범위를 넓히지 않은 채 window를 제안한다."""
+        """현재 구간에서 부족한 근거를 기록하고 추가 분석 구간을 Main Agent에 제안한다.
+
+        현재 분석 범위를 넓히거나 기존 리포트를 삭제하지 않는다.
+        제안 구간 목록은 이번 입력으로 교체되며, 긴 구간은 조회 상한에 맞춰 분할한다.
+        응답은 accepted_windows와 잘못된 항목의 rejected 사유를 반환한다.
+        제안 수락은 실행 승인이 아니다. 실제 분석 여부는 Main Agent가 결정한다.
+        """
         accepted, rejected = [], []
         for item in suggested_windows or []:
             try:

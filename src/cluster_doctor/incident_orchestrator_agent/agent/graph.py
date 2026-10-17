@@ -20,7 +20,6 @@ from cluster_doctor.incident_orchestrator_agent.agent.prompts.system_prompt impo
 from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     DENY_ALL_FILESYSTEM,
     HideHarnessToolsMiddleware,
-    restrict_harness,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import (
     PseudonymizeMiddleware,
@@ -30,6 +29,9 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.rate_limit_retry impor
     RateLimitRetryMiddleware,
 )
 from cluster_doctor.incident_orchestrator_agent.agent.state import MainAgentState
+from cluster_doctor.incident_orchestrator_agent.agent.middleware import (
+    AnalysisTaskDescriptionMiddleware,
+)
 
 
 def build_main_agent(
@@ -46,15 +48,20 @@ def build_main_agent(
     부품을 만들기 시작하면 테스트가 진짜 LLM과 진짜 ClickHouse를 필요로 하게
     된다.
     """
-    restrict_harness(model)
-
     return create_deep_agent(
         model,
         tools,
         system_prompt=SYSTEM_PROMPT,
         # harness 도구 감추기를 **맨 뒤에** 둔다. 앞쪽 미들웨어가 도구를
         # 끼워 넣은 뒤에 걸러야 그 도구까지 걸린다.
-        middleware=[*middleware, HideHarnessToolsMiddleware(), AgentRoleLogMiddleware("main"), RateLimitRetryMiddleware(), PseudonymizeMiddleware()],
+        middleware=[
+            *middleware,
+            AnalysisTaskDescriptionMiddleware(),
+            HideHarnessToolsMiddleware(),
+            AgentRoleLogMiddleware("main"),
+            RateLimitRetryMiddleware(),
+            PseudonymizeMiddleware(),
+        ],
         # 위임처는 analysis 하나뿐이다.
         subagents=[analysis_subagent],
         # 구조화된 값이 SubAgent에 닿는 통로는 이 state뿐이다. task 도구는

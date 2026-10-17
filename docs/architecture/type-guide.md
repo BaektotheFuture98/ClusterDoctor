@@ -6,6 +6,24 @@
 
 ## 실행 State
 
+`main.compose_analysis_service(settings, resources)`가 datasource adapters, model,
+`AnalysisSeams`, `AnalysisAgent`, `AnalysisSubagentAdapter`, `MainAgent`, `AnalyzeIncident`를 직접 만든다.
+공개 `MainAgent(model=..., seams=..., analysis_subagent=...)`와
+`AnalysisAgent(model=..., seams=...)`는 같은 model·seams를 주입받고,
+`AnalysisSubagentAdapter(analysis_agent=...)`는 생성한 AnalysisAgent를 주입받는다.
+`MainAgent`는 window 위임 이후 incident 전체 리포트 합성에도 seams를 사용한다.
+같은 `main.py`가 `build_runtime_resources(settings)`로 공유 client를 만들고,
+`build_report_publisher(settings)`와 `build_sftp_uploader(settings)`로 report/SFTP를 조립한다.
+`bootstrap/lifecycle/app_lifecycle.py`의 `RuntimeResources`는 client 종료를 맡으며,
+생성 중 일부 client만 만들어지면 `build_runtime_resources`의 `ExitStack`이 정리한다.
+
+실행 객체·model·seams와 공유 client는 실행 시작 시 한 번 생성한다. Main graph와 State,
+`AnalysisSubagentAdapter.bind(incident)`의 delegate는 Incident마다 생성하며,
+Analysis graph와 State는 분석 window마다 생성한다. 공유 어댑터는 Incident와 실행 State를
+보관하지 않는다. 모델 검증·harness 등록은 Kafka consumer 생성 전에 완료하고,
+조립 자체는 LLM 추론을 실행하지 않는다.
+독립 Analysis 실행에서도 harness 제한을 확인하며, 이미 적용되어 있으면 재등록하지 않는다.
+
 | 실행 owner | 유일한 mutable source of truth | 생성과 종료 |
 | --- | --- | --- |
 | Main DeepAgent | `incident_orchestrator_agent/agent/state.py: MainAgentState` | 입력 DTO에서 초기화 → tool/middleware update → 결과 DTO |
@@ -38,7 +56,7 @@ Minute map 결과만 append reducer로 합치고 reduce 결과는 교체한다.
 | IncidentAnalysisReport, Finding, Narrative, CauseAssessment, TimelineAnnotation | orchestrator/model/incident_report.py · frozen dataclass | projection → rendering/publication |
 | WindowResult | orchestrator/model/window_result.py · frozen dataclass | 위임 결과 → Main State/result projection |
 | ReportPublication | orchestrator/model/report_delivery.py · frozen dataclass | publisher → lifecycle 결과 (path: 로컬 저장 파일, remote_path: SFTP로 올린 경로) |
-| SftpTarget | orchestrator/service/report_delivery/publication/sftp/sftp_uploader.py · frozen dataclass | wiring(Settings) → SftpUploader |
+| SftpTarget | orchestrator/service/report_delivery/publication/sftp/sftp_uploader.py · frozen dataclass | main.build_sftp_uploader(Settings) → SftpUploader |
 | RawRecord, MinuteBucket, SelectedRecord, MinuteResult, AnalysisResult | workflow/minute_analysis/model.py · frozen dataclass | minute 입력/선별/결과 |
 | MapSelection/Output, ReduceSelection/Output | workflow/minute_analysis/schema.py · BaseModel | LLM → minute nodes |
 | DraftReport/Draft* | service/report_generation/schema.py · BaseModel | LLM → report writer/초안 변환 |
@@ -57,6 +75,18 @@ Kafka settling의 `InflowTracker`, deadline, 취소 신호와 service 큐는 독
 수명/동기화 책임이므로 Agent의 두 번째 State가 아니다.
 
 ## lifecycle과 검증
+
+자동 실행의 `main`은 `ProblemLogProcessor(max_pending=10_000)`와
+`KafkaConsumerAdapter`를 직접 만든다. 수동 스크립트는 같은
+`compose_analysis_service` 결과를 `RunManualAnalysis`에 주입하며 Kafka 객체를
+만들지 않는다. `--dry-run`은 서비스 조립 없이 시각·범위만 확인한다.
+로깅 초기화는 async `main()`과 수동 `run()` 시작 시 명시적으로 수행하며, 재호출해도
+handler를 중복 생성하지 않는다. main·수동·SFTP 스크립트 import와 수동 `--dry-run`은
+로그 파일이나 ClusterDoctor 소유 handler를 만들지 않는다. SFTP 확인 스크립트는
+로깅을 초기화하지 않으며 업로드 한 번만 시도한다. 일반 publication은 기본 두 번 시도한다.
+정상 종료는 processor 정리 후 공유 client를 닫고, 수동 실행의 실패·중단도 client를
+정리한다. Kafka 치명적 장애는 consumer 정리를 시도한 뒤 `os._exit(1)`로 즉시
+종료하며 실행 중인 분석의 완료를 기다리지 않는다.
 
 `StartIncident → IncidentAnalysisRequest → MainAgentState → IncidentAnalysisResult
 → IncidentOutcome/publication` 경계를 유지한다. lifecycle은 Agent State를 공유하지
@@ -78,10 +108,12 @@ Graph 예외로 after_agent까지 도달하지 못한 초안은 보존하지만 
 재분석 후 검증 서비스가 예외로 끝나도 새 evidence sequence와 산출물을
 같은 State update에 커밋하고 실패/미검증 상태를 반환한다.
 
-구간별 report는 Main window_results에 그대로 누적한다. 최종 publication에는
-마지막 report와 누적 observations/evidence를 전달하고 모든 window의 검증 issue를
-중복 제거한 gap으로 표시한다. 완료 상태라도 최신 분석 FAILED 또는 검증 MISMATCH면
-failure indicator를 유지한다.
+구간별 report는 Main window_results에 그대로 누적한다. MainAgent는 누적
+observations/evidence와 window report로 incident 전체 리포트를 합성한다.
+최종 publication에는 합성 report와 누적 observations/evidence를 전달한다.
+합성 실패 시 마지막 window report로 대체하지 않고 실패를 반환한다.
+failure indicator에는 실행 실패·최신 분석 FAILED와 최종 합성 report의 검증
+MISMATCH를 반영한다.
 
 ## 리포트와 수집 출처
 
@@ -98,16 +130,20 @@ gap에 기록한다. 모든 분의 세 소스가 실패한 경우에만 이 조�
 파싱·상속·대체 여부를 나타낸다.
 
 `EvidenceCitation`은 근거 ID와 실제 Evidence를 함께 보관한다. 누락된 ID도 보존해
-존재하지 않는 참조임을 표시한다. 전달 모델의 `CauseAssessment`는 원인 후보별
-확신도와 지지·반박 인용을 분리한다. 기존 평탄화된 Narrative 필드는 기존 호출자와의
+존재하지 않는 참조임을 표시한다. 전달 모델의 `CauseAssessment`는 원인별
+판단 설명과 지지·반박 인용을 분리한다. 기존 평탄화된 Narrative 필드는 기존 호출자와의
 호환을 위해 유지하지만 새 화면은 구조화된 후보와 인용을 읽는다.
 
-HTML은 핵심 요약, 주요 타임라인, 원인 판단, 접힌 상세 자료, 분석 범위와 한계 순으로
-표시한다. 타임라인은 시작 시각별 사건으로 나누고 동일 유형의 반복 로그는 구간으로
-유지한다. 관측된 회복은 별도 시점으로 표시한다. 대표 근거 최대 3건의 첫 3줄을
-보여 주고, 전체 원문과 수집 정보는 펼침으로 제공한다. 해석 아래에는 해당 사건의
-근거로 지지되는 검증된 원인 후보를 연결한다. 평문 출력도 같은 인용 정보를 사용한다. 출력 시각은 KST이며, 원인 확신도와
-근거 검증 상태를 별도로 표시한다.
+HTML은 결론(지연 범위 판정·원인·조치), 지표 카드, 쿼리 추이, 느린 개별 실행 순으로
+표시한다. 주요 관측·소스 간 연결·타임라인·원문 로그·시스템 지표·인용 근거는
+접힌 `근거 보기` 영역에 두며 인쇄 시 펼친다. 원인 확신도·미확인 사항 블록은 표시하지 않는다.
+타임라인은 시작 시각별 사건으로 나누고 동일 유형의 반복 로그는 구간으로 유지한다.
+평문 출력도 같은 원인과 인용 정보를 사용하며 출력 시각은 KST다.
+
+`report_delivery/publication/report_publisher.py`의 `ReportPublisher`는 발행 매체 공통 계약이다.
+`publication/file/html_file_publisher.py`가 로컬 파일 저장·실패 처리를 맡으며,
+`rendering/html/report_renderer.py`의 `render_report`는 파일 저장 없이 HTML 문자열을 만든다.
+SFTP 발행은 같은 계약을 구현한 게시자를 감싸 로컬 저장 결과를 업로드한다.
 
 검증은 `uv run pytest`로 실행하며 collection I/O와 LLM 호출은 테스트에서 대체한다.
 실제 외부 시스템의 연결 상태나 실제 사고의 원인 정확성을 보장하는 검사는 아니다.

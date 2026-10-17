@@ -4,11 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from cluster_doctor.bootstrap.configuration.settings import Settings
-from cluster_doctor.bootstrap.dependency.wiring import _build_report_publisher, build_sftp_uploader
+from cluster_doctor.main import build_report_publisher, build_sftp_uploader
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_report_publisher import (
     SftpReportPublisher,
 )
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.html_file_notifier import (
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.file.html_file_publisher import (
     HtmlFileReportPublisher,
 )
 
@@ -93,13 +93,13 @@ def test_empty_numeric_setting_uses_the_default(monkeypatch, tmp_path, name):
 
 
 def test_disabled_sftp_builds_only_the_local_publisher(tmp_path):
-    publisher = _build_report_publisher(_settings(report_dir=str(tmp_path)))
+    publisher = build_report_publisher(_settings(report_dir=str(tmp_path)))
 
     assert isinstance(publisher, HtmlFileReportPublisher)
 
 
 def test_enabled_sftp_wraps_the_local_publisher(tmp_path):
-    publisher = _build_report_publisher(_sftp(report_dir=str(tmp_path)))
+    publisher = build_report_publisher(_sftp(report_dir=str(tmp_path)))
 
     assert isinstance(publisher, SftpReportPublisher)
 
@@ -107,7 +107,7 @@ def test_enabled_sftp_wraps_the_local_publisher(tmp_path):
 def test_missing_known_hosts_is_called_out_once_at_startup(tmp_path, caplog):
     caplog.set_level(logging.WARNING)
 
-    _build_report_publisher(_sftp(report_dir=str(tmp_path)))
+    build_report_publisher(_sftp(report_dir=str(tmp_path)))
 
     assert "REPORT_SFTP_KNOWN_HOSTS" in caplog.text
 
@@ -136,7 +136,7 @@ def test_uploader_is_built_with_the_configured_connection_details():
 def test_known_hosts_setting_silences_the_startup_warning(tmp_path, caplog):
     caplog.set_level(logging.WARNING)
 
-    _build_report_publisher(_sftp(report_dir=str(tmp_path), report_sftp_known_hosts="/etc/ssh/known_hosts"))
+    build_report_publisher(_sftp(report_dir=str(tmp_path), report_sftp_known_hosts="/etc/ssh/known_hosts"))
 
     assert "REPORT_SFTP_KNOWN_HOSTS" not in caplog.text
 
