@@ -12,6 +12,7 @@ def test_kafka_failure_exits_process_even_with_running_analysis_thread(tmp_path)
         import asyncio
         import threading
         from contextlib import nullcontext
+        from types import SimpleNamespace
         from cluster_doctor import main as app
         from cluster_doctor.exceptions import KafkaUnavailableError
 
@@ -24,10 +25,11 @@ def test_kafka_failure_exits_process_even_with_running_analysis_thread(tmp_path)
                 threading.Thread(target=threading.Event().wait, daemon=False).start()
                 raise KafkaUnavailableError("Kafka connection failed continuously")
 
-        app.get_settings = lambda: None
+        app.get_settings = lambda: SimpleNamespace(cluster_name="c", kafka_bootstrap_servers="k", kafka_topic="t", kafka_group_id="g", kafka_failure_timeout_seconds=1)
         app.build_runtime_resources = lambda settings: nullcontext()
-        app.build_problem_log_processor = lambda settings, resources: FakeProblemLogProcessor()
-        app.build_kafka_consumer = lambda problem_log_processor, settings: Consumer()
+        app.compose_analysis_service = lambda settings, resources: object()
+        app.ProblemLogProcessor = lambda **kwargs: FakeProblemLogProcessor()
+        app.KafkaConsumerAdapter = lambda **kwargs: Consumer()
         asyncio.run(app.main())
     """)
     env = os.environ.copy()

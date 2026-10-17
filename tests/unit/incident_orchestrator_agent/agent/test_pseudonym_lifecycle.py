@@ -5,7 +5,7 @@ import pytest
 
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import PSEUDONYMS
 from cluster_doctor.incident_orchestrator_agent.agent.adapter import (
-    _DeepAgentIncidentAnalyzer,
+    MainAgent,
 )
 from cluster_doctor.incident_orchestrator_agent.model.incident import Incident
 from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
@@ -15,7 +15,7 @@ from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
 
 @pytest.mark.parametrize("fail_graph", [False, True])
 def test_next_incident_does_not_restore_previous_incident_identifiers(fail_graph):
-    analyzer = object.__new__(_DeepAgentIncidentAnalyzer)
+    analyzer = object.__new__(MainAgent)
     analyzer._recursion_limit = 40
     restored = []
     alias_from_first = []

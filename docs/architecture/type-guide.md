@@ -6,6 +6,24 @@
 
 ## 실행 State
 
+`main.compose_analysis_service(settings, resources)`가 datasource adapters, model,
+`AnalysisSeams`, `AnalysisAgent`, `AnalysisSubagentAdapter`, `MainAgent`, `AnalyzeIncident`를 직접 만든다.
+공개 `MainAgent(model=..., seams=..., analysis_subagent=...)`와
+`AnalysisAgent(model=..., seams=...)`는 같은 model·seams를 주입받고,
+`AnalysisSubagentAdapter(analysis_agent=...)`는 생성한 AnalysisAgent를 주입받는다.
+`MainAgent`는 window 위임 이후 incident 전체 리포트 합성에도 seams를 사용한다.
+같은 `main.py`가 `build_runtime_resources(settings)`로 공유 client를 만들고,
+`build_report_publisher(settings)`와 `build_sftp_uploader(settings)`로 report/SFTP를 조립한다.
+`bootstrap/lifecycle/app_lifecycle.py`의 `RuntimeResources`는 client 종료를 맡으며,
+생성 중 일부 client만 만들어지면 `build_runtime_resources`의 `ExitStack`이 정리한다.
+
+실행 객체·model·seams와 공유 client는 실행 시작 시 한 번 생성한다. Main graph와 State,
+`AnalysisSubagentAdapter.bind(incident)`의 delegate는 Incident마다 생성하며,
+Analysis graph와 State는 분석 window마다 생성한다. 공유 어댑터는 Incident와 실행 State를
+보관하지 않는다. 모델 검증·harness 등록은 Kafka consumer 생성 전에 완료하고,
+조립 자체는 LLM 추론을 실행하지 않는다.
+독립 Analysis 실행에서도 harness 제한을 확인하며, 이미 적용되어 있으면 재등록하지 않는다.
+
 | 실행 owner | 유일한 mutable source of truth | 생성과 종료 |
 | --- | --- | --- |
 | Main DeepAgent | `incident_orchestrator_agent/agent/state.py: MainAgentState` | 입력 DTO에서 초기화 → tool/middleware update → 결과 DTO |
@@ -38,7 +56,7 @@ Minute map 결과만 append reducer로 합치고 reduce 결과는 교체한다.
 | IncidentAnalysisReport, Finding, Narrative, CauseAssessment, TimelineAnnotation | orchestrator/model/incident_report.py · frozen dataclass | projection → rendering/publication |
 | WindowResult | orchestrator/model/window_result.py · frozen dataclass | 위임 결과 → Main State/result projection |
 | ReportPublication | orchestrator/model/report_delivery.py · frozen dataclass | publisher → lifecycle 결과 (path: 로컬 저장 파일, remote_path: SFTP로 올린 경로) |
-| SftpTarget | orchestrator/service/report_delivery/publication/sftp/sftp_uploader.py · frozen dataclass | wiring(Settings) → SftpUploader |
+| SftpTarget | orchestrator/service/report_delivery/publication/sftp/sftp_uploader.py · frozen dataclass | main.build_sftp_uploader(Settings) → SftpUploader |
 | RawRecord, MinuteBucket, SelectedRecord, MinuteResult, AnalysisResult | workflow/minute_analysis/model.py · frozen dataclass | minute 입력/선별/결과 |
 | MapSelection/Output, ReduceSelection/Output | workflow/minute_analysis/schema.py · BaseModel | LLM → minute nodes |
 | DraftReport/Draft* | service/report_generation/schema.py · BaseModel | LLM → report writer/초안 변환 |
@@ -57,6 +75,18 @@ Kafka settling의 `InflowTracker`, deadline, 취소 신호와 service 큐는 독
 수명/동기화 책임이므로 Agent의 두 번째 State가 아니다.
 
 ## lifecycle과 검증
+
+자동 실행의 `main`은 `ProblemLogProcessor(max_pending=10_000)`와
+`KafkaConsumerAdapter`를 직접 만든다. 수동 스크립트는 같은
+`compose_analysis_service` 결과를 `RunManualAnalysis`에 주입하며 Kafka 객체를
+만들지 않는다. `--dry-run`은 서비스 조립 없이 시각·범위만 확인한다.
+로깅 초기화는 async `main()`과 수동 `run()` 시작 시 명시적으로 수행하며, 재호출해도
+handler를 중복 생성하지 않는다. main·수동·SFTP 스크립트 import와 수동 `--dry-run`은
+로그 파일이나 ClusterDoctor 소유 handler를 만들지 않는다. SFTP 확인 스크립트는
+로깅을 초기화하지 않으며 업로드 한 번만 시도한다. 일반 publication은 기본 두 번 시도한다.
+정상 종료는 processor 정리 후 공유 client를 닫고, 수동 실행의 실패·중단도 client를
+정리한다. Kafka 치명적 장애는 consumer 정리를 시도한 뒤 `os._exit(1)`로 즉시
+종료하며 실행 중인 분석의 완료를 기다리지 않는다.
 
 `StartIncident → IncidentAnalysisRequest → MainAgentState → IncidentAnalysisResult
 → IncidentOutcome/publication` 경계를 유지한다. lifecycle은 Agent State를 공유하지
@@ -78,10 +108,12 @@ Graph 예외로 after_agent까지 도달하지 못한 초안은 보존하지만 
 재분석 후 검증 서비스가 예외로 끝나도 새 evidence sequence와 산출물을
 같은 State update에 커밋하고 실패/미검증 상태를 반환한다.
 
-구간별 report는 Main window_results에 그대로 누적한다. 최종 publication에는
-마지막 report와 누적 observations/evidence를 전달하고 모든 window의 검증 issue를
-중복 제거한 gap으로 표시한다. 완료 상태라도 최신 분석 FAILED 또는 검증 MISMATCH면
-failure indicator를 유지한다.
+구간별 report는 Main window_results에 그대로 누적한다. MainAgent는 누적
+observations/evidence와 window report로 incident 전체 리포트를 합성한다.
+최종 publication에는 합성 report와 누적 observations/evidence를 전달한다.
+합성 실패 시 마지막 window report로 대체하지 않고 실패를 반환한다.
+failure indicator에는 실행 실패·최신 분석 FAILED와 최종 합성 report의 검증
+MISMATCH를 반영한다.
 
 ## 리포트와 수집 출처
 

@@ -20,7 +20,7 @@ KafkaConsumerAdapter
   → ProblemLogProcessor: quiet-period settling
   → StartIncident
   → AnalyzeIncident: state, timeout/cancellation, delivery, cleanup
-  → IncidentAnalyzer port: DeepAgents composite adapter
+  → IncidentAnalyzer port: MainAgent → AnalysisSubagentAdapter
   → application report finalization and HTML publication
 ```
 
@@ -35,8 +35,8 @@ KafkaConsumerAdapter
 
 ```text
 src/cluster_doctor/
-├── main.py
-├── bootstrap/              # Composition Root: configuration/dependency/lifecycle
+├── main.py                 # Composition Root: 명시적 실행 객체 조립
+├── bootstrap/              # configuration, shared client lifecycle
 ├── kafka_consumer/         # Kafka 수신 + 정착(settling)
 ├── incident_orchestrator_agent/   # Main Agent: 분석 범위·수명 관리, 리포트 전달
 └── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증
@@ -44,8 +44,8 @@ src/cluster_doctor/
 
 `kafka_consumer`는 `ProblemLogProcessor`를 직접 주입받는다. 실행 State는 각 Agent의
 `agent/state.py`, 공유 데이터 계약은 owner의 `model/`, LLM schema는 해당
-service/workflow에 둔다. Orchestrator가 Analysis 실행을 조립하며 Analysis는
-Orchestrator에 의존하지 않는다. `bootstrap`은 공개 조립 함수로 구현체를 연결한다.
+service/workflow에 둔다. Orchestrator가 Analysis 실행을 위임하며 Analysis는
+Orchestrator에 의존하지 않는다. `main.py`가 구체 구현을 직접 생성하고 주입한다.
 
 ### Agent 구조
 
@@ -54,11 +54,28 @@ Orchestrator에 의존하지 않는다. `bootstrap`은 공개 조립 함수로 �
 - `incident_analysis_agent/datasource`가 ClickHouse(`clickhouse/client.py`),
   Elasticsearch(`elasticsearch/cluster_health.py`, `node_resolver.py`),
   SSH(`ssh/node_log.py`)를 구현한다.
-- `incident_orchestrator_agent/agent/adapter.py`가 유일한 조립 지점이다.
-  `DeepAgentsConfig`와 `build_deepagents_incident_analyzer`를 공개하고, 내부에서
+- `main.compose_analysis_service(settings, resources)`가 datasource adapters, chat model,
   structured LiteLLM caller, `ReportWriter`, metric threshold, `AnalysisSeams`,
-  private `_DeepAgentIncidentAnalyzer`를 조립한다. `bootstrap`은 이 함수 하나만
-  부르고 runtime·agent·service internals를 직접 import하지 않는다.
+  `AnalysisAgent`, `AnalysisSubagentAdapter`, `MainAgent`, `AnalyzeIncident`를 직접 생성한다.
+  `MainAgent(model=..., seams=..., analysis_subagent=...)`와
+  `AnalysisAgent(model=..., seams=...)`는 같은 model과 seams를 주입받고,
+  `AnalysisSubagentAdapter(analysis_agent=...)`는 생성한 AnalysisAgent를 주입받는다.
+  MainAgent는 incident 전체 리포트 합성에도 seams를 사용한다.
+- 자동 실행의 `main`은 `ProblemLogProcessor(max_pending=10_000)`와
+  `KafkaConsumerAdapter`도 직접 만든다. 같은 `main.py`의
+  `build_runtime_resources(settings)`가 공유 client를 만들고,
+  `build_report_publisher(settings)`가 로컬 HTML 및 선택적 SFTP publisher를 만든다.
+  client 종료와 부분 초기화 실패 시 정리는 `bootstrap/lifecycle/app_lifecycle.py`의
+  `RuntimeResources`와 생성 시의 `ExitStack`이 맡는다.
+
+실행 객체와 model·seams는 기동 시 한 번 생성한다. 모델 검증과 harness 등록도
+Kafka consumer 생성 전에 끝내며, 조립 중에는 LLM 추론을 실행하지 않는다.
+독립 Analysis 실행도 harness 제한을 확인하되, 이미 적용된 설정은 다시 등록하지 않는다.
+Main graph와 `analysis_subagent.bind(incident)`로 묶은 delegate는 Incident마다 새로
+만들고, Analysis graph와 State는 분석 window마다 새로 만든다. 공유
+`AnalysisSubagentAdapter`에는 Incident나 실행 State를 보관하지 않는다.
+정상 종료에서는 processor의 분석을 정리한 뒤 공유 ClickHouse·Elasticsearch client를
+닫는다. Kafka 연속 장애에 따른 코드 1의 즉시 종료 정책은 아래 설정 설명과 같다.
 
 Main DeepAgent는 incident마다 새 graph를 만들고 tool loop를 돈다. 먼저 후보 window를
 열거하고, 허용된 window를 선택·승인(`propose_analysis`)한 뒤 Analysis SubAgent에 `task`로
@@ -74,9 +91,10 @@ Analysis SubAgent는 승인된 window 하나를 끝까지 처리한다. evidence
 `MISMATCH`로, 대조하지 못했으면 `NOT_VERIFIED`로 리포트를 저장하고 반환한다.
 `COMPLETED` 종료에는 window report가 하나 이상 있어야 한다.
 
-window report는 합치지 않고 window마다 `MainAgentState.window_results`에 리포트 객체를
-그대로 쌓는다(별도 저장소를 거치지 않는다). `AnalyzeIncident`는 마지막 window의 report를
-대표로 HTML에 전달하고, 모든 window의 검증 불일치를 gap으로 싣는다. Candidate를 prompt에
+window report는 window마다 `MainAgentState.window_results`에 리포트 객체를
+그대로 쌓는다(별도 저장소를 거치지 않는다). `MainAgent`는 누적 근거와 window report로
+incident 전체 리포트를 합성하고, `AnalyzeIncident`가 그 결과를 HTML로 전달한다.
+합성에 실패하면 마지막 window report를 incident 전체 리포트로 대신하지 않는다. Candidate를 prompt에
 보이는 방식과 HTML에 보이는 방식은 각각 `service/observation`과
 `service/report_delivery/rendering`에서 따로 projection한다.
 
@@ -211,7 +229,7 @@ consumer가 담당하는 partition leader 장애로 종료하지 않는다. 리�
 | SSH node-log | default 300 | `incident_analysis_agent/datasource/ssh/node_log.py` |
 | SSH timeout | connect 10초, command 30초 | `incident_analysis_agent/datasource/ssh/node_log.py` |
 | LLM timeout | 1,200초 | `incident_analysis_agent/agent/runtime/litellm_client.py` |
-| ClickHouse timeout | 30초 | `bootstrap/dependency/wiring.py` |
+| ClickHouse timeout | 30초 | `main.py` |
 
 ### 재시도와 rate limit
 
@@ -322,16 +340,17 @@ uv run python scripts/run_analysis.py --at "2026-09-16T04:22:00" --span 6m
 
 ```mermaid
 flowchart TD
-    A[main.py] --> B[build_problem_log_processor<br/>build_kafka_consumer]
+    A[main.py] --> AC[compose_analysis_service<br/>adapters·model·seams·agents·AnalyzeIncident]
+    AC --> B[ProblemLogProcessor 생성<br/>max_pending=10,000<br/>KafkaConsumerAdapter 생성]
     B --> C[KafkaConsumerAdapter.run]
     C --> D[Kafka message JSON 파싱<br/>ProblemLogSignal]
     D --> E[ProblemLogProcessor.submit]
     E --> F[유입 정착 settle]
     F --> G[Incident 생성<br/>StartIncident]
     G --> H[AnalyzeIncident.handle]
-    H --> I[입력 DTO → MainAgentState 초기화<br/>초기 분석 구간 생성]
-    I --> J[_DeepAgentIncidentAnalyzer.analyze]
-    J --> K[Main Agent]
+    H --> J[MainAgent.analyze]
+    J --> I[입력 DTO → MainAgentState 초기화<br/>초기 분석 구간 생성]
+    I --> K[Incident별 Main graph<br/>AnalysisSubagentAdapter.bind]
     K --> L[후보 Window 선택·승인<br/>Analysis SubAgent 위임]
     L --> M[EvidenceCollector]
     M --> N[ClickHouse<br/>slowlog·query log·node metric·master log]
@@ -342,7 +361,8 @@ flowchart TD
     R --> S[검증 루프<br/>근거 대조·원문 대조·수정·재분석]
     S --> K
     K --> SF[finish_incident<br/>COMPLETED는 report 필요]
-    SF --> U[HtmlFileReportPublisher]
+    SF --> SY[누적 근거·window report로<br/>incident 전체 리포트 합성]
+    SY --> U[AnalyzeIncident → report publisher]
     U --> V[reports/report-*.html]
 ```
 
@@ -351,20 +371,32 @@ flowchart TD
 | 단계 | 책임 | 시작 코드 |
 |---|---|---|
 | 프로세스 시작 | 설정을 읽고 Kafka consumer를 실행 | `src/cluster_doctor/main.py` |
-| 의존성 조립 | 서비스와 ClickHouse·ES·SSH·LLM·report 구현 연결 | `src/cluster_doctor/bootstrap/dependency/wiring.py` |
+| 분석 의존성 조립 | datasource·model·seams·agents·AnalyzeIncident 직접 생성 | `src/cluster_doctor/main.py: compose_analysis_service` |
+| client·publisher 조립 | 공유 client 생성과 공개 build_report_publisher, SFTP 설정 | `src/cluster_doctor/main.py` |
+| client 수명 관리 | 실행 종료 시 정리 | `src/cluster_doctor/bootstrap/lifecycle/app_lifecycle.py` |
 | Kafka 수신 | JSON에서 event time을 읽어 `ProblemLogSignal`로 변환 | `src/cluster_doctor/kafka_consumer/consumer/kafka/consumer.py` |
 | Incident 묶기·대기 | quiet period 정착과 순차 분석 루프 | `src/cluster_doctor/kafka_consumer/trigger_settling/service/problem_log_processor.py` |
 | 진단 lifecycle | 상태 생성, timeout, 결과 전달 | `src/cluster_doctor/incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py` |
-| Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료 | `src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py` |
+| Main Agent | 분석 범위 선택·승인, SubAgent 위임, 충분성 판단·종료, incident 합성 | `src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py` |
+| Analysis 위임 어댑터 | Incident별 delegate binding, window 요청·결과 변환 | `src/cluster_doctor/incident_orchestrator_agent/agent/analysis_subagent.py` |
 | 근거 수집 | ClickHouse·ES·SSH 조회와 분 단위 선별 | `src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py` |
 | 근거 일관성 검증 | evidence 및 candidate 참조 ID 유효성을 확인하는 구조 검사 | `src/cluster_doctor/incident_analysis_agent/service/validation/consistency/report_validation.py` |
 | 원문 대조 검증 | Claim을 수집된 evidence·observation과 대조하고 불일치를 분류 | `src/cluster_doctor/incident_analysis_agent/service/validation/grounding/grounding_validator.py` |
 | 검증 루프 | 검증 결과에 따라 리포트 수정·구간 재분석 | `src/cluster_doctor/incident_analysis_agent/agent/subagent.py` |
 | HTML 저장 | 대표 리포트를 `reports/`에 기록 | `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/html_file_notifier.py` |
 
-Kafka를 거치지 않는 수동 실행은 `scripts/run_analysis.py`에서
-`RunManualAnalysis`를 호출한다. 이 경로는 Kafka 수신·정착만 생략하고,
-그 뒤의 `AnalyzeIncident`와 Agent workflow는 같은 구현을 사용한다.
+Kafka를 거치지 않는 수동 실행은 `scripts/run_analysis.py`에서 같은
+`compose_analysis_service(settings, resources)`의 결과를 `RunManualAnalysis`에
+주입한다. Kafka consumer나 processor는 만들지 않으며, `AnalyzeIncident`와 Agent
+workflow는 자동 실행과 같은 조립을 사용한다. 실행 종료·실패·중단 뒤에는 공유 client를
+정리한다. `--dry-run`은 시각·범위만 계산하며 서비스 조립이나 외부 진단을 실행하지 않는다.
+
+로깅은 자동 실행의 async `main()`과 수동 실행의 `run()` 시작 시
+`configure_logging()`으로 명시적으로 초기화한다. `cluster_doctor.main`이나 수동·SFTP
+스크립트를 import할 때, 또는 수동 `--dry-run`에서는 로그 파일·디렉터리나
+ClusterDoctor 소유 handler를 만들지 않는다. 같은 프로세스에서 초기화를 다시 호출해도
+handler는 중복되지 않는다. SFTP 업로드 확인 스크립트는 로깅을 초기화하지 않고,
+업로드는 한 번만 시도한다(일반 리포트 publication은 기본 두 번).
 
 ## 데이터 소스와 metric 해석
 
@@ -423,7 +455,8 @@ asset만 제거하고, `litellm/proxy/` 전체는 실제 `completion()` 경로�
 ```bash
 git diff --check
 uv run python -m compileall -q src
-uv run python -c "import cluster_doctor; import cluster_doctor.bootstrap.dependency.wiring"
+uv run python -c "import cluster_doctor; import cluster_doctor.main"
+uv run python scripts/run_analysis.py --at 2026-09-16T04:22:00 --span 6m --dry-run
 uv run pytest
 ```
 
