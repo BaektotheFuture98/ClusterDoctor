@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from cluster_doctor.bootstrap.configuration.settings import Settings
+from cluster_doctor.bootstrap.settings import Settings
 
 
 @pytest.mark.parametrize("report_dir,expected", [(None, "reports"), ("", "reports"), ("custom/reports", "custom/reports"), ("/var/lib/clusterdoctor/reports", "/var/lib/clusterdoctor/reports")])

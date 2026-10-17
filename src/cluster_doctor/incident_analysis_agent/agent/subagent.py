@@ -106,7 +106,7 @@ def _validation_failure(state: dict, report, retries: int, exc: Exception) -> di
 
 
 def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
-    """횟수가 제한된 결정적 validation. 교체 값을 같은 graph로 돌려준다."""
+    """구조 검사와 LLM 근거 대조·수정을 제한된 횟수로 수행하고 State 교체 값을 반환한다."""
     report = state.get("report")
     if report is None:
         return {}

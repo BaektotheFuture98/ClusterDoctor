@@ -16,7 +16,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 _UTC = UTC
 
 
-def test_to_incident_analysis_report_quotes_finding_evidence_with_citation_format():
+def test_finding_citations_preserve_sources_deduplicate_and_expose_missing_refs():
     evidence = Evidence(
         evidence_id="E-abc-1",
         event_time=datetime(2026, 9, 30, 15, 22, 54, tzinfo=_UTC),
@@ -31,13 +31,20 @@ def test_to_incident_analysis_report_quotes_finding_evidence_with_citation_forma
             ReportFinding(
                 severity="Warning",
                 title="느린 쿼리",
-                evidence_refs=("E-abc-1",),
+                evidence_refs=("E-abc-1", "MISSING", "E-abc-1"),
+                detail="실행시간 확인",
             ),
         ),
     )
 
     result = to_incident_analysis_report(report, Observations(), [evidence])
 
-    assert result.narrative.findings[0].evidence == (
-        "[E-abc-1] | 2026-10-01 00:22:54 KST | es_query_log | query runtime=28.66s",
-    )
+    finding = result.narrative.findings[0]
+    assert finding.detail == "실행시간 확인"
+    assert tuple(c.evidence_id for c in finding.citations) == ("E-abc-1", "MISSING")
+    assert finding.citations[0].evidence is evidence
+    assert finding.citations[1].evidence is None
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import visible_citations
+    shown = visible_citations(finding.citations)
+    assert "query runtime=28.66s" in shown[0]
+    assert shown[1] == "인용 원문 확인 불가"

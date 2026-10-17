@@ -1,6 +1,6 @@
 """Analysis 호출과 Main 조립이 사용하는 litellm 왕복 1회.
 
-호출부를 복붙하면 아래 세 가지 보호 장치가 두 갈래로 갈라지고, 한쪽만
+호출부를 복붙하면 아래 보호 장치가 두 갈래로 갈라지고, 한쪽만
 고쳐지는 사고가 난다:
 
 1. 키는 파라미터로만 전달한다 (모델 문자열·URL에 실리지 않는다)
@@ -87,7 +87,7 @@ def _throttle(provider: str) -> None:
 
 _PROVIDER_PREFIX: dict[str, str] = {
     "gemini": "gemini",
-    # NVIDIA NIM. settings._SUPPORTED_LLM_PROVIDERS와 같은 집합이어야 한다.
+    # NVIDIA NIM. 지원 provider는 bootstrap.settings.LlmProvider와 맞춘다.
     #
     # 두 가지를 알아 둘 것:
     # 1. google/gemma-4-31b-it는 litellm 로컬 cost map에 항목이 없다. 라우팅은
@@ -180,11 +180,12 @@ def require_supported_provider(provider: str) -> str:
 
 # 재시도는 429와 503, 두 경우뿐이다. 분당 토큰 한도 429는 provider가 알려 준
 # 대기 시간(retryDelay)을 기다린 뒤에만 재시도한다 — 바로 다시 보내면 실패가
-# 보장된 채 소비만 늘기 때문이다. 대기 시간을 모르면 재시도하지 않는다.
+# 보장된 채 소비만 늘기 때문이다. 토큰 한도 오류는 대기 시간을 모르면 재시도하지
+# 않으며, 그 외 429/503에는 아래 기본 대기를 적용한다.
 _RETRYABLE_STATUS = frozenset({429, 503})
 _MAX_RETRIES = 1
-# provider가 대기 시간을 알려 주지 않을 때의 대기. 시도 횟수 순서대로 쓴다.
-_FALLBACK_BACKOFF_SECONDS = (5.0, 15.0)
+# provider가 대기 시간을 알려 주지 않을 때 한 번의 재시도에 적용할 대기.
+_FALLBACK_BACKOFF_SECONDS = 5.0
 # provider가 알려 준 대기가 이보다 길면 기다리지 않고 실패시킨다. 일 단위
 # 한도처럼 분석 한 건이 기다릴 수 없는 경우다.
 _MAX_RETRY_WAIT_SECONDS = 60.0
@@ -193,7 +194,7 @@ _RETRY_DELAY_PATTERN = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
 _TOKEN_QUOTA_PATTERN = re.compile(r'"quotaId"\s*:\s*"[^"]*Token', re.IGNORECASE)
 
 
-def _retry_wait(exc: Exception, status, attempt: int) -> float | None:
+def _retry_wait(exc: Exception, status) -> float | None:
     """재시도할 가치가 있으면 대기 초를, 없으면 ``None``을 돌려준다.
 
     ``str(exc)``는 여기서 값을 파싱하는 데만 쓰고 로그나 예외 메시지에 싣지
@@ -221,7 +222,7 @@ def _retry_wait(exc: Exception, status, attempt: int) -> float | None:
     if delay is None:
         if token_quota:
             return None
-        return _FALLBACK_BACKOFF_SECONDS[min(attempt, len(_FALLBACK_BACKOFF_SECONDS) - 1)]
+        return _FALLBACK_BACKOFF_SECONDS
     if delay > _MAX_RETRY_WAIT_SECONDS:
         return None
     return delay + _RETRY_DELAY_MARGIN_SECONDS
@@ -280,7 +281,7 @@ def complete(
             # litellm의 동명 APIError가 아니라 openai의 APIError를 상속한다.
             status = getattr(exc, "status_code", None) or "unknown"
             trace.failed(f"status={status}")
-            wait = _retry_wait(exc, status, attempt) if attempt < _MAX_RETRIES else None
+            wait = _retry_wait(exc, status) if attempt < _MAX_RETRIES else None
             if wait is not None:
                 _logger.warning(
                     "LLM provider=%s rejected the request with status=%s; "

@@ -14,8 +14,14 @@
 `MainAgent`는 window 위임 이후 incident 전체 리포트 합성에도 seams를 사용한다.
 같은 `main.py`가 `build_runtime_resources(settings)`로 공유 client를 만들고,
 `build_report_publisher(settings)`와 `build_sftp_uploader(settings)`로 report/SFTP를 조립한다.
-`bootstrap/lifecycle/app_lifecycle.py`의 `RuntimeResources`는 client 종료를 맡으며,
+`bootstrap/resources.py`의 `RuntimeResources`는 client 종료를 맡으며,
 생성 중 일부 client만 만들어지면 `build_runtime_resources`의 `ExitStack`이 정리한다.
+환경 설정은 `bootstrap/settings.py`가 읽고, bootstrap은 이 두 모듈로 구성한다.
+
+공용 chat model은 `incident_orchestrator_agent/agent/chat_model.py`에 둔다.
+Analysis의 `agent/runtime/`에는 `harness.py`, `litellm_client.py`,
+`rate_limit_retry.py`, `pseudonym.py`, `llm_call_log.py`, `tool_batch.py`가 있으며,
+Main·Analysis가 필요한 harness 제한·LLM 호출·재시도·가명화·로그·도구 실행 제어를 공유한다.
 
 실행 객체·model·seams와 공유 client는 실행 시작 시 한 번 생성한다. Main graph와 State,
 `AnalysisSubagentAdapter.bind(incident)`의 delegate는 Incident마다 생성하며,
@@ -43,6 +49,10 @@ Minute map 결과만 append reducer로 합치고 reduce 결과는 교체한다.
 
 ## 공유 데이터와 local schema
 
+아래 경로의 `orchestrator/`와 `analysis/`는 각각
+`incident_orchestrator_agent/`와 `incident_analysis_agent/`를 줄인 표기다.
+`workflow/`와 `service/`는 Analysis 내부 경로다.
+
 | 역할과 타입 | 위치/구현 | producer → consumer |
 | --- | --- | --- |
 | Incident | orchestrator/model/incident.py · frozen BaseModel | intake/manual → lifecycle/Agent |
@@ -53,9 +63,9 @@ Minute map 결과만 append reducer로 합치고 reduce 결과는 교체한다.
 | Evidence, EvidenceProvenance | analysis/model/evidence.py · frozen BaseModel | collector → State/report/grounding/출력 |
 | LogAnalysisReport, ReportFinding, RootCause, TimelineEvent | analysis/model/report.py · frozen BaseModel | draft 변환 → 검증/State/출력 |
 | VerificationIssue/Type | analysis/model/validation.py · frozen BaseModel/StrEnum | grounding → 검증 middleware |
-| IncidentAnalysisReport, Finding, Narrative, CauseAssessment, TimelineAnnotation | orchestrator/model/incident_report.py · frozen dataclass | projection → rendering/publication |
+| IncidentAnalysisReport, Finding, Narrative, CauseAssessment, Recommendation, TimelineAnnotation | orchestrator/model/incident_report.py · frozen dataclass | projection → rendering/publication |
 | WindowResult | orchestrator/model/window_result.py · frozen dataclass | 위임 결과 → Main State/result projection |
-| ReportPublication | orchestrator/model/report_delivery.py · frozen dataclass | publisher → lifecycle 결과 (path: 로컬 저장 파일, remote_path: SFTP로 올린 경로) |
+| ReportPublication | orchestrator/model/report_delivery.py · frozen dataclass | publisher → lifecycle 결과 (text_length: 평문 길이, path: 로컬 저장 파일, remote_path: SFTP로 올린 경로) |
 | SftpTarget | orchestrator/service/report_delivery/publication/sftp/sftp_uploader.py · frozen dataclass | main.build_sftp_uploader(Settings) → SftpUploader |
 | RawRecord, MinuteBucket, SelectedRecord, MinuteResult, AnalysisResult | workflow/minute_analysis/model.py · frozen dataclass | minute 입력/선별/결과 |
 | MapSelection/Output, ReduceSelection/Output | workflow/minute_analysis/schema.py · BaseModel | LLM → minute nodes |
@@ -131,8 +141,11 @@ gap에 기록한다. 모든 분의 세 소스가 실패한 경우에만 이 조�
 
 `EvidenceCitation`은 근거 ID와 실제 Evidence를 함께 보관한다. 누락된 ID도 보존해
 존재하지 않는 참조임을 표시한다. 전달 모델의 `CauseAssessment`는 원인별
-판단 설명과 지지·반박 인용을 분리한다. 기존 평탄화된 Narrative 필드는 기존 호출자와의
-호환을 위해 유지하지만 새 화면은 구조화된 후보와 인용을 읽는다.
+판단 설명과 지지·반박 인용을 분리한다. `Narrative`는 화면에서 사용하는 원인 후보,
+관측 사항, 후보 선택 이유와 조치만 보관한다. `IncidentAnalysisReport`는
+관측값·narrative·evidence·타임라인 주석·검증 상태와 사고 범위를 전달한다.
+내부 분석의 요약과 요약 근거 참조는
+`LogAnalysisReport`에서 후속 구간 분석·검증에 사용하며 전달 모델에 중복 보관하지 않는다.
 
 HTML은 결론(지연 범위 판정·원인·조치), 지표 카드, 쿼리 추이, 느린 개별 실행 순으로
 표시한다. 주요 관측·소스 간 연결·타임라인·원문 로그·시스템 지표·인용 근거는
@@ -151,10 +164,12 @@ SFTP 발행은 같은 계약을 구현한 게시자를 감싸 로컬 저장 결�
 `Observations.query_requests`는 ClickHouse의 `QueryLogEntry` 전체 수집 기록을 보존한다.
 느린 요청 후보 및 LLM 선별과 독립적이며 Analysis state → Subagent 결과 → Main 병합을
 거쳐 전달된다. 겹치는 조회는 메타데이터를 제외한 전체 기록 값별 최대 건수로 병합한다.
-검색 요청 분석은 키워드 조합·회사·사용자·cmd·검색 기간별 평균 실행 시간 순위와
-reg_date 시각을 표시하며 평균 실행 시간이 느린 상위 5개 조합만 보여 준다.
-`QueryLogEntry`는 `log`의 18개 컬럼을 원래 이름으로 저장하고, 추가 컬럼도 보존한다.
-단 `keyword`는 앞 5개만 저장하고 버린 개수를 계산 필드 `keyword_omitted`에 둔다. `reg_date`가 저장 필드이고 `timestamp`는 공통 파이프라인용
-읽기 전용 접근자다. `success`는 Y/N 원문으로 보존하며 `is_success`로 판정한다.
-검색 기간은 s_date/e_date(YYYYMMDD), 검색 일수는 date_range 원본 값이다. slowlog와의
-공통 요청 ID가 없으므로 사용자별 slowlog 연결을 임의로 추정하지 않는다.
+검색 요청은 유한하고 0 이상인 `run_time`으로 개별 실행 순위를 매기며 보고서에
+최대 10건을 표시한다. 키워드 조합별로 합치거나 평균을 내지 않는다.
+`QueryLogEntry`는 필요한 컬럼을 명시적으로 보관한다. 원본 `url`은 수집 단계에서
+`target_host`·`index_name`·`conditions`로 파싱하고 저장하지 않는다.
+`keyword`는 앞 5개만 저장하고 버린 개수를 계산 필드 `keyword_omitted`에 둔다.
+`reg_date`가 저장 필드이고 `timestamp`는 공통 파이프라인용 읽기 전용 접근자다.
+`success`는 Y/N 원문으로 보존하며 `is_success`로 판정한다.
+검색 기간은 s_date/e_date(YYYYMMDD), 검색 일수는 date_range 원본 값이다.
+slowlog와의 공통 요청 ID가 없으므로 사용자별 slowlog 연결을 임의로 추정하지 않는다.

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from cluster_doctor.bootstrap.configuration.settings import Settings
+from cluster_doctor.bootstrap.settings import Settings
 from cluster_doctor import main as app
 
 
@@ -224,9 +224,9 @@ async def test_main_uses_explicit_kafka_settings_and_pending_limit(settings, cli
 @pytest.mark.parametrize("failure", ["model-validation", "harness-registration", "analysis-harness"])
 async def test_composition_failure_cleans_clients_before_consumer(settings, clients, monkeypatch, failure):
     from cluster_doctor import main as app
-    from cluster_doctor.incident_orchestrator_agent.agent.runtime import chat_model
+    from cluster_doctor.incident_orchestrator_agent.agent import chat_model
     from cluster_doctor.incident_analysis_agent.agent.runtime import harness
-    from cluster_doctor.bootstrap.configuration.settings import ConfigurationError
+    from cluster_doctor.bootstrap.settings import ConfigurationError
 
     monkeypatch.setattr(app, "get_settings", lambda: settings)
     monkeypatch.setattr(app, "KafkaConsumerAdapter", lambda **kw: pytest.fail("consumer created before validation"))

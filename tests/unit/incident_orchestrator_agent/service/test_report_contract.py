@@ -6,7 +6,7 @@ from cluster_doctor.incident_analysis_agent.datasource.clickhouse.query_url impo
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
 from cluster_doctor.incident_analysis_agent.model.observations import Observations, SourceWindowStatus
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource, EvidenceProvenance
-from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport, Narrative
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import CauseAssessment, IncidentAnalysisReport, Narrative
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 
@@ -20,7 +20,7 @@ def report(status='NOT_VERIFIED'):
     e=Evidence(evidence_id='INTERNAL_ID',event_time=T0,source=EvidenceSource.NODE_LOG,node_name='node',message='WARN <stack>&',
         provenance=EvidenceProvenance(method='ssh',file_path='/es/log',host='es'),time_origin='fallback')
     obs=Observations(query_requests=logs,requested=((T0,T0+timedelta(minutes=1)),),source_statuses=(SourceWindowStatus('es_query_log',T0,T0+timedelta(minutes=1),'ok',12,T0),))
-    return IncidentAnalysisReport(observations=obs,evidence=(e,),narrative=Narrative(headline='unverified conclusion',root_cause='unverified cause'),verification_status=status)
+    return IncidentAnalysisReport(observations=obs,evidence=(e,),narrative=Narrative(causes=(CauseAssessment(statement='unverified cause'),)),verification_status=status)
 
 
 def test_actual_html_is_individual_source_backed_report():
@@ -33,12 +33,12 @@ def test_actual_html_is_individual_source_backed_report():
     assert html.count('class="execution-row"')==10
     assert '<svg' in html and 'INTERNAL_ID' not in html and 'href="#evidence' not in html
     assert '평균' not in html and 'Avg' not in html
-    assert 'unverified conclusion' not in html and 'unverified cause' not in html
+    assert 'unverified cause' not in html
     assert '시각 미확인' in html and '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
     assert '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
     text=render_text(report())
     assert '1.96s' in text and 'bulk' in text and 'INTERNAL_ID' not in text
-    assert '평균' not in text and 'unverified conclusion' not in text
+    assert '평균' not in text and 'unverified cause' not in text
 
 
 def test_absent_ssh_does_not_render_empty_table():
@@ -75,7 +75,7 @@ def test_unverified_report_has_fact_summary_without_internal_diagnostics():
     assert 'internal validator reasoning' not in html
     assert 'es_query_log 수집 실패' in html
     assert '관측된 실행 로그에서' not in render_text(r)
-    assert 'unverified conclusion' not in html
+    assert 'unverified cause' not in html
 
 
 def test_timeline_uses_single_observation_without_internal_baseline():
@@ -202,7 +202,7 @@ def test_validation_execution_failure_reason_is_not_rendered():
 
 def test_failed_analysis_plain_fallback_does_not_promote_narrative():
     text=render_text(report('PASSED'),analysis_failed=True)
-    assert 'unverified conclusion' not in text
+    assert 'unverified cause' not in text
     assert '수집된 자료로 지연 원인을 확정할 수 없습니다.' in text
 
 
@@ -224,7 +224,7 @@ def test_fallback_narrative_cites_evidence_matching_top_ranked_request_key():
     top=rank_query_requests(r.observations.query_requests)[0]
     other=r.evidence[0]
     matching=other.model_copy(update={'evidence_id':'MATCH','source':EvidenceSource.QUERY_LOG,'record_key':top.record_key})
-    r=replace(r,evidence=(other,matching),narrative=Narrative(headline='ok'))
-    cited=display_narrative(r,analysis_failed=True).headline_citations
+    r=replace(r,evidence=(other,matching),narrative=Narrative(causes=(CauseAssessment(statement='ok'),)))
+    cited=display_narrative(r,analysis_failed=True).causes[0].supporting
     assert [c.evidence_id for c in cited]==['MATCH']
-    assert display_narrative(r).headline=='ok'
+    assert display_narrative(r) is r.narrative

@@ -28,7 +28,7 @@ _logger = logging.getLogger(__name__)
 
 def _wait_or_raise(exc: openai.APIError, attempt: int) -> float:
     status = getattr(exc, "status_code", None) or "unknown"
-    wait = _retry_wait(exc, status, attempt) if attempt < _MAX_RETRIES else None
+    wait = _retry_wait(exc, status) if attempt < _MAX_RETRIES else None
     if wait is None:
         raise exc
     # str(exc)는 본문·URL이 실릴 수 있어 로그에 싣지 않는다.

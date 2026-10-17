@@ -1,9 +1,7 @@
 """Main DeepAgent 조립.
 
-**여기서 정책을 강제하지 않는다.** 상한을 지키게 하는 것은 Guardrail
-middleware와 도구 코드이고, 이 모듈이 하는 일은 그 부품들을 하나의 그래프로
-묶는 것뿐이다. 프롬프트가 하는 일은 강제가 아니라 안내다 — 모델이 거절당한
-요청을 되풀이해 사이클만 태우는 일을 줄이는 것.
+도구·위임 대상·middleware와 파일 접근 권한을 설정한다.
+분석 범위와 예산의 승인은 Guardrail middleware와 도구가 실행 시 검사한다.
 """
 
 from __future__ import annotations
@@ -43,17 +41,14 @@ def build_main_agent(
 ) -> Runnable:
     """도구·Guardrail·SubAgent를 하나의 DeepAgent로 묶는다.
 
-    부품을 만들지 않고 받기만 하는 것이 요점이다. 도구도 Guardrail도
-    SubAgent도 각자 자기 모듈에서 조립되고, 여기서는 배선만 한다 — 이 함수가
-    부품을 만들기 시작하면 테스트가 진짜 LLM과 진짜 ClickHouse를 필요로 하게
-    된다.
+    모델·업무 도구·위임 대상을 주입받고 공통 middleware를 추가한다.
+    Incident에 묶인 위임 대상은 AnalysisSubagentAdapter.bind()가 만든다.
     """
     return create_deep_agent(
         model,
         tools,
         system_prompt=SYSTEM_PROMPT,
-        # harness 도구 감추기를 **맨 뒤에** 둔다. 앞쪽 미들웨어가 도구를
-        # 끼워 넣은 뒤에 걸러야 그 도구까지 걸린다.
+        # 도구를 추가하는 미들웨어 뒤에서 harness 기본 도구를 걸러낸다.
         middleware=[
             *middleware,
             AnalysisTaskDescriptionMiddleware(),

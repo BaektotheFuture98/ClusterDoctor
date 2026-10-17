@@ -33,8 +33,8 @@ from cluster_doctor.main import (
     compose_analysis_service,
     configure_logging,
 )
-from cluster_doctor.bootstrap.configuration.settings import Settings, get_settings
-from cluster_doctor.bootstrap.lifecycle.app_lifecycle import RuntimeResources
+from cluster_doctor.bootstrap.settings import Settings, get_settings
+from cluster_doctor.bootstrap.resources import RuntimeResources
 from cluster_doctor.incident_orchestrator_agent.service.manual_analysis.manual_analysis import (
     RunManualAnalysis,
 )
@@ -46,8 +46,8 @@ from cluster_doctor.incident_orchestrator_agent.service.manual_analysis.manual_a
 # 실측으로 남기려고 litellm 콜백을 건다.
 _llm_calls: list[dict] = []
 
-# --dump-context가 켜졌을 때만 채운다. 기본적으로 들고 있지 않는 이유는
-# 부피다 — 오케스트레이터 한 턴이 1만 토큰이고 턴은 7회까지 간다.
+# --dump-context가 켜졌을 때만 메시지와 도구 정의를 보관한다.
+# 기본 실행에서는 전체 대화 이력을 중복 보관하지 않는다.
 _capture_messages = False
 
 
@@ -64,8 +64,7 @@ def _record_llm_call(kwargs, response, start_time, end_time) -> None:
                 "end": end_time,
                 "prompt": getattr(usage, "prompt_tokens", None),
                 "completion": getattr(usage, "completion_tokens", None),
-                # 도구 정의가 실린 호출이 오케스트레이터다. 분 단위 분석과
-                # 종합은 도구 없이 프롬프트만 보낸다.
+                # Main·Analysis 도구 루프와 도구 없는 파이프라인 호출을 구분한다.
                 "has_tools": bool(kwargs.get("tools")),
                 # 실제로 보낸 것. 토큰 수는 "얼마나 쌓였나"만 말하고 "무엇이
                 # 쌓였나"는 말하지 않는다.
@@ -78,7 +77,7 @@ def _record_llm_call(kwargs, response, start_time, end_time) -> None:
 
 
 def _dump_context(path: pathlib.Path) -> None:
-    """오케스트레이터가 매 턴 실제로 받은 것을 파일로 떨군다.
+    """성공 콜백에서 수집한 LLM 입력 메시지와 도구 정의를 파일로 저장한다.
 
     로그에는 tool이 **돌려준 값**이 남지만 조립된 메시지 배열은 남지 않는다.
     SYSTEM_PROMPT가 매 턴 재전송된다는 것도, ToolMessage가 어떤 모양으로
@@ -96,14 +95,13 @@ def _dump_context(path: pathlib.Path) -> None:
     payload = [
         {
             "call": i,
-            # 도구 정의가 실린 호출이 오케스트레이터, 아닌 것이 분 단위
-            # 분석과 종합이다. 둘을 함께 남겨야 한 진단의 전모가 보인다.
+            # 기존 kind 값은 도구 유무로 나눈 분류다. orchestrator에는
+            # Main과 Analysis의 도구 루프가 모두 포함된다.
             "kind": "orchestrator" if c["has_tools"] else "pipeline",
             "completion_tokens": c["completion"],
             "prompt_tokens": c["prompt"],
             "tool_count": len(c["tools"] or []),
-            # tool 스키마도 남긴다. 매 턴 재전송되므로 이것도 컨텍스트이고,
-            # 실측에서 우리가 정의하지 않은 것이 절반을 넘었다.
+            # tool schema도 모델 입력 컨텍스트의 일부이므로 함께 저장한다.
             "tools": c["tools"],
             "messages": c["messages"],
         }

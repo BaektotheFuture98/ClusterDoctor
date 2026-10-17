@@ -1,10 +1,8 @@
-"""Raw Grounding 검증이 남기는 불일치의 분류.
+"""근거 대조 결과의 분류와 상세 사유.
 
-분류가 필요한 이유는 처방이 다르기 때문이다. 분석이 틀린 것은 다시 분석해야
-하고, 표현만 틀린 것은 리포트만 고치면 된다. ``ValidationResult``
-(``report_validation.py``, 결정적 검사 전용)의 지적과 다르다 — 이쪽만
-재분석 여부를 가른다. 그 8개 검사는 처방이 항상 "리포트를 고쳐라" 하나뿐이라
-분류가 필요 없다.
+구간 분석의 finalize_update는 분석 불일치면 재수집·재작성하고,
+표현 불일치면 리포트를 수정한다. 구조 검사의 ValidationResult와 구별한다.
+사건 전체 종합은 누적된 근거로 리포트 수정만 시도한다.
 """
 
 from __future__ import annotations
@@ -21,17 +19,16 @@ class VerificationIssueType(StrEnum):
     ANALYSIS_MISMATCH = "analysis_mismatch"
     # 분석은 맞고 리포트의 표현이 과하거나 틀렸다. 리포트를 수정한다.
     REPORT_MISMATCH = "report_mismatch"
-    # 원문이 없는 등 대조할 수 없다.
+    # 검증할 주장 부재·호출 실패·잘못된 응답 등으로 대조를 완료하지 못했다.
     UNVERIFIABLE = "unverifiable"
 
 
 class VerificationIssue(BaseModel):
-    """``GroundingValidator``가 Claim 하나를 원문과 대조해 낸 불일치 하나.
+    """``GroundingValidator``가 남긴 불일치 또는 검증 미완료 사유.
 
-    ``issue_type``이 ``subagent._run_validation_loop``의 분기(재분석 대
-    리포트 수정)를 결정한다. ``affected_range``는 지금 어떤 생성자도 채우지
-    않는 예비 필드다(항상 None) — 구간 단위로 재분석을 좁히게 되면 그때
-    채운다.
+    ``issue_type``은 구간 분석의 ``subagent.finalize_update``에서 재분석과
+    리포트 수정을 구분한다. 현재 검증기는 ``affected_range``를 채우지 않는다.
+    구간 분석에서 재분석이 필요하면 승인된 분석 구간 전체를 다시 조사한다.
     """
 
     model_config = ConfigDict(frozen=True)

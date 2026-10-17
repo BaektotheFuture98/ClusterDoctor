@@ -406,7 +406,7 @@ def test_composite_deepagents_use_fresh_child_state_and_unique_incident_ids():
     )
     from types import SimpleNamespace
     from cluster_doctor import main as app
-    from cluster_doctor.bootstrap.configuration.settings import Settings
+    from cluster_doctor.bootstrap.settings import Settings
 
     settings = Settings(
         _env_file=None, clickhouse_url="http://unused:8123/default", es_host="unused",

@@ -3,7 +3,7 @@ import logging
 import pytest
 from pydantic import ValidationError
 
-from cluster_doctor.bootstrap.configuration.settings import Settings
+from cluster_doctor.bootstrap.settings import Settings
 from cluster_doctor.main import build_report_publisher, build_sftp_uploader
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.publication.sftp.sftp_report_publisher import (
     SftpReportPublisher,
@@ -142,7 +142,7 @@ def test_known_hosts_setting_silences_the_startup_warning(tmp_path, caplog):
 
 
 def test_get_settings_names_the_missing_sftp_fields(monkeypatch, tmp_path):
-    from cluster_doctor.bootstrap.configuration import settings as settings_module
+    from cluster_doctor.bootstrap import settings as settings_module
 
     monkeypatch.chdir(tmp_path)
     for name, value in (

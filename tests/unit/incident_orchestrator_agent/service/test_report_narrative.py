@@ -23,7 +23,6 @@ def example():
     })
     citation = EvidenceCitation(evidence.evidence_id, evidence)
     narrative = Narrative(
-        headline='현상과 판단 한계를 연결한 요약', headline_citations=(citation,),
         causes=(CauseAssessment(
             statement='가능성: 처리 대기',
             mechanism='관측을 설명하는 첫 문단.\n\n조건부 영향 경로 <tag>&.',
@@ -41,7 +40,6 @@ def test_cause_explanation_and_action_precede_deduplicated_source():
     result = example()
     html = render_report(result)
     summary = section(html, 'conclusion')
-    assert '현상과 판단 한계를 연결한 요약' not in html
     assert '<pre' not in summary
     assert html.index('관측을 설명하는 첫 문단.') < html.index('요청 대상을 먼저 식별한다.') < html.index('<details id="evidence">')
     assert '<li>요청 대상을 먼저 식별한다. 대기와 요청 지연을 대조한다.</li>' in summary
@@ -70,7 +68,7 @@ def test_same_source_is_preserved_for_distinct_causes_and_counter_evidence():
     assert output.index('반증') < output.index('둘째 후보')
 
 
-def test_summary_only_sources_are_not_shown():
+def test_unreferenced_evidence_is_not_listed_as_narrative_citation():
     base = example()
     result = replace(base, narrative=replace(base.narrative, causes=(), recommendations=()))
     html = render_report(result)
@@ -102,7 +100,7 @@ def test_action_only_common_and_finding_sources_are_not_lost():
 def test_failed_verification_keeps_sections_and_collection_notices(status):
     result = replace(example(), verification_status=status)
     html = render_report(result, gaps=('리포트 검증 불일치: internal reason', 'SSH 수집 실패'))
-    assert '현상과 판단 한계를 연결한 요약' not in section(html, 'conclusion')
+    assert '가능성: 처리 대기' not in section(html, 'conclusion')
     assert 'internal reason' not in html
     assert 'SSH 수집 실패' in html
     assert '12건' in section(html, 'metrics')

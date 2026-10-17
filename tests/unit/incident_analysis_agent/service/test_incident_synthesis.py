@@ -9,7 +9,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.report_wri
 START = datetime(2026, 10, 5, 8, 16, tzinfo=timezone.utc)
 
 
-def test_reviewed_paragraphs_and_summary_sources_reach_the_rendered_report():
+def test_review_preserves_internal_summary_and_renders_structured_cause_and_action_sources():
     from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
@@ -28,8 +28,10 @@ def test_reviewed_paragraphs_and_summary_sources_reach_the_rendered_report():
     result = ReportWriter(call_llm=lambda *a, **k: next(responses)).draft_incident(
         incident_id='I', cluster='C', window_reports=[first], observations=Observations(), evidence=evidence)
     output = to_incident_analysis_report(result.model_copy(update={'verification_status': VerificationStatus.PASSED}), Observations(), evidence)
-    assert output.narrative.headline == '지연과 관련 로그를 연결하되 원인 연결은 미확인이다.'
-    assert tuple(c.evidence_id for c in output.narrative.headline_citations) == ('S1', 'S2')
+    assert result.summary == '지연과 관련 로그를 연결하되 원인 연결은 미확인이다.'
+    assert result.summary_evidence_refs == ('S1', 'S2')
+    assert tuple(c.evidence_id for c in output.narrative.causes[0].supporting) == ('S2',)
+    assert tuple(c.evidence_id for c in output.narrative.recommendations[0].citations) == ('S1',)
     html = render_report(output)
     assert '초안 요약' not in html
     assert '<p>영향 경로는 조건부다.</p>' in html

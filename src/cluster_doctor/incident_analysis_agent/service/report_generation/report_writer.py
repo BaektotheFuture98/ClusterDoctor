@@ -1,4 +1,4 @@
-"""근거로 초안을 작성하고, 호출자가 전달한 지적으로 한 번 수정한다.
+"""근거로 구간 초안·사건 종합을 작성하고 호출자의 지적으로 수정안을 만든다.
 
 수집(``evidence_collection/collector.py``)과 리포트 작성이 갈라져 있는
 이유는 Analysis SubAgent가 모델에게 그 둘을 **따로** 고르게 하기 때문이다.
@@ -48,7 +48,7 @@ def _incident_response_format() -> dict:
 
 
 class ReportWriter:
-    """구조화된 초안 작성과 단일 수정 호출. LLM 호출 하나만 의존한다."""
+    """구간 초안·사건 종합·교정을 호출한다. 검증 반복은 호출자가 관리한다."""
 
     def __init__(self, *, call_llm: Callable[..., str],
                  metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS) -> None:
@@ -217,7 +217,7 @@ class ReportWriter:
 
     @staticmethod
     def summary_for_supervisor(report: LogAnalysisReport, state: ObservationBuilder) -> str:
-        """Supervisor가 읽을 한두 문단. 리포트 전문이 아니다."""
+        """Main Agent에 줄 요약. 검증 미통과 시 근거 수와 검증 상태만 반환한다."""
         from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
         if report.verification_status != VerificationStatus.PASSED:
             return f"근거 {len(report.evidence_refs)}건, 분석 해석 {report.verification_status.value}."

@@ -14,10 +14,13 @@ def domain(payload):
     return parse_draft(payload).to_domain(incident_id='i',window=TimeRange(T0,T0+timedelta(minutes=1)),evidence_refs=('E-one',))
 
 
-def test_summary_refs_survive_projection():
+def test_summary_refs_remain_available_for_validation_after_projection():
     report=domain('{"summary":"요약","summary_evidence_refs":["E-one"]}')
     result=to_incident_analysis_report(report,Observations(),[E])
-    assert result.narrative.headline_citations[0].evidence == E
+    assert report.summary == "요약"
+    assert report.summary_evidence_refs == ("E-one",)
+    assert result.evidence == (E,)
+    assert not validate_report(report,[E]).issues
     assert report.cited_refs()=={'E-one'}
 
 

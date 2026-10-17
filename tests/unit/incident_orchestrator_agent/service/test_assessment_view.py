@@ -23,9 +23,9 @@ def test_verified_cause_and_action_include_visible_original_source():
 @pytest.mark.parametrize('status',['NOT_VERIFIED','MISMATCH'])
 def test_unverified_interpretations_and_actions_are_not_promoted(status):
     r=report(status)
-    n=Narrative(headline='claim',causes=(CauseAssessment(statement='cause'),),recommendations=('restart now',))
+    n=Narrative(causes=(CauseAssessment(statement='cause'),),recommendations=('restart now',))
     html=render_report(replace(r,narrative=n))
-    assert 'claim' not in html and 'cause</h3>' not in html and 'restart now' not in html
+    assert 'cause</h3>' not in html and 'restart now' not in html
     assert '1.96s' in html
 
 

@@ -20,7 +20,7 @@ Main과 Analysis 둘 다 ``create_deep_agent``이고, 둘 다 여기를 지나�
 차단은 두 겹이다.
 
 - ``restrict_harness``  — harness profile로 **모델의 도구 목록에서 지운다.**
-  보이지 않는 것은 부를 수 없다. 다만 도구 자체는 ToolNode에 묶인 채 남는다.
+  도구 자체는 ToolNode에 묶인 채 남으므로 실행 권한 차단도 필요하다.
 - ``DENY_ALL_FILESYSTEM`` — ``permissions``로 **집행한다.** 모델이 목록에 없는
   이름을 지어내 호출해도 여기서 거절된다. deepagents가 이 층을 "security
   guarantee"라고 부른다.

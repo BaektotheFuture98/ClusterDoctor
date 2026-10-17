@@ -8,6 +8,7 @@ from cluster_doctor.incident_analysis_agent.service.observation.query_requests i
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import project_timeline, TimelineCard, TimelineItem
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, slowlog_note
 from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import CauseAssessment, IncidentAnalysisReport, Narrative
 
 
 def stamp(moment):
@@ -30,7 +31,7 @@ def visible_citations(citations):
 
 
 def unique_citations(*groups: Iterable[EvidenceCitation]) -> tuple[EvidenceCitation, ...]:
-    """표시 블록 하나 안에서 evidence 역할 하나를 identity로 중복 제거한다."""
+    """표시할 인용들을 근거 ID로 중복 제거하며 처음 나온 인용을 유지한다."""
     by_id = {}
     for group in groups:
         for citation in group:
@@ -82,34 +83,13 @@ def system_maxima(nodes):
 
 
 def timeline_sources(card, shown_evidence=()):
-    """독립 표에서 빠진 source도 표시되는 카드에서는 계속 보이게 한다."""
+    """별도 원문 영역에 표시하지 않은 타임라인 근거 인용을 고른다."""
     shown={e.evidence_id for e in shown_evidence}
     return tuple(c for c in card.evidence_citations if c.evidence_id not in shown)
 
 
-def execution_summary(observations):
-    """관측된 사실만 다룬다. keyword나 node의 인과를 추론하지 않는다."""
-    rows=rank_query_requests(observations.query_requests)
-    if not rows:
-        return ('수집된 쿼리 실행 로그가 없습니다.',)
-    valid=next((row for row in rows if row.execution_seconds is not None),None)
-    if valid is None:
-        return ('수집 로그에서 실행시간을 확인할 수 없습니다.',)
-    record=valid.record
-    lines=[f'관측된 실행 로그에서 {record.cmd}의 최대 실행시간은 {valid.execution_seconds}초입니다.',
-           f'로그 시각: {stamp(record.timestamp)}',
-           '저장된 키워드: '+(' · '.join(record.keyword) or '없음')]
-    if record.keyword_omitted:
-        lines[-1]+=f' (+{record.keyword_omitted}개 생략)'
-    lines.append(f'대상: {valid.target_host or "미확인"}')
-    if record.date_range:
-        lines.append(f'조회 기간: {record.date_range}일 · {record.s_date} ~ {record.e_date}')
-    return tuple(lines)
-
-
-def display_narrative(report, *, analysis_failed=False):
-    """분석을 쓸 수 없어도 표준 서술 slot을 그대로 사용한다."""
-    from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative, CauseAssessment
+def display_narrative(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> Narrative:
+    """검증 통과·분석 성공 시 원래 판단을, 그 외에는 관측 기반 대체 판단을 반환한다."""
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import citations
     if report.verification_status=='PASSED' and report.narrative and not analysis_failed:
         return report.narrative
@@ -118,8 +98,7 @@ def display_narrative(report, *, analysis_failed=False):
     if rows:
         refs=tuple(e.evidence_id for e in report.evidence if e.record_key==rows[0].record_key)
     source=citations(refs,report.evidence)
-    return Narrative(headline=' '.join(execution_summary(report.observations)),headline_citations=source,
-        causes=(CauseAssessment(statement='수집된 자료로 지연 원인을 확정할 수 없습니다.',supporting=source),))
+    return Narrative(causes=(CauseAssessment(statement='수집된 자료로 지연 원인을 확정할 수 없습니다.',supporting=source),))
 
 
 MASTER_DISPLAY_LIMIT = 120
