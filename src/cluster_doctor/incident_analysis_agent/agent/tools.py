@@ -95,9 +95,17 @@ def report_update(seams: AnalysisSeams, state: dict, focus: str) -> dict:
     )
     builder = ObservationBuilder.from_state(request.analysis_window, state)
     update = {"report_attempts": attempts + 1}
+    wiki_context = ""
+    if seams.wiki_client is not None:
+        try:
+            symptoms = builder.candidates_for_prompt() or builder.summary_for_prompt()
+            if symptoms:
+                wiki_context = seams.wiki_client.ask(symptoms)
+        except Exception as exc:
+            builder.mark_gap(f"위키 조회 실패: {exc}")
     try:
         draft = seams.report_writer.draft_report(
-            request, list(state["evidence"]), builder
+            request, list(state["evidence"]), builder, wiki_context=wiki_context
         )
         report = draft.to_domain(
             incident_id=request.incident_id,
