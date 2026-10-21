@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -110,11 +111,21 @@ def select_problem_nodes(
     return candidates
 
 
-def _valid_ip(value: str) -> str:
-    try:
-        return str(ipaddress.ip_address((value or "").strip()))
-    except ValueError:
+_HOSTNAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9\-\.]{0,252}[A-Za-z0-9])?$")
+
+
+def _valid_host(value: str) -> str:
+    """SSH 대상으로 쓸 수 있는 IP 또는 hostname이면 그대로 반환, 아니면 빈 문자열."""
+    v = (value or "").strip()
+    if not v:
         return ""
+    try:
+        return str(ipaddress.ip_address(v))
+    except ValueError:
+        pass
+    if _HOSTNAME_RE.match(v):
+        return v
+    return ""
 
 
 def _unreached_status(window: TimeRange, reason: str, host: str = "") -> SourceWindowStatus:
@@ -131,7 +142,7 @@ def _resolve_by_address(
 
     ``defaults``는 호출 한 번 동안의 캐시이며 ES는 최대 한 번만 묻는다.
     """
-    host = _valid_ip(candidate.ip)
+    host = _valid_host(candidate.ip)
     if not host:
         return None
     if not defaults:
@@ -195,6 +206,17 @@ def investigate_nodes(
                     f"{candidate.node_id} 노드가 ES 노드 목록에 없어 "
                     f"마스터 로그의 주소 {resolved.host}로 접속했다"
                 )
+        if resolved is not None and resolved.log_path is None:
+            if not defaults:
+                try:
+                    defaults.append(resolver.cluster_log_defaults())
+                except Exception as exc:
+                    _logger.warning("[node] 클러스터 로그 경로 조회 실패: %s", exc)
+                    defaults.append((None, ""))
+            fallback_path, _ = defaults[0]
+            if fallback_path:
+                resolved = resolved.model_copy(update={"log_path": fallback_path})
+                _logger.info("[node] %s: log_path 없음 → 클러스터 기본값 사용 (%s)", candidate.node_id, fallback_path)
         if resolved is None:
             reason = f"ES 노드 목록에 없는 노드라 로그를 수집하지 못했다 (id={candidate.node_id})"
             result.gaps.append(reason)
