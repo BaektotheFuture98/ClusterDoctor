@@ -32,6 +32,9 @@ from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
 )
+from cluster_doctor.incident_analysis_agent.datasource.mcp.wiki_client import (
+    MonitoringWikiClient,
+)
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
     MAX_CONCURRENCY,
 )
@@ -57,3 +60,4 @@ class AnalysisSeams:
     report_writer: ReportWriter
     metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS
     analysis_concurrency: int = MAX_CONCURRENCY
+    wiki_client: MonitoringWikiClient | None = None

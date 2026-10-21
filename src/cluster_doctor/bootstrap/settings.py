@@ -91,6 +91,8 @@ class Settings(LoggingSettings):
     kafka_group_id: str = "clusterdoctor"
     kafka_failure_timeout_seconds: float = Field(default=300.0, gt=0)
 
+    monitoring_wiki_url: str = ""  # 비어 있으면 MCP 통합 비활성화
+
     report_dir: str = "reports"
 
     @field_validator("report_dir")
