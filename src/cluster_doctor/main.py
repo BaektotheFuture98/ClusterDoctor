@@ -30,6 +30,9 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_hea
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
+from cluster_doctor.incident_analysis_agent.datasource.mcp.wiki_client import (
+    MonitoringWikiClient,
+)
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
     SshNodeLogFetcher,
 )
@@ -203,6 +206,11 @@ def compose_analysis_service(settings: Settings, resources: RuntimeResources) ->
         heap_warn_percent=settings.node_heap_warn_percent,
         queue_warn=settings.node_queue_warn,
     )
+    wiki_client = (
+        MonitoringWikiClient(settings.monitoring_wiki_url.strip())
+        if settings.monitoring_wiki_url.strip()
+        else None
+    )
     seams = AnalysisSeams(
         fetch_logs=log_repository.fetch_logs,
         fetch_node_logs=log_repository.fetch_node_logs,
@@ -217,6 +225,7 @@ def compose_analysis_service(settings: Settings, resources: RuntimeResources) ->
         report_writer=ReportWriter(call_llm=call_llm, metric_thresholds=thresholds),
         metric_thresholds=thresholds,
         analysis_concurrency=settings.analysis_concurrency,
+        wiki_client=wiki_client,
     )
     model = build_chat_model(
         provider=provider, model=settings.llm_model, api_key=settings.llm_api_key

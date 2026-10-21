@@ -32,6 +32,6 @@ class RuntimeResources:
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: TracebackType | None,
+        traceback: TracebackType | None, 
     ) -> bool:
         return self._exit_stack.__exit__(exc_type, exc_value, traceback)

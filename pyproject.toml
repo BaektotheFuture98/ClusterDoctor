@@ -17,6 +17,7 @@ dependencies = [
     "langchain-litellm>=0.7.1",
     "elasticsearch==8.*",
     "paramiko>=5.0.0",
+    "mcp>=2.3.0",
 ]
 
 [dependency-groups]
