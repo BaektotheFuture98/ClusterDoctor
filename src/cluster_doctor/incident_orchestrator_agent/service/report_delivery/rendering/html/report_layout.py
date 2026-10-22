@@ -240,6 +240,5 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
           +_incident_analysis(report, narrative, links)
           +_recommendations_section(narrative)
           +_future_improvements(report)
-          +render_metric_cards(rows,links)
           +evidence)
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'
