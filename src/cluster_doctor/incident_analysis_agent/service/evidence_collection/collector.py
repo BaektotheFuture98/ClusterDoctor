@@ -299,7 +299,7 @@ class EvidenceCollector:
         except Exception as exc:
             _logger.exception("[collector] %s 선별 오류", spec.label)
             state.mark_gap(f"{spec.label} 선별이 오류로 중단됐다: {exc}")
-            return AnalysisResult(evidence=[])
+            return AnalysisResult(evidence=())
 
         with self._failed_minutes_lock:
             self._failed_minutes.update(result.failed_minutes_at)

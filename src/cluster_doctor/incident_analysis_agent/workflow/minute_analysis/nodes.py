@@ -98,7 +98,7 @@ def make_map_minute(spec: AnalysisSpec, call_llm: StructuredLlmCaller):
             "minute_results": [
                 MinuteResult(
                     minute=bucket.minute,
-                    selected=selected,
+                    selected=tuple(selected),
                     record_count=len(bucket.records),
                 )
             ]

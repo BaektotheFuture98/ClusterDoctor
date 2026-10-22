@@ -57,7 +57,7 @@ def run_analysis(
     수십 번에 비하면 없는 것과 같다.
     """
     if not buckets:
-        return AnalysisResult(evidence=[])
+        return AnalysisResult(evidence=())
 
     builder = StateGraph(MinuteAnalysisState)
     builder.add_node(_MAP, make_map_minute(spec, call_llm))
@@ -87,7 +87,7 @@ def run_analysis(
 
     results = final["minute_results"]
     return AnalysisResult(
-        evidence=final["evidence"],
+        evidence=tuple(final["evidence"]),
         analyzed_minutes=len(results),
         failed_minutes=sum(1 for item in results if item.failed),
         failed_minutes_at=tuple(sorted(item.minute for item in results if item.failed)),
