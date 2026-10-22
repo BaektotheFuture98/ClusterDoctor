@@ -358,3 +358,27 @@ class ObservationBuilder:
                 f"unassigned={last.unassigned_shards} nodes={last.number_of_nodes}"
             )
         return "\n".join(lines) or "(관측값 없음)"
+
+    def master_logs_for_prompt(self, max_lines: int = 20) -> str:
+        """마스터 노드 로그를 위키 질문용 블록으로 반환한다.
+
+        timestamp순으로 정렬된 rendered 줄을 최대 max_lines개만 싣는다.
+        level 필터 없이 전체를 포함한다 — 중요한 GC·shard 이벤트가 INFO로
+        찍히는 경우가 있어 level로 걸러내면 누락 위험이 있다.
+        """
+        if not self.master_logs:
+            return ""
+        ordered = sorted(
+            self.master_logs.values(),
+            key=lambda e: (e.timestamp is None, e.timestamp or _EPOCH),
+        )
+        all_rendered = [e.rendered for e in ordered if e.rendered]
+        lines = all_rendered[:max_lines]
+        if not lines:
+            return ""
+        suffix = (
+            f"\n(이하 {len(all_rendered) - max_lines}줄 생략)"
+            if len(all_rendered) > max_lines
+            else ""
+        )
+        return "마스터 노드 로그:\n" + "\n".join(lines) + suffix
