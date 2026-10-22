@@ -98,7 +98,14 @@ def report_update(seams: AnalysisSeams, state: dict, focus: str) -> dict:
     wiki_context = ""
     if seams.wiki_client is not None:
         try:
-            symptoms = builder.candidates_for_prompt() or builder.summary_for_prompt()
+            parts = [
+                p for p in [
+                    builder.candidates_for_prompt(),
+                    builder.summary_for_prompt(),
+                    builder.master_logs_for_prompt(),
+                ] if p
+            ]
+            symptoms = "\n\n".join(parts)
             if symptoms:
                 wiki_context = seams.wiki_client.ask(symptoms)
         except Exception as exc:
