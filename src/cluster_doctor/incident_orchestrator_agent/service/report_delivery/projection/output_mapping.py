@@ -39,6 +39,9 @@ def to_incident_analysis_report(
     return IncidentAnalysisReport(
         observations=observations,
         evidence=tuple(evidence),
+        title=report.title,
+        summary=report.summary,
+        future_improvements=report.future_improvements,
         timeline_annotations=tuple(
             TimelineAnnotation(
                 at=event.at,
@@ -67,6 +70,7 @@ def to_incident_analysis_report(
                 Recommendation(
                     text=item.text,
                     cause_index=item.cause_index,
+                    wiki_ref=item.wiki_ref,
                     citations=citations(item.evidence_refs, tuple(evidence)),
                 )
                 for item in report.recommendations
@@ -75,6 +79,7 @@ def to_incident_analysis_report(
                 CauseAssessment(
                     statement=cause.statement,
                     mechanism=cause.mechanism,
+                    cause_type=cause.cause_type,
                     supporting=citations(
                         cause.supporting_evidence_refs, tuple(evidence)
                     ),
