@@ -37,8 +37,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,mono
 #overview th{background:none;font-weight:600;padding:6px 16px 6px 0;border:none;width:160px}
 #overview td{border:none;padding:6px 0}
 .wiki-badge{font-size:11px;background:#e8f0fe;color:#1a56a5;border-radius:4px;padding:2px 6px;margin-left:6px;white-space:nowrap}
-#cause-analysis h3{margin:16px 0 8px;font-size:16px;color:#52657b;border-bottom:1px solid #dde4ef;padding-bottom:4px}
-#cause-analysis h4{margin:10px 0 4px;font-size:14px}
+#incident-analysis h3{margin:16px 0 8px;font-size:16px;color:#52657b;border-bottom:1px solid #dde4ef;padding-bottom:4px}
+#incident-analysis h4{margin:10px 0 4px;font-size:14px}
 @media(max-width:700px){.wrap{padding:12px}section{padding:14px}table{font-size:11px}}
 @media print{body{background:white}.wrap{max-width:none;padding:0}section{border-radius:0;box-shadow:none}svg{display:block!important}thead{display:table-header-group}tr,.quote{break-inside:avoid}pre{overflow:visible}a{text-decoration:none}details#evidence>*{display:block}details::details-content{content-visibility:visible;display:block}}
 '''
@@ -65,27 +65,15 @@ def _overview(report: IncidentAnalysisReport) -> str:
     )
 
 
-def _problem_description(report: IncidentAnalysisReport) -> str:
-    if not report.summary:
-        return ''
-    return (
-        f'<section id="problem-description">'
-        f'<h2>문제 설명</h2>'
-        f'{render_paragraphs(report.summary)}'
-        f'</section>'
-    )
-
-
-def _cause_analysis(narrative) -> str:
+def _incident_analysis(report: IncidentAnalysisReport, narrative) -> str:
+    out = '<section id="incident-analysis"><h2>현상 및 원인</h2>'
+    if report.summary:
+        out += render_paragraphs(report.summary)
     if not narrative or not narrative.causes:
-        return (
-            '<section id="cause-analysis"><h2>원인 분석</h2>'
-            + ('<p>검증을 완료한 원인 판단 없음</p>' if not narrative else '<p>확인된 원인 없음</p>')
-            + '</section>'
-        )
+        label = '검증을 완료한 원인 판단 없음' if not narrative else '확인된 원인 없음'
+        return out + f'<p>{label}</p></section>'
     direct = [c for c in narrative.causes if c.cause_type == "direct"]
     root = [c for c in narrative.causes if c.cause_type != "direct"]
-    out = '<section id="cause-analysis"><h2>원인 분석</h2>'
     if direct:
         out += '<h3>직접적 원인</h3>'
         for c in direct:
@@ -241,8 +229,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
               +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative,report)+'</details>')
     body=(header
           +_overview(report)
-          +_problem_description(report)
-          +_cause_analysis(narrative)
+          +_incident_analysis(report, narrative)
           +_recommendations_section(narrative)
           +_future_improvements(report)
           +conclusion
