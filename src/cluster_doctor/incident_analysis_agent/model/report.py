@@ -81,6 +81,7 @@ class RootCause(BaseModel):
 
     statement: str = ""
     mechanism: str = ""
+    cause_type: str = "root"
     supporting_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
     counter_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
 
@@ -89,6 +90,7 @@ class ReportRecommendation(BaseModel):
     cause_index: int | None = Field(default=None, ge=0)
     model_config = ConfigDict(frozen=True)
     text: str = ""
+    wiki_ref: str = ""
     evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
 
 
@@ -126,6 +128,8 @@ class LogAnalysisReport(BaseModel):
     # Validator가 남긴 불일치. PASSED면 비어 있다.
     verification_issues: tuple[str, ...] = Field(default_factory=tuple)
     revision_count: int = 0
+    title: str = ""
+    future_improvements: tuple[str, ...] = Field(default_factory=tuple)
 
     def cited_refs(self) -> set[str]:
         """리포트 본문이 실제로 인용한 참조 전부.
