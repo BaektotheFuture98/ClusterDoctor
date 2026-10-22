@@ -168,7 +168,7 @@ def source_log_sections(report, marks=None):
     marks=marks or {}
     master=tuple(_master_group_line(g) for g in _master_groups(report.observations.master_events)[:MASTER_DISPLAY_LIMIT])
     slow=tuple((f'[{marks[e.evidence_id]}] ' if e.evidence_id in marks else '')+evidence_text(e) for e in shown_slowlog_evidence(report))
-    return (('master-logs','마스터 노드 로그',master),('slowlogs','slowlog 로그',slow))
+    return (('slowlogs','slowlog 로그',slow),('master-logs','마스터 노드 로그',master))
 
 
 def source_log_notes(report):
