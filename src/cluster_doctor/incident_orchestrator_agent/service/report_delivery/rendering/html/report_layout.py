@@ -38,6 +38,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,mono
 #overview th{background:none;font-weight:600;padding:6px 16px 6px 0;border:none;width:160px}
 #overview td{border:none;padding:6px 0}
 .wiki-badge{font-size:11px;background:#e8f0fe;color:#1a56a5;border-radius:4px;padding:2px 6px;margin-left:6px;white-space:nowrap}
+section p{max-width:none}
 #incident-analysis h3{margin:16px 0 8px;font-size:16px;color:#52657b;border-bottom:1px solid #dde4ef;padding-bottom:4px}
 #incident-analysis h4{margin:10px 0 4px;font-size:14px}
 @media(max-width:700px){.wrap{padding:12px}section{padding:14px}table{font-size:11px}}
