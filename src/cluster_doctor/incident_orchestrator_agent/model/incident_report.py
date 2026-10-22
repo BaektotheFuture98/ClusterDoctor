@@ -24,6 +24,7 @@ class CauseAssessment:
     supporting: tuple[EvidenceCitation, ...] = ()
     contradicting: tuple[EvidenceCitation, ...] = ()
     mechanism: str = ""
+    cause_type: str = "root"
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class Recommendation:
     text: str
     citations: tuple[EvidenceCitation, ...] = ()
     cause_index: int | None = None
+    wiki_ref: str = ""
 
     def __str__(self) -> str:
         return self.text
@@ -94,3 +96,6 @@ class IncidentAnalysisReport:
     cluster: str = ""
     analyzed_from: datetime | None = None
     analyzed_to: datetime | None = None
+    title: str = ""
+    summary: str = ""
+    future_improvements: tuple[str, ...] = ()
