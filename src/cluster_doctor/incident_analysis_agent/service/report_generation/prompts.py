@@ -89,6 +89,10 @@ _ANALYSIS_RULES = """
   근거는 계속 사용하되, 실패한 소스·구간의 상태를 정상 또는 로그 0건으로 단정하지 않는다.
   정상 조회 0건과 조회 실패를 구분한다. 선별된 근거가 없다는 사실만으로 원본 로그가
   없다고 단정하지 않는다. 누락 때문에 확인할 수 없는 판단은 unresolved_questions에 남긴다.
+- title은 장애를 한 줄로 설명하는 제목이다(40자 내외). 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'. 분석 결과를 먼저 쓴 뒤 가장 알맞은 제목을 고른다.
+- root_causes의 각 항목에 cause_type을 "direct" 또는 "root"로 표시한다. direct는 즉각적 트리거(예: 특정 쿼리 급증, 노드 장애)이고, root는 구조적 근본 원인(예: 샤드 과다 배치, 힙 설정 부족)이다. 구분이 불명확하면 "root"로 둔다.
+- recommendations의 wiki_ref는 장애 패턴 위키에서 이 조치에 해당하는 패턴명이다. 위키 컨텍스트에 패턴명이 있으면 그 이름을 그대로 쓴다. 없으면 빈 문자열.
+- future_improvements는 향후 개선 방안이다. 이번 관측에서 비슷한 증상이 다른 노드나 랙에서도 감지되는지 위키 패턴·관측 데이터를 근거로 평가한다. 반복 방지를 위한 장기 조치도 포함할 수 있다. 이번 근거에서 확인되지 않으면 빈 배열로 둔다.
 
 이 분석 구간 **밖의** 시간을 봐야 답할 수 있는 것이 있으면
 needs_more_context=true로 두고 suggested_windows에 필요한 범위를 쓴다.
@@ -149,13 +153,15 @@ _INCIDENT_SYNTHESIS_INSTRUCTIONS = """너는 ClusterDoctor의 사건 전체 최�
 응답 계약:
 JSON 객체 하나만 반환한다. 한국어로 간결하게 쓰며 원문 식별자·필드명은 유지한다.
 키와 값의 형태는 아래와 같다. 값 설명을 그대로 복사하지 말고 실제 판단으로 채운다.
+- "title": 장애 제목 한 줄 문자열(40자 내외). 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'.
 - "summary": 관측 사실 1~2문장(주요 현상과 시간 범위) 문자열. "summary_evidence_refs": 실제 사용한 Evidence id 배열.
 - "findings": {severity, title, detail, evidence_refs} 객체 배열. severity는 Critical/Warning/Info 중 하나.
-- "root_causes": {statement, mechanism, supporting_evidence_refs, counter_evidence_refs} 객체 배열.
-- "recommendations": 객체 배열. 각 객체의 "text"는 한 줄 조치 문자열, "cause_index"는 대응 원인의 0부터 시작하는 인덱스(공통 조사는 null), "evidence_refs"는 근거 id 배열이다.
+- "root_causes": {cause_type("direct"|"root"), statement, mechanism, supporting_evidence_refs, counter_evidence_refs} 객체 배열. cause_type은 즉각적 트리거면 "direct", 구조적 근본 원인이면 "root".
+- "recommendations": 객체 배열. 각 객체의 "text"는 한 줄 조치 문자열, "cause_index"는 대응 원인의 0부터 시작하는 인덱스(공통 조사는 null), "evidence_refs"는 근거 id 배열, "wiki_ref"는 위키 패턴명(없으면 빈 문자열)이다.
 - "unresolved_questions": 필요한 추가 확인 질문의 문자열 배열.
+- "future_improvements": 향후 개선 방안 문자열 배열. 비슷한 증상이 다른 노드나 랙에서도 감지되는지, 반복 방지 장기 조치를 포함한다. 근거가 없으면 빈 배열.
 - 선택적으로 "timeline": {at, description, evidence_refs} 객체 배열. at은 해당 근거 시각을 KST ISO 8601로 쓴다.
-summary, findings, root_causes, recommendations, unresolved_questions는 반드시 명시한다. 배열 필드에 해당 내용이 없으면 빈 배열로 둔다.
+title, summary, findings, root_causes, recommendations, unresolved_questions, future_improvements는 반드시 명시한다. 배열 필드에 해당 내용이 없으면 빈 배열로 둔다.
 확보된 Evidence id만 인용하며 근거가 없는 연결에 id를 붙여 입증된 것처럼 보이게 하지 않는다.
 응답 직전에 사실과 가설의 구분, 필드 간 반복 여부를 점검한다.
 점검 과정·내부 검증 이유·메타 설명을 출력하지 않는다.
