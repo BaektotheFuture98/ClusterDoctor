@@ -9,8 +9,9 @@ from cluster_doctor.incident_analysis_agent.service.observation.query_requests i
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, is_validation_diagnostic, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, query_log_note, summarize_source
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_conclusion, render_metric_cards
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_metric_cards
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.cross_source import render_cross_source
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
@@ -44,7 +45,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,mono
 '''
 
 
-def _overview(report: IncidentAnalysisReport) -> str:
+def _overview(report: IncidentAnalysisReport, notices: str = '', *, now: datetime | None = None) -> str:
     title = report.title or "Elasticsearch 클러스터 장애 분석"
     start = stamp(report.analyzed_from) if report.analyzed_from else "미확인"
     end = stamp(report.analyzed_to) if report.analyzed_to else "미확인"
@@ -53,6 +54,7 @@ def _overview(report: IncidentAnalysisReport) -> str:
         delta = report.analyzed_to - report.analyzed_from
         total_minutes = int(delta.total_seconds() // 60)
         duration = f"{total_minutes}분" if total_minutes >= 1 else f"{int(delta.total_seconds())}초"
+    generated = f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
     return (
         f'<section id="overview">'
         f'<h1>{esc(title)}</h1>'
@@ -60,18 +62,30 @@ def _overview(report: IncidentAnalysisReport) -> str:
         f'<tr><th>발생 및 인지 일시</th><td>{esc(start)}</td></tr>'
         f'<tr><th>복구 완료 일시</th><td>{esc(end)}</td></tr>'
         f'<tr><th>총 장애 시간</th><td>{esc(duration or "미확인")}</td></tr>'
+        + generated +
         f'</tbody></table>'
+        + notices +
         f'</section>'
     )
 
 
-def _incident_analysis(report: IncidentAnalysisReport, narrative) -> str:
+def _incident_analysis(report: IncidentAnalysisReport, narrative, links=None) -> str:
     out = '<section id="incident-analysis"><h2>현상 및 원인</h2>'
     if report.summary:
         out += render_paragraphs(report.summary)
     if not narrative or not narrative.causes:
-        label = '검증을 완료한 원인 판단 없음' if not narrative else '확인된 원인 없음'
-        return out + f'<p>{label}</p></section>'
+        if not narrative and links:
+            v = verdict_line(links)
+            out += f'<p class="verdict">{esc(v.headline)}</p>'
+            if v.detail:
+                out += f'<p class="hint">{esc(v.detail)}</p>'
+            if line := node_line(links):
+                out += f'<p class="verdict">{esc(line)}</p>'
+            if line := cluster_event_line(links):
+                out += f'<p class="hint">{esc(line)}</p>'
+        else:
+            out += f'<p>{"확인된 원인 없음"}</p>'
+        return out + '</section>'
     direct = [c for c in narrative.causes if c.cause_type == "direct"]
     root = [c for c in narrative.causes if c.cause_type != "direct"]
     if direct:
@@ -130,7 +144,7 @@ def _notices(obs, gaps) -> str:
     for status in (s for s in obs.source_statuses if s.status=='failed'):
         out+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
     for gap in dict.fromkeys(gaps):
-        if gap != DEMO_GAP and not is_validation_diagnostic(gap):out+=f'<p class="hint">{esc(gap)}</p>'
+        if not is_validation_diagnostic(gap):out+=f'<p class="hint">{esc(gap)}</p>'
     if any(row.failed for row in obs.timeline):out+='<p class="hint">분석하지 못한 구간이 있습니다.</p>'
     return out
 
@@ -214,26 +228,19 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     links=build_cross_links(obs)
     rows=rank_query_requests(obs.query_requests)
     narrative=display_narrative(report,analysis_failed=analysis_failed)
-    windows=obs.requested or (((report.analyzed_from,report.analyzed_to),) if report.analyzed_from and report.analyzed_to else ())
-    span=' · '.join(f'{stamp(start)} ~ {stamp(end)}' for start,end in windows) or '분석 구간 미확인'
-    header=f'<header><p>ClusterDoctor · {esc(report.cluster)}</p><p>{esc(span)}</p><p class="hint">생성 {esc(stamp(now))}</p>'
-    if DEMO_GAP in gaps:header+='<p class="hint">합성 데이터로 실제 보고서 생성 경로를 실행한 예시입니다.</p>'
-    header+='</header>'
     notices=_notices(obs,gaps)
-    conclusion=render_conclusion(links,notices_html=notices,analysis_failed=False)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
     master_text=master_note(obs) if summarize_source(obs.source_statuses,'master_log').state=='failed' else ''
-    evidence=('<details id="evidence"><summary>근거 보기</summary>'+_findings(narrative)+render_cross_source(links,master_note_text=master_text)+_timeline(report,narrative)
-              +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative,report)+'</details>')
-    body=(header
-          +_overview(report)
-          +_incident_analysis(report, narrative)
+    evidence=('<details id="evidence"><summary>수집 데이터 보기</summary>'
+              +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+'</details>')
+    body=(_overview(report, notices, now=now)
+          +render_query_trend(project_query_trend(obs),links)
+          +_timeline(report,narrative)
+          +_incident_analysis(report, narrative, links)
           +_recommendations_section(narrative)
           +_future_improvements(report)
-          +conclusion
           +render_metric_cards(rows,links)
-          +render_query_trend(project_query_trend(obs),links)
-          +ranking+evidence)
+          +evidence)
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'
