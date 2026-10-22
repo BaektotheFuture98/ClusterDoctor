@@ -228,14 +228,13 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     links=build_cross_links(obs)
     rows=rank_query_requests(obs.query_requests)
     narrative=display_narrative(report,analysis_failed=analysis_failed)
-    notices=_notices(obs,gaps)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
     master_text=master_note(obs) if summarize_source(obs.source_statuses,'master_log').state=='failed' else ''
     evidence=('<details id="evidence"><summary>수집 데이터 보기</summary>'
               +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+'</details>')
-    body=(_overview(report, notices, now=now)
+    body=(_overview(report, now=now)
           +render_query_trend(project_query_trend(obs),links)
           +_timeline(report,narrative)
           +_incident_analysis(report, narrative, links)
