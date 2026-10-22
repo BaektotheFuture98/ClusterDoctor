@@ -9,7 +9,6 @@ from cluster_doctor.incident_analysis_agent.service.observation.query_requests i
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, is_validation_diagnostic, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.verification_view import SECTION_TITLE, DRAFT_WARNING, NO_PROBLEMS, unverified_draft, verification_notice, verification_problems
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, query_log_note, summarize_source
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_conclusion, render_metric_cards
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.cross_source import render_cross_source
@@ -146,25 +145,6 @@ def _citations(narrative, report) -> str:
     return out+'</section>'
 
 
-def _unverified(report, gaps, analysis_failed) -> str:
-    """검증을 통과하지 못해 결론에서 뺀 초안과 검증 문제. 둘 다 없으면 그리지 않는다."""
-    draft=unverified_draft(report,analysis_failed=analysis_failed)
-    problems=verification_problems(report,gaps)
-    if not draft and not problems:
-        return ''
-    out=f'<section id="unverified"><h2>{esc(SECTION_TITLE)}</h2><p class="hint">{esc(DRAFT_WARNING)}</p><h3>검증 문제</h3>'
-    out+=('<ul>'+''.join(f'<li>{esc(p)}</li>' for p in problems)+'</ul>') if problems else f'<p>{esc(NO_PROBLEMS)}</p>'
-    if draft:
-        if draft.headline.strip():out+='<h3>요약</h3>'+render_paragraphs(draft.headline)
-        for cause in draft.causes:
-            out+=f'<h3>{esc(cause.statement)}</h3>'+render_paragraphs(cause.mechanism)+quotes(cause.supporting)
-            out+=''.join(f'<pre class="quote">{esc("반증 · "+text)}</pre>' for text in visible_citations(cause.contradicting))
-        for f in draft.findings:
-            out+=f'<h3>{esc(f.title)}</h3>'+render_paragraphs(f.detail)+quotes(f.citations)
-        items=[str(a).strip() for a in draft.recommendations if str(a).strip()]
-        if items:out+='<h3>권장 조치</h3><ul class="actions">'+''.join(f'<li>{esc(t)}</li>' for t in items)+'</ul>'
-    return out+'</section>'
-
 
 def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[str,...], analysis_failed: bool, css: str) -> str:
     obs=report.observations
@@ -176,15 +156,14 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     header=f'<header><p>ClusterDoctor · {esc(report.cluster)}</p><h1>Elasticsearch 쿼리·노드 로그 분석</h1><p>{esc(span)}</p><p class="hint">생성 {esc(stamp(now))}</p>'
     if DEMO_GAP in gaps:header+='<p class="hint">합성 데이터로 실제 보고서 생성 경로를 실행한 예시입니다.</p>'
     header+='</header>'
-    notice=verification_notice(report,analysis_failed=analysis_failed,gaps=gaps)
-    notices=(f'<p class="hint">{esc(notice)}</p>' if notice else '')+_notices(obs,gaps)
+    notices=_notices(obs,gaps)
     conclusion=render_conclusion(links,causes_html=_causes(narrative),actions_html=_actions(narrative),notices_html=notices,analysis_failed=False)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
     master_text=master_note(obs) if summarize_source(obs.source_statuses,'master_log').state=='failed' else ''
     evidence=('<details id="evidence"><summary>근거 보기</summary>'+_findings(narrative)+render_cross_source(links,master_note_text=master_text)+_timeline(report,narrative)
-              +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative,report)+_unverified(report,gaps,analysis_failed)+'</details>')
+              +originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_citations(narrative,report)+'</details>')
     body=(header+conclusion+render_metric_cards(rows,links)+render_query_trend(project_query_trend(obs),links)
           +ranking+evidence)
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'
