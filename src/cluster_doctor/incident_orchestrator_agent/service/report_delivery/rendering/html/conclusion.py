@@ -1,24 +1,19 @@
-"""리포트 첫 화면: 코드가 판정한 지연 범위, 노드 응답 지연, 원인·조치, 지표 카드.
-
-심각도 배지는 두지 않는다. 첫 줄은 코드 판정이고 그 아래가 모델의 해석이다. 모델 요약 문단은 보이지 않는다.
-"""
+"""리포트 판정 섹션: 코드가 계산한 지연 범위, 노드 응답 지연, 클러스터 이벤트, 지표 카드."""
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import CrossLinks
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, late_nodes, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 
 
-def render_conclusion(links: CrossLinks, *, causes_html: str = '', actions_html: str = '', notices_html: str = '',
+def render_conclusion(links: CrossLinks, *, notices_html: str = '',
                       analysis_failed: bool = False) -> str:
     verdict = verdict_line(links)
-    out = ['<section id="conclusion"><h2>결론</h2>', f'<p class="verdict">{esc(verdict.headline)}</p>']
+    out = ['<section id="conclusion"><h2>판정</h2>', f'<p class="verdict">{esc(verdict.headline)}</p>']
     if verdict.detail:
         out.append(f'<p class="hint">{esc(verdict.detail)}</p>')
     if line := node_line(links):
         out.append(f'<p class="verdict">{esc(line)}</p>')
     if line := cluster_event_line(links):
         out.append(f'<p class="hint">{esc(line)}</p>')
-    out.append(causes_html)
-    out.append(actions_html)
     if analysis_failed:
         out.append('<p class="hint">AI 분석에 실패해 관측값만 표시합니다.</p>')
     out.append(notices_html)
