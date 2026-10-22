@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -123,6 +124,10 @@ class DraftCause(BaseModel):
     counter_evidence_refs: list[str] = Field(
         default=[], description="이 결론과 맞지 않는 Evidence id. 없으면 빈 배열."
     )
+    cause_type: Literal["direct", "root"] = Field(
+        default="root",
+        description="direct = 즉각적 트리거(직접적 원인), root = 구조적 근본 원인.",
+    )
 
     _string_list = field_validator(
         "supporting_evidence_refs",
@@ -160,6 +165,10 @@ class DraftWindowSuggestion(BaseModel):
 class DraftRecommendation(BaseModel):
     cause_index: int | None = Field(default=None, ge=0, description="대응하는 root_causes의 0부터 시작하는 인덱스. 공통 조사는 null.")
     text: str = Field(default="", description="대상이 들어간 한 줄 조치(40자 내외).")
+    wiki_ref: str = Field(
+        default="",
+        description="위키 패턴과 일치하면 패턴 이름을 기재한다. 없으면 빈 문자열.",
+    )
     evidence_refs: list[str] = Field(default_factory=list)
 
     _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
@@ -171,6 +180,10 @@ class DraftReport(BaseModel):
     LogAnalysisReport로 변환·검증하기 전 값이며 운영자용 IncidentAnalysisReport가 아니다.
     """
 
+    title: str = Field(
+        default="",
+        description="장애 제목. 한 줄 40자 내외. 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'.",
+    )
     summary: str = Field(
         default="",
         description="핵심 현상과 관측된 영향의 요약. 한두 문장. 확인되지 않은 영향은 지어내지 않는다.",
@@ -212,6 +225,13 @@ class DraftReport(BaseModel):
     suggested_windows: list[DraftWindowSuggestion] = Field(
         default=[], description="needs_more_context가 true일 때 필요한 시간 범위."
     )
+    future_improvements: list[str] = Field(
+        default=[],
+        description=(
+            "향후 개선 방안. 비슷한 증상이 다른 노드나 랙에서도 관찰되는지, "
+            "반복 방지를 위한 장기 조치. 근거가 없으면 빈 배열."
+        ),
+    )
 
     _string_list = field_validator(
         "summary_evidence_refs", "unresolved_questions", mode="before"
@@ -239,6 +259,7 @@ class DraftReport(BaseModel):
             incident_id=incident_id,
             analyzed_from=window.start,
             analyzed_to=window.end,
+            title=self.title,
             summary=self.summary,
             summary_evidence_refs=tuple(self.summary_evidence_refs),
             timeline=tuple(
@@ -259,14 +280,22 @@ class DraftReport(BaseModel):
                 RootCause(
                     statement=item.statement,
                     mechanism=item.mechanism,
+                    cause_type=item.cause_type,
                     supporting_evidence_refs=tuple(item.supporting_evidence_refs),
                     counter_evidence_refs=tuple(item.counter_evidence_refs),
                 )
                 for item in self.root_causes
             ),
             unresolved_questions=tuple(self.unresolved_questions),
-            recommendations=tuple(ReportRecommendation(text=item.text, evidence_refs=tuple(item.evidence_refs), cause_index=item.cause_index)
-                for item in self.recommendations),
+            recommendations=tuple(
+                ReportRecommendation(
+                    text=item.text,
+                    evidence_refs=tuple(item.evidence_refs),
+                    cause_index=item.cause_index,
+                    wiki_ref=item.wiki_ref,
+                )
+                for item in self.recommendations
+            ),
             suspect_picks=tuple(
                 SuspectPick(candidate_id=item.candidate_id, reason=item.reason)
                 for item in self.suspect_picks
@@ -275,6 +304,9 @@ class DraftReport(BaseModel):
             evidence_refs=evidence_refs,
             verification_status=VerificationStatus.NOT_VERIFIED,
             revision_count=revision_count,
+            future_improvements=tuple(
+                s.strip() for s in self.future_improvements if s.strip()
+            ),
         )
 
     @staticmethod
@@ -322,6 +354,7 @@ class DraftReport(BaseModel):
 
 class IncidentDraftReport(DraftReport):
     """incident 판단을 의도적으로 내리게 한다. 근거가 있으면 빈 배열도 유효하다."""
+    title: str
     summary: str
     findings: list[DraftFinding]
     root_causes: list[DraftCause]
