@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
@@ -31,7 +31,7 @@ class RawRecord:
 @dataclass(frozen=True)
 class MinuteBucket:
     minute: datetime
-    records: list[RawRecord]
+    records: tuple[RawRecord, ...]
 
 
 @dataclass(frozen=True)
@@ -44,14 +44,14 @@ class SelectedRecord:
 @dataclass(frozen=True)
 class MinuteResult:
     minute: datetime
-    selected: list[SelectedRecord] = field(default_factory=list)
+    selected: tuple[SelectedRecord, ...] = ()
     failed: bool = False
     record_count: int = 0
 
 
 @dataclass(frozen=True)
 class AnalysisResult:
-    evidence: list[Evidence]
+    evidence: tuple[Evidence, ...]
     analyzed_minutes: int = 0
     failed_minutes: int = 0
     reduce_degraded: bool = False
@@ -69,4 +69,4 @@ def group_into_buckets(records: list[RawRecord]) -> list[MinuteBucket]:
     for record in records:
         minute = record.event_time.replace(second=0, microsecond=0)
         grouped.setdefault(minute, []).append(record)
-    return [MinuteBucket(minute=m, records=grouped[m]) for m in sorted(grouped)]
+    return [MinuteBucket(minute=m, records=tuple(grouped[m])) for m in sorted(grouped)]
