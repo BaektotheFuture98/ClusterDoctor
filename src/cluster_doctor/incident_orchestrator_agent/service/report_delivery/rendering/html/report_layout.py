@@ -5,14 +5,11 @@
 """
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
-from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, is_validation_diagnostic, unique_citations
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, node_line, verdict_line
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, query_log_note, summarize_source
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_metric_cards
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.cross_source import render_cross_source
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
@@ -46,7 +43,7 @@ section p{max-width:none}
 '''
 
 
-def _overview(report: IncidentAnalysisReport, notices: str = '', *, now: datetime | None = None) -> str:
+def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) -> str:
     title = report.title or "Elasticsearch 클러스터 장애 분석"
     start = stamp(report.analyzed_from) if report.analyzed_from else "미확인"
     end = stamp(report.analyzed_to) if report.analyzed_to else "미확인"
@@ -65,7 +62,6 @@ def _overview(report: IncidentAnalysisReport, notices: str = '', *, now: datetim
         f'<tr><th>총 장애 시간</th><td>{esc(duration or "미확인")}</td></tr>'
         + generated +
         f'</tbody></table>'
-        + notices +
         f'</section>'
     )
 
@@ -140,16 +136,6 @@ def render_paragraphs(text: str, *, css_class: str = '') -> str:
                    for paragraph in text.replace('\r\n', '\n').split('\n\n') if paragraph.strip())
 
 
-def _notices(obs, gaps) -> str:
-    out=''
-    for status in (s for s in obs.source_statuses if s.status=='failed'):
-        out+=f'<p class="hint">{esc(status.source)} {esc(status.host)} 수집 실패 · {esc(stamp(status.start))}</p>'
-    for gap in dict.fromkeys(gaps):
-        if not is_validation_diagnostic(gap):out+=f'<p class="hint">{esc(gap)}</p>'
-    if any(row.failed for row in obs.timeline):out+='<p class="hint">분석하지 못한 구간이 있습니다.</p>'
-    return out
-
-
 def _timeline(report, narrative) -> str:
     out='<section id="timeline"><h2>주요 타임라인</h2><div class="incident-timeline">'
     for card in report_timeline(report):
@@ -179,13 +165,6 @@ def _metrics(report) -> str:
     return out+'</section>'
 
 
-def _findings(narrative) -> str:
-    # 원인이 아닌 관측은 결론에서 빼고 근거 안에서 보여 준다.
-    if not narrative or not narrative.findings:
-        return ''
-    return '<section id="findings"><h2>주요 관측</h2>'+''.join(f'<h3>{esc(f.title)}</h3>'+render_paragraphs(f.detail) for f in narrative.findings)+'</section>'
-
-
 def _citation_groups(narrative):
     """(지지, 반증) 인용. 지지와 반증에 모두 걸린 근거는 반증 쪽에만 둔다."""
     contradicting=unique_citations(*(cause.contradicting for cause in narrative.causes))
@@ -208,31 +187,13 @@ def _slowlog_marks(report, narrative) -> dict:
     return marks
 
 
-def _citations(narrative, report) -> str:
-    if not narrative:
-        return ''
-    shown={e.evidence_id for e in shown_slowlog_evidence(report)}
-    cited,contradicting=_citation_groups(narrative)
-    cited=tuple(c for c in cited if c.evidence_id not in shown)
-    contradicting=tuple(c for c in contradicting if c.evidence_id not in shown)
-    if not cited and not contradicting:
-        return ''
-    out='<section id="citations"><h2>판단에 인용된 원문</h2>'+quotes(cited)
-    if contradicting:
-        out+='<h3>반증</h3>'+''.join(f'<pre class="quote">{esc("반증 · "+text)}</pre>' for text in visible_citations(contradicting))
-    return out+'</section>'
-
-
-
 def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[str,...], analysis_failed: bool, css: str) -> str:
     obs=report.observations
     links=build_cross_links(obs)
-    rows=rank_query_requests(obs.query_requests)
     narrative=display_narrative(report,analysis_failed=analysis_failed)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
-    master_text=master_note(obs) if summarize_source(obs.source_statuses,'master_log').state=='failed' else ''
     evidence=('<details id="evidence"><summary>수집 데이터 보기</summary>'
               +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+'</details>')
     body=(_overview(report, now=now)
