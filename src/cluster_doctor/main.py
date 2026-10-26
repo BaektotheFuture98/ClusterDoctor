@@ -106,6 +106,7 @@ def configure_logging() -> None:
         handler.addFilter(incident_id_filter)
         setattr(handler, _HANDLER_MARKER, True)
         root_logger.addHandler(handler)
+    _logger.info("로그 파일: %s", (log_dir / "app.log").resolve())
 
 
 _logger = logging.getLogger(__name__)

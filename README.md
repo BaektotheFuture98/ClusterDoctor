@@ -207,7 +207,7 @@ IPv4·이메일·등록된 회사·사용자·요청 ID를 가명으로 바꾸�
 | `ANALYSIS_CONCURRENCY` | `15` | 분 단위 선별 그래프 하나가 동시에 돌리는 분의 수. 낮추면 메모리 피크가 줄고 분석이 느려질 수 있다. 빈 값이면 `15` |
 | `REPORT_DIR` | `reports` | HTML 보고서 저장 디렉터리. 미지정·빈 값이면 `reports`, 상대 경로는 작업 디렉터리 기준 |
 | `REPORT_SFTP_HOST`, `REPORT_SFTP_PORT`, `REPORT_SFTP_USER`, `REPORT_SFTP_PASSWORD`, `REPORT_SFTP_KEY_FILE`, `REPORT_SFTP_REMOTE_DIR`, `REPORT_SFTP_KNOWN_HOSTS`, `REPORT_SFTP_TIMEOUT_SECONDS` | (꺼짐), `22`, …, `10` | 리포트를 SFTP로 다른 서버에 올린다. HOST가 비면 꺼진다. 켜면 USER·REMOTE_DIR과 PASSWORD 또는 KEY_FILE이 필요하다 |
-| `LOG_DIR` | `logs` | `app.log` 저장 디렉터리. 미지정·빈 값이면 `logs`, 상대 경로는 작업 디렉터리 기준 |
+| `CLUSTER_DOCTOR_LOG_DIR` | `logs` | `app.log` 저장 디렉터리. 미지정·빈 값이면 `logs`, 상대 경로는 작업 디렉터리 기준 |
 | `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` | `10485760`, `5` | `app.log` 로테이션. 크기를 넘으면 `app.log.1`…로 넘기고 백업은 개수까지만 남긴다(총량 약 `(LOG_BACKUP_COUNT + 1) * LOG_MAX_BYTES`). 양수만 허용, 빈 값이면 기본값 |
 | `LITELLM_LOCAL_MODEL_COST_MAP` | `True` | litellm의 GitHub cost-map fetch를 막음 |
 
@@ -282,8 +282,8 @@ uv sync
 uv run python -m cluster_doctor.main
 ```
 
-Kafka consumer는 block하며 log는 stderr와 `LOG_DIR/app.log`, report는 `REPORT_DIR`에 남긴다.
-`.env`에 `LOG_DIR=/var/log/clusterdoctor`처럼 절대 경로를 지정할 수 있다. 지정하지
+Kafka consumer는 block하며 log는 stderr와 `CLUSTER_DOCTOR_LOG_DIR/app.log`, report는 `REPORT_DIR`에 남긴다.
+`.env`에 `CLUSTER_DOCTOR_LOG_DIR=/var/log/clusterdoctor`처럼 절대 경로를 지정할 수 있다. 지정하지
 않거나 빈 값이면 기존처럼 작업 디렉터리의 `logs/app.log`에 저장한다. 디렉터리가
 없으면 자동 생성하며, 실행 계정에 쓰기 권한이 있어야 한다. `app.log`는 크기 기준으로
 로테이션한다(기본 10MB, 백업 5개). Windows에서는 편집기 등이 `app.log`를 열어 두면

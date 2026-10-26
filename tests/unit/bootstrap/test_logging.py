@@ -21,11 +21,11 @@ def test_log_directory_configuration(tmp_path, dotenv_dir, env_dir, expected_dir
     if dotenv_dir == "absolute":
         dotenv_dir = str(tmp_path / "absolute")
     if dotenv_dir is not None:
-        (tmp_path / ".env").write_text(f"LOG_DIR={dotenv_dir}\n", encoding="utf-8")
+        (tmp_path / ".env").write_text(f"CLUSTER_DOCTOR_LOG_DIR={dotenv_dir}\n", encoding="utf-8")
     env = os.environ.copy()
-    env.pop("LOG_DIR", None)
+    env.pop("CLUSTER_DOCTOR_LOG_DIR", None)
     if env_dir is not None:
-        env["LOG_DIR"] = env_dir
+        env["CLUSTER_DOCTOR_LOG_DIR"] = env_dir
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[3] / "src")
     result = subprocess.run(
         [
@@ -52,10 +52,11 @@ def test_log_directory_configuration(tmp_path, dotenv_dir, env_dir, expected_dir
 
 def _run_logging(tmp_path, env_overrides, body):
     env = os.environ.copy()
-    for key in ("LOG_DIR", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT"):
+    for key in ("CLUSTER_DOCTOR_LOG_DIR", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT"):
         env.pop(key, None)
     env.update(env_overrides)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[3] / "src")
+    env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [
             sys.executable,
@@ -66,6 +67,7 @@ def _run_logging(tmp_path, env_overrides, body):
         cwd=tmp_path,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         timeout=30,
     )
@@ -132,10 +134,11 @@ def _run_entrypoint_probe(tmp_path, body):
     env = os.environ.copy()
     root = Path(__file__).resolve().parents[3]
     env["PYTHONPATH"] = os.pathsep.join((str(root / "src"), str(root / "scripts")))
-    env["LOG_DIR"] = str(tmp_path / "logs")
+    env["CLUSTER_DOCTOR_LOG_DIR"] = str(tmp_path / "logs")
+    env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-c", body], cwd=tmp_path, env=env,
-        text=True, capture_output=True, timeout=30,
+        text=True, encoding="utf-8", capture_output=True, timeout=30,
     )
 
 
@@ -193,3 +196,45 @@ def test_real_entrypoint_starts_logging_before_settings_and_is_idempotent(tmp_pa
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "logs/app.log").read_text(encoding="utf-8").count("entrypoint-log-marker") == 2
     assert result.stderr.count("entrypoint-log-marker") == 2
+
+
+def test_unprefixed_log_dir_environment_variable_is_ignored(tmp_path, monkeypatch):
+    from cluster_doctor.bootstrap.settings import LoggingSettings
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLUSTER_DOCTOR_LOG_DIR", raising=False)
+    monkeypatch.setenv("LOG_DIR", str(tmp_path / "kafka-logs"))
+
+    assert LoggingSettings().log_dir == "logs"
+
+
+def test_unprefixed_log_dir_environment_variable_does_not_override_dotenv(tmp_path, monkeypatch):
+    from cluster_doctor.bootstrap.settings import LoggingSettings
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("CLUSTER_DOCTOR_LOG_DIR=from-dotenv\n", encoding="utf-8")
+    monkeypatch.delenv("CLUSTER_DOCTOR_LOG_DIR", raising=False)
+    monkeypatch.setenv("LOG_DIR", str(tmp_path / "kafka-logs"))
+
+    assert LoggingSettings().log_dir == "from-dotenv"
+
+
+def test_unprefixed_log_dir_dotenv_key_is_ignored(tmp_path, monkeypatch):
+    from cluster_doctor.bootstrap.settings import LoggingSettings
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("LOG_DIR=from-dotenv\n", encoding="utf-8")
+    monkeypatch.delenv("CLUSTER_DOCTOR_LOG_DIR", raising=False)
+    monkeypatch.delenv("LOG_DIR", raising=False)
+
+    assert LoggingSettings().log_dir == "logs"
+
+
+def test_configure_logging_records_absolute_log_file_path(tmp_path):
+    result = _run_logging(tmp_path, {}, "")
+
+    assert result.returncode == 0, result.stderr
+    log_path = tmp_path / "logs" / "app.log"
+    expected = f"로그 파일: {log_path.resolve()}"
+    assert expected in log_path.read_text(encoding="utf-8")
+    assert expected in result.stderr

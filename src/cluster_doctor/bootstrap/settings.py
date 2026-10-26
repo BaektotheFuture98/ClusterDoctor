@@ -20,7 +20,8 @@ class LoggingSettings(BaseSettings):
         validate_default=True,
     )
 
-    log_dir: str = "logs"
+    # Kafka 등 다른 프로세스가 LOG_DIR을 쓰므로 앱 전용 이름만 읽는다.
+    log_dir: str = Field(default="logs", validation_alias="CLUSTER_DOCTOR_LOG_DIR")
     # app.log를 이 크기에서 넘기고 백업을 이 개수까지만 남긴다. 총량은 대략
     # (backup_count + 1) * max_bytes다.
     log_max_bytes: int = Field(default=_DEFAULT_LOG_MAX_BYTES, gt=0)
