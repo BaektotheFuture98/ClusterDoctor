@@ -234,7 +234,10 @@ class DraftReport(BaseModel):
     )
 
     _string_list = field_validator(
-        "summary_evidence_refs", "unresolved_questions", mode="before"
+        "summary_evidence_refs",
+        "unresolved_questions",
+        "future_improvements",
+        mode="before",
     )(_as_string_list)
 
     @field_validator("recommendations", mode="before")
