@@ -148,6 +148,8 @@ _INCIDENT_SYNTHESIS_INSTRUCTIONS = """너는 ClusterDoctor의 사건 전체 최�
   고정 라벨이나 슬래시로 나열하지 않는다. '자원 경합으로 성능 영향'만으로 끝내지 않는다.
 - recommendations의 text는 운영자가 바로 할 조치 한 줄이다(60자 내외). 조사 절차나 판정 조건을 길게 쓰지 않는다. 모든 원인에 GC 조사를 붙이지 않는다.
   인과 경로 확인 전에는 시간적 상관만으로 운영 설정 변경을 권고하지 않는다.
+- 장애 패턴 위키가 주어지면 recommendations의 wiki_ref에 그 조치와 일치하는 패턴명을 위키에 적힌 그대로 쓴다. 일치하는 패턴이 없으면 빈 문자열이다.
+  위키 내용은 근거가 아니므로 evidence_refs로 인용하지 않고, 이번 관측과 어긋나는 패턴은 따르지 않는다.
 
 응답 계약:
 JSON 객체 하나만 반환한다. 한국어로 간결하게 쓰며 원문 식별자·필드명은 유지한다.
@@ -202,15 +204,20 @@ _INCIDENT_REVIEW_INSTRUCTIONS = _INCIDENT_REVIEW_INSTRUCTIONS.replace(
     "\nJVM 단일 사용률로", _CROSS_LINK_RULES + _CAUSE_TARGET_RULES + "\nJVM 단일 사용률로", 1)
 
 
+_WIKI_SECTION_TITLE = "--- 장애 패턴 위키 (참고용, 이번 근거와 독립적이다) ---"
+
+
 def build_incident_review_messages(
     *, analyzed_from: datetime, analyzed_to: datetime,
-    draft_json: str, analysis_context: str,
+    draft_json: str, analysis_context: str, wiki_context: str = "",
 ) -> list[dict[str, str]]:
+    wiki = [_WIKI_SECTION_TITLE, wiki_context] if wiki_context else []
     return [
         {"role": "system", "content": _INCIDENT_REVIEW_INSTRUCTIONS},
         {"role": "user", "content": "\n".join([
             f"사건 분석 범위: {analyzed_from.astimezone(KST).isoformat()} ~ {analyzed_to.astimezone(KST).isoformat()}",
             "--- 누적 관측값과 선별 근거 JSON ---", analysis_context,
+            *wiki,
             "--- 교정할 초안 JSON ---", draft_json,
         ])},
     ]
@@ -218,14 +225,16 @@ def build_incident_review_messages(
 
 def build_incident_synthesis_messages(
     *, cluster: str, analyzed_from: datetime, analyzed_to: datetime,
-    previous_windows_json: str, analysis_context: str,
+    previous_windows_json: str, analysis_context: str, wiki_context: str = "",
 ) -> list[dict[str, str]]:
     """최종 진단 지시문을 보존된 incident 데이터와 분리해 둔다."""
+    wiki = [_WIKI_SECTION_TITLE, wiki_context] if wiki_context else []
     context = "\n".join([
         f"클러스터: {cluster[:200]}",
         f"사건 분석 범위: {analyzed_from.astimezone(KST).isoformat()} ~ {analyzed_to.astimezone(KST).isoformat()}",
         "--- 구간별 분석 범위 JSON ---", previous_windows_json,
         "--- 누적 관측값과 선별 근거 JSON ---", analysis_context,
+        *wiki,
     ])
     return [
         {"role": "system", "content": _INCIDENT_SYNTHESIS_INSTRUCTIONS},

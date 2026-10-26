@@ -138,7 +138,7 @@ def _synthesize(monkeypatch, writer, grounding_issues=()):
 
     monkeypatch.setattr(incident_synthesis, "GroundingValidator", _Grounding)
     return incident_synthesis.synthesize_incident(
-        seams=SimpleNamespace(report_writer=writer, call_llm=None, metric_thresholds=DEFAULT_THRESHOLDS), incident=SimpleNamespace(incident_id="i", cluster="c"),
+        seams=SimpleNamespace(report_writer=writer, call_llm=None, metric_thresholds=DEFAULT_THRESHOLDS, wiki_client=None), incident=SimpleNamespace(incident_id="i", cluster="c"),
         window_reports=[], observations=_observations(), evidence=[])
 
 
