@@ -126,6 +126,20 @@ class ObservationBuilder:
         builder.master_log_total = int(state.get("master_log_total", 0))
         return builder
 
+    @classmethod
+    def from_observations(cls, window: TimeRange, observations: Observations) -> ObservationBuilder:
+        """누적된 Observations에서 프롬프트용 builder를 만든다. 사건 종합이 위키에 증상을 물을 때 쓴다."""
+        return cls.from_state(window, {
+            "timeline": observations.timeline,
+            "nodes": observations.nodes,
+            "master_events": observations.master_events,
+            "health": observations.health,
+            "candidates": observations.candidates,
+            "query_requests": observations.query_requests,
+            "source_statuses": observations.source_statuses,
+            "master_log_total": observations.master_log_total,
+        })
+
     def state_update(self) -> dict[str, object]:
         """로컬 mutable 작업 결과를 불변 AnalysisAgentState 값으로 되돌려 투영한다."""
         observations = self.to_observations()
