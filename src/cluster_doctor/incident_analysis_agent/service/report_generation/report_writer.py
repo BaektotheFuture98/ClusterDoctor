@@ -52,6 +52,17 @@ def _incident_response_format() -> dict:
 _CARRIED_FIELDS = ("title", "future_improvements")
 
 
+def _omitted(key: str, value: object) -> bool:
+    """응답이 비워 둔 것으로 볼 값.
+
+    title은 빈 문자열도 생략이다. 빈 제목이 좋은 제목을 덮으면 안 된다.
+    future_improvements의 빈 배열은 '근거 없는 항목을 뺐다'는 정당한 결과라 생략이 아니다.
+    """
+    if key == "title":
+        return not str(value or "").strip()
+    return value is None
+
+
 def _with_carried_fields(text: str, previous: dict) -> object:
     """교정·재수정 응답이 생략한 title·future_improvements를 직전 판본 값으로 채운다.
 
@@ -63,7 +74,7 @@ def _with_carried_fields(text: str, previous: dict) -> object:
     data = json.loads(text)
     if isinstance(data, dict):
         for key in _CARRIED_FIELDS:
-            if data.get(key) is None:
+            if _omitted(key, data.get(key)):
                 data[key] = previous[key]
     return data
 

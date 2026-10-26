@@ -133,3 +133,58 @@ def test_incident_revision_without_title_is_still_applied():
     assert revised.summary == "교정된 요약."
     assert revised.title == "쿼리 지연"
     assert revised.future_improvements == ("재발 방지 조치",)
+
+
+def test_review_reply_accepts_future_improvements_as_single_string():
+    reply = {**_REVIEW_WITHOUT_CARRIED, "title": "쿼리 지연", "future_improvements": "한 항목"}
+    llm = ScriptedLlm(_FIRST_PASS, reply)
+
+    report = _draft_incident(llm)
+
+    assert report.future_improvements == ("한 항목",)
+
+
+def test_review_reply_with_blank_title_keeps_first_pass_title():
+    reply = {**_REVIEW_WITHOUT_CARRIED, "title": "  "}
+    llm = ScriptedLlm(_FIRST_PASS, reply)
+
+    report = _draft_incident(llm)
+
+    assert report.title == "쿼리 지연"
+
+
+def test_review_reply_values_win_over_first_pass():
+    """이어받기는 비어 있는 값만 채운다. 교정이 새로 낸 값을 되돌리면 안 된다."""
+    reply = {**_REVIEW_WITHOUT_CARRIED, "title": "교정된 제목", "future_improvements": ["교정된 개선안"]}
+    llm = ScriptedLlm(_FIRST_PASS, reply)
+
+    report = _draft_incident(llm)
+
+    assert report.title == "교정된 제목"
+    assert report.future_improvements == ("교정된 개선안",)
+
+
+def test_review_reply_with_null_future_improvements_is_carried():
+    reply = {**_REVIEW_WITHOUT_CARRIED, "title": "쿼리 지연", "future_improvements": None}
+    llm = ScriptedLlm(_FIRST_PASS, reply)
+
+    report = _draft_incident(llm)
+
+    assert report.future_improvements == ("다른 노드의 같은 증상 여부를 확인한다.",)
+
+
+def test_review_reply_with_empty_future_improvements_stays_empty():
+    """근거 없는 항목을 모두 뺀 교정 결과는 정당하다. 빈 배열을 생략으로 보지 않는다."""
+    reply = {**_REVIEW_WITHOUT_CARRIED, "title": "쿼리 지연", "future_improvements": []}
+    llm = ScriptedLlm(_FIRST_PASS, reply)
+
+    report = _draft_incident(llm)
+
+    assert report.future_improvements == ()
+
+
+def test_review_reply_that_is_not_an_object_still_fails():
+    llm = ScriptedLlm(_FIRST_PASS, [])
+
+    with pytest.raises(ValidationError):
+        _draft_incident(llm)
