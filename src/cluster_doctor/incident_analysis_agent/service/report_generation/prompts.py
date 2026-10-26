@@ -196,7 +196,7 @@ _INCIDENT_REVIEW_INSTRUCTIONS = """너는 장애 진단 초안의 사실 범위�
 JVM 단일 사용률로 GC를 원인으로 만들지 않는다. rejected 누적값은 이번 사건의 거절 발생 근거가 아니다.
 수집 실패·생략을 자료 부재로 단정하지 않고, 저장된 일부 키워드로 개별 실행을 합치지 않는다.
 입력 초안과 동일한 JSON 필드 구조로 교정한 보고서 하나만 반환한다. 한국어로 쓰며 원문 식별자와 필드명은 유지한다.
-필수 키는 summary, findings, root_causes, recommendations, unresolved_questions이다. 참조 배열·cause_index도 보존 또는 교정한다.
+필수 키는 title, summary, findings, root_causes, recommendations, unresolved_questions, future_improvements이다. title은 교정한 내용과 어긋날 때만 고치고, future_improvements는 근거가 없는 항목만 뺀다. 참조 배열·cause_index도 보존 또는 교정한다.
 응답은 문법적으로 완전한 JSON 객체 하나여야 한다. 문자열·배열·객체의 닫힘을 점검하고, 객체가 끝나면 즉시 종료한다.
 코드 펜스·설명·추가 객체·출력 뒤의 다른 문자를 붙이지 않는다.
 """
@@ -310,6 +310,21 @@ _REVISION_HEADER = """너는 방금 아래 리포트를 작성했다.
 """
 
 
+# 사건 단계(교정·재수정)가 모델에게 보여 주고 되돌려 받는 필드. 두 곳이 따로
+# 목록을 들고 있으면 스키마에 필드가 늘 때 한쪽만 고쳐진다.
+INCIDENT_EDITABLE_FIELDS = frozenset({
+    "title",
+    "summary",
+    "summary_evidence_refs",
+    "timeline",
+    "findings",
+    "root_causes",
+    "recommendations",
+    "unresolved_questions",
+    "future_improvements",
+})
+
+
 def build_revision_prompt(
     *,
     report: LogAnalysisReport,
@@ -321,16 +336,7 @@ def build_revision_prompt(
     """검증이 잡은 불일치를 고쳐 다시 쓰게 한다."""
     editable = report.model_dump_json(
         exclude_none=True,
-        include={
-            "summary",
-            "summary_evidence_refs",
-            "timeline",
-            "findings",
-            "root_causes",
-            "unresolved_questions",
-            "recommendations",
-            "suspect_picks",
-        }
+        include=INCIDENT_EDITABLE_FIELDS | {"suspect_picks"},
     )
     return "\n".join(
         [

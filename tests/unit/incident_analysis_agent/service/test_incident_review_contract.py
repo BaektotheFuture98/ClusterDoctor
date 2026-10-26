@@ -1,0 +1,90 @@
+"""사건 종합의 교정·재수정 단계가 title·future_improvements를 잃지 않는지 검증한다.
+
+LLM은 부르지 않는다. 호출자(call_llm)를 대본대로 답하는 함수로 바꿔 끼운다.
+"""
+
+import json
+from datetime import datetime
+
+from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import (
+    build_revision_prompt,
+)
+from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
+    ReportWriter,
+)
+
+_DRAFT_MARKER = "--- 교정할 초안 JSON ---\n"
+_REPORT_MARKER = "--- 현재 리포트 (JSON) ---\n"
+
+_FIRST_PASS = {
+    "title": "쿼리 지연",
+    "summary": "19:03에 최대 19.04초 지연이 관측됐다.",
+    "summary_evidence_refs": [],
+    "findings": [],
+    "root_causes": [],
+    "recommendations": [],
+    "unresolved_questions": [],
+    "future_improvements": ["다른 노드의 같은 증상 여부를 확인한다."],
+}
+
+
+def _window_report() -> LogAnalysisReport:
+    return LogAnalysisReport(
+        incident_id="inc-1",
+        analyzed_from=datetime(2026, 10, 23, 18, 59, tzinfo=KST),
+        analyzed_to=datetime(2026, 10, 23, 19, 5, tzinfo=KST),
+    )
+
+
+class ScriptedLlm:
+    """호출 순서대로 JSON을 돌려주고, 받은 메시지를 기록한다."""
+
+    def __init__(self, *replies: dict) -> None:
+        self._replies = list(replies)
+        self.calls: list[list[dict]] = []
+
+    def __call__(self, messages, *, response_format=None) -> str:
+        self.calls.append(messages)
+        return json.dumps(self._replies.pop(0), ensure_ascii=False)
+
+
+def _draft_incident(llm: ScriptedLlm):
+    return ReportWriter(call_llm=llm).draft_incident(
+        incident_id="inc-1",
+        cluster="es",
+        window_reports=[_window_report()],
+        observations=Observations(),
+        evidence=[],
+    )
+
+
+def _json_after(marker: str, messages: list[dict]) -> dict:
+    content = messages[-1]["content"]
+    return json.loads(content.split(marker, 1)[1].split("\n", 1)[0])
+
+
+def test_review_input_carries_title_and_future_improvements():
+    llm = ScriptedLlm(_FIRST_PASS, _FIRST_PASS)
+
+    _draft_incident(llm)
+
+    review_input = _json_after(_DRAFT_MARKER, llm.calls[1])
+    assert review_input["title"] == "쿼리 지연"
+    assert review_input["future_improvements"] == ["다른 노드의 같은 증상 여부를 확인한다."]
+
+
+def test_revision_input_carries_title_and_future_improvements():
+    report = _window_report().model_copy(
+        update={"title": "쿼리 지연", "future_improvements": ("재발 방지 조치",)}
+    )
+
+    prompt = build_revision_prompt(
+        report=report, issues=("지적",), evidence=[], incident_final=True
+    )
+
+    current = _json_after(_REPORT_MARKER, [{"content": prompt}])
+    assert current["title"] == "쿼리 지연"
+    assert current["future_improvements"] == ["재발 방지 조치"]

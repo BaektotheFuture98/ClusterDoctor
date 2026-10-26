@@ -28,6 +28,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.prompts im
     build_incident_synthesis_messages,
     build_incident_review_messages,
     build_revision_prompt,
+    INCIDENT_EDITABLE_FIELDS,
     _INCIDENT_REVIEW_INSTRUCTIONS,
 )
 from cluster_doctor.incident_analysis_agent.service.report_generation.schema import (
@@ -130,10 +131,7 @@ class ReportWriter:
         draft = IncidentDraftReport.model_validate_json(text)
         if not draft.summary.strip():
             raise ValueError("사건 종합 응답에 요약이 없다")
-        editable = draft.model_dump_json(include={
-            "summary", "summary_evidence_refs", "timeline", "findings",
-            "root_causes", "recommendations", "unresolved_questions",
-        })
+        editable = draft.model_dump_json(include=INCIDENT_EDITABLE_FIELDS)
         context_budget = min(40000, 60000 - len(editable) - len(_INCIDENT_REVIEW_INSTRUCTIONS) - 500)
         if context_budget < 1000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
