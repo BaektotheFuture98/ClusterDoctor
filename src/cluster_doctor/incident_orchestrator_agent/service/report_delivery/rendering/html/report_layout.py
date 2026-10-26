@@ -6,7 +6,7 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, partial_verification_notice, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
@@ -85,13 +85,12 @@ def _verdict_block(links) -> str:
     return out
 
 
-def _incident_analysis(report: IncidentAnalysisReport, narrative, links, withheld: str = '', partial: str = '') -> str:
+def _incident_analysis(report: IncidentAnalysisReport, narrative, links, withheld: str = '', caveats: tuple[str, ...] = ()) -> str:
     out = '<section id="incident-analysis"><h2>현상 및 원인</h2>' + _verdict_block(links)
     if withheld:
         out += f'<p class="hint">{esc(withheld)}</p>'
     else:
-        if partial:
-            out += f'<p class="hint">{esc(partial)}</p>'
+        out += ''.join(f'<p class="hint">{esc(note)}</p>' for note in caveats)
         if report.summary:
             out += render_paragraphs(report.summary)
     if not narrative.causes:
@@ -203,9 +202,9 @@ def _slowlog_marks(report, narrative) -> dict:
 def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[str,...], analysis_failed: bool, css: str) -> str:
     obs=report.observations
     links=build_cross_links(obs)
-    narrative=display_narrative(report,analysis_failed=analysis_failed)
-    withheld=withheld_reason(report,analysis_failed=analysis_failed)
-    partial='' if withheld else partial_verification_notice(report)
+    narrative=display_narrative(report)
+    withheld=withheld_reason(report)
+    caveats=() if withheld else result_caveats(report,analysis_failed=analysis_failed)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
@@ -214,7 +213,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     body=(_overview(report, now=now)
           +render_query_trend(project_query_trend(obs),links)
           +_timeline(report,narrative)
-          +_incident_analysis(report, narrative, links, withheld, partial)
+          +_incident_analysis(report, narrative, links, withheld, caveats)
           +_recommendations_section(narrative)
           +('' if withheld else _future_improvements(report))
           +evidence)
