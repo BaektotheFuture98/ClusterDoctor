@@ -1,4 +1,4 @@
-"""코드가 만든 사실과 검증된 해석으로 구성한 독립 실행형 리포트.
+"""코드가 만든 사실과 AI 해석으로 구성한 독립 실행형 리포트.
 
 본문은 결론(판정·원인·조치)·지표·추이·느린 요청만 둔다. 소스 간 연결, 원문 로그,
 인용 근거는 "근거 보기" 안에 접는다. 결론을 의심할 때 펼쳐 보는 자료다.
@@ -54,10 +54,10 @@ def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) ->
         total_minutes = int(delta.total_seconds() // 60)
         duration = f"{total_minutes}분" if total_minutes >= 1 else f"{int(delta.total_seconds())}초"
     fallback_hint = (
-        '<p class="hint">AI 분석이 없어 수집 요청 구간 기준으로 표시했습니다.</p>'
-        if span_from and not report.analyzed_from else ''
+        '<p class="hint">AI 분석 구간이 없어 수집 요청 구간 기준으로 표시했습니다.</p>'
+        if span_from and not (report.analyzed_from and report.analyzed_to) else ''
     )
-    generated =f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
+    generated = f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
     return (
         f'<section id="overview">'
         f'<h1>{esc(title)}</h1>'
