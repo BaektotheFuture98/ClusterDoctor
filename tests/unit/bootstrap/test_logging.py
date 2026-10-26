@@ -26,6 +26,7 @@ def test_log_directory_configuration(tmp_path, dotenv_dir, env_dir, expected_dir
     env.pop("CLUSTER_DOCTOR_LOG_DIR", None)
     if env_dir is not None:
         env["CLUSTER_DOCTOR_LOG_DIR"] = env_dir
+    env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[3] / "src")
     result = subprocess.run(
         [
@@ -38,6 +39,7 @@ def test_log_directory_configuration(tmp_path, dotenv_dir, env_dir, expected_dir
         cwd=tmp_path,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         timeout=30,
     )
