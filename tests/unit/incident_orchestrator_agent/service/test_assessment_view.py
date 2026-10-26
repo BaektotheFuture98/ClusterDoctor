@@ -1,7 +1,6 @@
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import PRINT_OPEN_SCRIPT
 """Actual-report interpretation and candidate attribution contracts."""
 from dataclasses import replace
-import pytest
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import Narrative, CauseAssessment, Recommendation, Finding
 from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
 from cluster_doctor.incident_analysis_agent.model.report import SuspectPick
@@ -20,12 +19,19 @@ def test_verified_cause_and_action_include_visible_original_source():
     assert e.evidence_id not in html and 'href="#evidence' not in html
 
 
-@pytest.mark.parametrize('status',['NOT_VERIFIED','MISMATCH'])
-def test_unverified_interpretations_and_actions_are_not_promoted(status):
-    r=report(status)
+def test_mismatched_interpretations_and_actions_are_not_promoted():
+    r=report('MISMATCH')
     n=Narrative(causes=(CauseAssessment(statement='cause'),),recommendations=('restart now',))
     html=render_report(replace(r,narrative=n))
-    assert 'cause</h3>' not in html and 'restart now' not in html
+    assert 'cause</h4>' not in html and 'restart now' not in html
+    assert '1.96s' in html
+
+
+def test_partially_verified_interpretations_and_actions_are_shown_with_notice():
+    r=report('NOT_VERIFIED')
+    n=Narrative(causes=(CauseAssessment(statement='cause'),),recommendations=('restart now',))
+    html=render_report(replace(r,narrative=n))
+    assert 'cause</h4>' in html and 'restart now' in html and '일부 검증' in html
     assert '1.96s' in html
 
 

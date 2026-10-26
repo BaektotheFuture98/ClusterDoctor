@@ -29,7 +29,7 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
     """HTML과 같은 실행 사실과 검증 gate를 갖는 평문 fallback."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, metric_nodes
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, display_narrative, withheld_reason, partial_verification_notice, source_log_sections, source_log_notes, metric_nodes
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
@@ -44,6 +44,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '결론', verdict.headline]
     if verdict.detail:out.append(verdict.detail)
     if line:=node_line(links):out.append(line)
+    if note:=withheld_reason(report,analysis_failed=analysis_failed) or partial_verification_notice(report):out.append(note)
     for index, c in enumerate(narrative.causes):
         out.append(c.statement)
         if c.mechanism: out.append('판단 설명: '+c.mechanism)

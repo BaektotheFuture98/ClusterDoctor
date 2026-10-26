@@ -1,5 +1,6 @@
 """운영자에게 공통으로 보이는 내용. 내부 참조는 DTO 안에만 둔다."""
 from dataclasses import replace
+from datetime import datetime
 from collections.abc import Iterable
 import re
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
@@ -88,10 +89,42 @@ def timeline_sources(card, shown_evidence=()):
     return tuple(c for c in card.evidence_citations if c.evidence_id not in shown)
 
 
+def withheld_reason(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
+    """AI 해석을 표시하지 않는 이유. 표시한다면 빈 문자열.
+
+    근거 대조를 끝내지 못한 해석(NOT_VERIFIED)은 숨기지 않고 ``partial_verification_notice``와 함께 보인다.
+    원문과 어긋난다고 판정된 해석(MISMATCH)과 분석이 끝나지 않은 실행의 해석은 숨긴다.
+    """
+    if report.narrative is None:
+        return 'AI 분석을 생성하지 못해 관측값만 표시합니다.'
+    if report.verification_status not in ('PASSED', 'NOT_VERIFIED'):
+        return 'AI 분석에 원문과 맞지 않는 부분이 남아 관측값만 표시합니다.'
+    if analysis_failed:
+        return '분석이 완전히 끝나지 않아 AI 해석을 숨기고 관측값만 표시합니다.'
+    return ''
+
+
+def partial_verification_notice(report: IncidentAnalysisReport) -> str:
+    """근거 대조를 끝내지 못한 해석에 붙이는 안내. 표시하는 해석에만 쓴다."""
+    if report.verification_status == 'NOT_VERIFIED':
+        return '일부 검증 — 근거 대조를 끝까지 마치지 못한 해석입니다.'
+    return ''
+
+
+def analysis_span(report: IncidentAnalysisReport) -> tuple[datetime | None, datetime | None]:
+    """AI 리포트가 알려 준 분석 구간. 없으면 코드가 실제로 요청한 구간의 처음과 끝."""
+    if report.analyzed_from and report.analyzed_to:
+        return report.analyzed_from, report.analyzed_to
+    requested = report.observations.requested
+    if not requested:
+        return None, None
+    return min(start for start, _ in requested), max(end for _, end in requested)
+
+
 def display_narrative(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> Narrative:
-    """검증 통과·분석 성공 시 원래 판단을, 그 외에는 관측 기반 대체 판단을 반환한다."""
+    """표시할 수 있는 AI 해석이면 그대로, 그 외에는 관측 기반 대체 판단을 반환한다."""
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import citations
-    if report.verification_status=='PASSED' and report.narrative and not analysis_failed:
+    if not withheld_reason(report, analysis_failed=analysis_failed):
         return report.narrative
     rows=rank_query_requests(report.observations.query_requests)
     refs=()
