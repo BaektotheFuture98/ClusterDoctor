@@ -9,7 +9,7 @@ LangChain ``BaseChatModel``이 필요하다.
 값**이어야 하고, 그래서 표를 옮겨 적지 않고 import해서 쓴다:
 
 1. 자체 재시도 0회 (429 증폭 방지). 429/503은 ``RateLimitRetryMiddleware``가
-   오류 종류를 가려 한 번만 다시 부른다
+   오류 종류를 가려 ``_MAX_RETRIES``번까지만 다시 부른다
 2. 요청 타임아웃은 ``litellm_client``의 설정을 공유한다
 3. temperature를 비롯한 샘플링 인자를 보내지 않는다
 
