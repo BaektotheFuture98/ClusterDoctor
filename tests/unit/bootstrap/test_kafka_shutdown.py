@@ -33,7 +33,7 @@ def test_kafka_failure_exits_process_even_with_running_analysis_thread(tmp_path)
         asyncio.run(app.main())
     """)
     env = os.environ.copy()
-    env["LOG_DIR"] = str(tmp_path / "logs")
+    env["CLUSTER_DOCTOR_LOG_DIR"] = str(tmp_path / "logs")
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[3] / "src")
     try:
         result = subprocess.run(

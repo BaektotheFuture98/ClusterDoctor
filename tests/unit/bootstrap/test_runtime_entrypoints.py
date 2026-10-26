@@ -20,7 +20,7 @@ def runtime():
 
 @pytest.fixture
 def app(monkeypatch, tmp_path):
-    monkeypatch.setenv("LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("CLUSTER_DOCTOR_LOG_DIR", str(tmp_path / "logs"))
     return importlib.import_module("cluster_doctor.main")
 
 
