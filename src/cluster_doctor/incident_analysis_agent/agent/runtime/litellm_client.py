@@ -183,7 +183,8 @@ def require_supported_provider(provider: str) -> str:
 # 보장된 채 소비만 늘기 때문이다. 토큰 한도 오류는 대기 시간을 모르면 재시도하지
 # 않으며, 그 외 429/503에는 아래 기본 대기를 적용한다.
 _RETRYABLE_STATUS = frozenset({429, 503})
-_MAX_RETRIES = 1
+# 한 호출이 같은 요청을 다시 보내는 최대 횟수. 일반 호출과 에이전트 호출이 공유한다.
+_MAX_RETRIES = 2
 # provider가 대기 시간을 알려 주지 않을 때 한 번의 재시도에 적용할 대기.
 _FALLBACK_BACKOFF_SECONDS = 5.0
 # provider가 알려 준 대기가 이보다 길면 기다리지 않고 실패시킨다. 일 단위

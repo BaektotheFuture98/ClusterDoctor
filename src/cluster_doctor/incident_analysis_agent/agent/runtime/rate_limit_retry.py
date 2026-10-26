@@ -4,7 +4,7 @@
 재시도 규칙이 갈라지면 한쪽만 한도 오류로 죽는다 — Main/SubAgent 호출이 429
 한 번에 ``Agent 실행 실패``로 끝나던 원인이다. ChatLiteLLM 자체 재시도는
 소비 증폭 때문에 꺼 두었으므로(``chat_model.py``), 여기서 오류 종류를 가려
-한 번만 다시 부른다.
+``_MAX_RETRIES``번까지만 다시 부른다.
 """
 
 from __future__ import annotations
