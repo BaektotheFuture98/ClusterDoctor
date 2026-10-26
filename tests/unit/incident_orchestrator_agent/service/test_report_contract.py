@@ -200,8 +200,8 @@ def test_validation_execution_failure_reason_is_not_rendered():
     assert 'SSH 수집 실패' in html
 
 
-def test_failed_analysis_plain_fallback_does_not_promote_narrative():
-    text=render_text(report('PASSED'),analysis_failed=True)
+def test_mismatched_analysis_plain_fallback_does_not_promote_narrative():
+    text=render_text(replace(report('PASSED'),verification_status='MISMATCH'),analysis_failed=True)
     assert 'unverified cause' not in text
     assert '수집된 자료로 지연 원인을 확정할 수 없습니다.' in text
 
@@ -225,6 +225,6 @@ def test_fallback_narrative_cites_evidence_matching_top_ranked_request_key():
     other=r.evidence[0]
     matching=other.model_copy(update={'evidence_id':'MATCH','source':EvidenceSource.QUERY_LOG,'record_key':top.record_key})
     r=replace(r,evidence=(other,matching),narrative=Narrative(causes=(CauseAssessment(statement='ok'),)))
-    cited=display_narrative(r,analysis_failed=True).causes[0].supporting
+    cited=display_narrative(replace(r,verification_status='MISMATCH')).causes[0].supporting
     assert [c.evidence_id for c in cited]==['MATCH']
     assert display_narrative(r) is r.narrative

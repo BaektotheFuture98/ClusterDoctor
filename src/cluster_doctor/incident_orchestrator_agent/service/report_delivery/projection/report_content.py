@@ -89,26 +89,27 @@ def timeline_sources(card, shown_evidence=()):
     return tuple(c for c in card.evidence_citations if c.evidence_id not in shown)
 
 
-def withheld_reason(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
+def withheld_reason(report: IncidentAnalysisReport) -> str:
     """AI 해석을 표시하지 않는 이유. 표시한다면 빈 문자열.
 
-    근거 대조를 끝내지 못한 해석(NOT_VERIFIED)은 숨기지 않고 ``partial_verification_notice``와 함께 보인다.
-    원문과 어긋난다고 판정된 해석(MISMATCH)과 분석이 끝나지 않은 실행의 해석은 숨긴다.
+    해석이 없거나 원문과 어긋난다고 판정된(MISMATCH) 경우만 숨긴다. 근거 대조를 끝내지 못했거나
+    분석이 일부 실패한 실행의 해석은 숨기지 않고 ``result_caveats``의 안내와 함께 보인다.
     """
     if report.narrative is None:
         return 'AI 분석을 생성하지 못해 관측값만 표시합니다.'
     if report.verification_status not in ('PASSED', 'NOT_VERIFIED'):
         return 'AI 분석에 원문과 맞지 않는 부분이 남아 관측값만 표시합니다.'
-    if analysis_failed:
-        return '분석이 완전히 끝나지 않아 AI 해석을 숨기고 관측값만 표시합니다.'
     return ''
 
 
-def partial_verification_notice(report: IncidentAnalysisReport) -> str:
-    """근거 대조를 끝내지 못한 해석에 붙이는 안내. 표시하는 해석에만 쓴다."""
+def result_caveats(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> tuple[str, ...]:
+    """표시하는 AI 해석에 붙일 안내. 완전히 검증됐고 분석이 끝났으면 비어 있다."""
+    notes = []
     if report.verification_status == 'NOT_VERIFIED':
-        return '일부 검증 — 근거 대조를 끝까지 마치지 못한 해석입니다.'
-    return ''
+        notes.append('일부 검증 — 근거 대조를 끝까지 마치지 못한 해석입니다.')
+    if analysis_failed:
+        notes.append('일부 분석 실패 — 일부 구간 또는 단계가 끝나지 않은 상태의 해석입니다.')
+    return tuple(notes)
 
 
 def analysis_span(report: IncidentAnalysisReport) -> tuple[datetime | None, datetime | None]:
@@ -121,10 +122,10 @@ def analysis_span(report: IncidentAnalysisReport) -> tuple[datetime | None, date
     return min(start for start, _ in requested), max(end for _, end in requested)
 
 
-def display_narrative(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> Narrative:
+def display_narrative(report: IncidentAnalysisReport) -> Narrative:
     """표시할 수 있는 AI 해석이면 그대로, 그 외에는 관측 기반 대체 판단을 반환한다."""
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.evidence_citation import citations
-    if not withheld_reason(report, analysis_failed=analysis_failed):
+    if not withheld_reason(report):
         return report.narrative
     rows=rank_query_requests(report.observations.query_requests)
     refs=()

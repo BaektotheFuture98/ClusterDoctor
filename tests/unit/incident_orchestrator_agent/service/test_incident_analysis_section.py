@@ -15,7 +15,7 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import (
     analysis_span,
     display_narrative,
-    partial_verification_notice,
+    result_caveats,
     withheld_reason,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import (
@@ -28,11 +28,11 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 NO_LOG_VERDICT = "수집된 쿼리 실행 로그가 없습니다."
 NOT_GENERATED = "AI 분석을 생성하지 못해 관측값만 표시합니다."
 MISMATCHED = "AI 분석에 원문과 맞지 않는 부분이 남아 관측값만 표시합니다."
-NOT_FINISHED = "분석이 완전히 끝나지 않아 AI 해석을 숨기고 관측값만 표시합니다."
+PARTIAL_ANALYSIS = "일부 분석 실패 — 일부 구간 또는 단계가 끝나지 않은 상태의 해석입니다."
 PARTIAL = "일부 검증 — 근거 대조를 끝까지 마치지 못한 해석입니다."
 FALLBACK_SPAN_HINT = "AI 분석 구간이 없어 수집 요청 구간 기준으로 표시했습니다."
 PLACEHOLDER_CAUSE = "수집된 자료로 지연 원인을 확정할 수 없습니다."
-ALL_NOTICES = (NOT_GENERATED, MISMATCHED, NOT_FINISHED, PARTIAL)
+ALL_NOTICES = (NOT_GENERATED, MISMATCHED, PARTIAL, PARTIAL_ANALYSIS)
 
 T = lambda h, m: datetime(2026, 10, 23, h, m, tzinfo=KST)  # noqa: E731
 REQUESTED = ((T(18, 54), T(19, 4)),)
@@ -125,27 +125,40 @@ def test_partially_verified_ai_analysis_is_shown_with_a_notice():
     assert "AI 요약 문장" in analysis
     assert "AI가 본 원인" in analysis
     assert PLACEHOLDER_CAUSE not in analysis
-    assert not any(text in analysis for text in (NOT_GENERATED, MISMATCHED, NOT_FINISHED))
+    assert not any(text in analysis for text in (NOT_GENERATED, MISMATCHED, PARTIAL_ANALYSIS))
     assert "AI 개선 항목" in page
 
 
 @pytest.mark.parametrize(
-    ("status", "analysis_failed", "notice"),
+    ("status", "analysis_failed", "notices"),
     [
-        ("MISMATCH", False, MISMATCHED),
-        ("MISMATCH", True, MISMATCHED),
-        ("PASSED", True, NOT_FINISHED),
-        ("NOT_VERIFIED", True, NOT_FINISHED),
+        ("PASSED", True, (PARTIAL_ANALYSIS,)),
+        ("NOT_VERIFIED", True, (PARTIAL, PARTIAL_ANALYSIS)),
     ],
 )
-def test_withheld_ai_analysis_names_the_reason_and_hides_ai_text(status, analysis_failed, notice):
+def test_ai_analysis_of_a_partially_failed_run_is_shown_with_notices(status, analysis_failed, notices):
     page = _page(_ai_report(status=status), analysis_failed=analysis_failed)
     analysis = _text(page, "incident-analysis")
 
+    assert NO_LOG_VERDICT in analysis
+    assert all(note in analysis for note in notices)
+    assert "AI 요약 문장" in analysis
+    assert "AI가 본 원인" in analysis
+    assert PLACEHOLDER_CAUSE not in analysis
+    assert not any(text in analysis for text in (NOT_GENERATED, MISMATCHED))
+    assert "AI 개선 항목" in page
+
+
+@pytest.mark.parametrize("analysis_failed", [False, True])
+def test_mismatched_ai_analysis_is_hidden_with_its_reason(analysis_failed):
+    page = _page(_ai_report(status="MISMATCH"), analysis_failed=analysis_failed)
+    analysis = _text(page, "incident-analysis")
+
     assert "AI 개선 항목" not in page
-    assert notice in analysis
+    assert MISMATCHED in analysis
     assert NO_LOG_VERDICT in analysis
     assert PARTIAL not in analysis
+    assert PARTIAL_ANALYSIS not in analysis
     assert "AI 요약 문장" not in analysis
     assert "AI가 본 원인" not in analysis
     assert PLACEHOLDER_CAUSE in analysis
@@ -170,29 +183,32 @@ def test_no_span_without_ai_report_and_requests():
 
 
 @pytest.mark.parametrize(
-    ("report", "analysis_failed", "reason_shown"),
+    ("report", "reason_shown"),
     [
-        (_ai_report(), False, False),
-        (_ai_report(), True, True),
-        (_ai_report(status="MISMATCH"), False, True),
-        (_ai_report(status="NOT_VERIFIED"), False, False),
-        (_ai_report(status="NOT_VERIFIED"), True, True),
-        (IncidentAnalysisReport(observations=Observations()), False, True),
+        (_ai_report(), False),
+        (_ai_report(status="NOT_VERIFIED"), False),
+        (_ai_report(status="MISMATCH"), True),
+        (IncidentAnalysisReport(observations=Observations()), True),
     ],
 )
-def test_display_narrative_follows_withheld_reason(report, analysis_failed, reason_shown):
-    narrative = display_narrative(report, analysis_failed=analysis_failed)
+def test_display_narrative_follows_withheld_reason(report, reason_shown):
+    narrative = display_narrative(report)
 
-    assert bool(withheld_reason(report, analysis_failed=analysis_failed)) is reason_shown
+    assert bool(withheld_reason(report)) is reason_shown
     assert (narrative is report.narrative) is (not reason_shown)
 
 
 @pytest.mark.parametrize(
-    ("status", "expected"),
-    [("PASSED", ""), ("NOT_VERIFIED", PARTIAL), ("MISMATCH", "")],
+    ("status", "analysis_failed", "expected"),
+    [
+        ("PASSED", False, ()),
+        ("PASSED", True, (PARTIAL_ANALYSIS,)),
+        ("NOT_VERIFIED", False, (PARTIAL,)),
+        ("NOT_VERIFIED", True, (PARTIAL, PARTIAL_ANALYSIS)),
+    ],
 )
-def test_partial_verification_notice_only_for_unfinished_verification(status, expected):
-    assert partial_verification_notice(_ai_report(status=status)) == expected
+def test_result_caveats_name_unfinished_verification_and_failed_analysis(status, analysis_failed, expected):
+    assert result_caveats(_ai_report(status=status), analysis_failed=analysis_failed) == expected
 
 
 def test_plain_text_report_states_why_ai_analysis_is_missing():
@@ -202,6 +218,13 @@ def test_plain_text_report_states_why_ai_analysis_is_missing():
 
     assert NO_LOG_VERDICT in text
     assert NOT_GENERATED in text
+
+
+def test_plain_text_report_shows_ai_analysis_of_a_partially_failed_run_with_a_notice():
+    text = render_text(_ai_report(), analysis_failed=True)
+
+    assert PARTIAL_ANALYSIS in text
+    assert "AI가 본 원인" in text
 
 
 def test_plain_text_report_hides_mismatched_analysis_and_states_why():
