@@ -6,7 +6,7 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, partial_verification_notice, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
@@ -45,14 +45,19 @@ section p{max-width:none}
 
 def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) -> str:
     title = report.title or "Elasticsearch 클러스터 장애 분석"
-    start = stamp(report.analyzed_from) if report.analyzed_from else "미확인"
-    end = stamp(report.analyzed_to) if report.analyzed_to else "미확인"
+    span_from, span_to = analysis_span(report)
+    start = stamp(span_from) if span_from else "미확인"
+    end = stamp(span_to) if span_to else "미확인"
     duration = ""
-    if report.analyzed_from and report.analyzed_to:
-        delta = report.analyzed_to - report.analyzed_from
+    if span_from and span_to:
+        delta = span_to - span_from
         total_minutes = int(delta.total_seconds() // 60)
         duration = f"{total_minutes}분" if total_minutes >= 1 else f"{int(delta.total_seconds())}초"
-    generated = f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
+    fallback_hint = (
+        '<p class="hint">AI 분석이 없어 수집 요청 구간 기준으로 표시했습니다.</p>'
+        if span_from and not report.analyzed_from else ''
+    )
+    generated =f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
     return (
         f'<section id="overview">'
         f'<h1>{esc(title)}</h1>'
@@ -62,27 +67,35 @@ def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) ->
         f'<tr><th>총 장애 시간</th><td>{esc(duration or "미확인")}</td></tr>'
         + generated +
         f'</tbody></table>'
+        + fallback_hint +
         f'</section>'
     )
 
 
-def _incident_analysis(report: IncidentAnalysisReport, narrative, links=None) -> str:
-    out = '<section id="incident-analysis"><h2>현상 및 원인</h2>'
-    if report.summary:
-        out += render_paragraphs(report.summary)
-    if not narrative or not narrative.causes:
-        if not narrative and links:
-            v = verdict_line(links)
-            out += f'<p class="verdict">{esc(v.headline)}</p>'
-            if v.detail:
-                out += f'<p class="hint">{esc(v.detail)}</p>'
-            if line := node_line(links):
-                out += f'<p class="verdict">{esc(line)}</p>'
-            if line := cluster_event_line(links):
-                out += f'<p class="hint">{esc(line)}</p>'
-        else:
-            out += f'<p>{"확인된 원인 없음"}</p>'
-        return out + '</section>'
+def _verdict_block(links) -> str:
+    """코드가 판정한 지연 범위·노드 응답 지연·클러스터 이벤트. AI 해석과 무관하게 항상 그린다."""
+    v = verdict_line(links)
+    out = f'<p class="verdict">{esc(v.headline)}</p>'
+    if v.detail:
+        out += f'<p class="hint">{esc(v.detail)}</p>'
+    if line := node_line(links):
+        out += f'<p class="verdict">{esc(line)}</p>'
+    if line := cluster_event_line(links):
+        out += f'<p class="hint">{esc(line)}</p>'
+    return out
+
+
+def _incident_analysis(report: IncidentAnalysisReport, narrative, links, withheld: str = '', partial: str = '') -> str:
+    out = '<section id="incident-analysis"><h2>현상 및 원인</h2>' + _verdict_block(links)
+    if withheld:
+        out += f'<p class="hint">{esc(withheld)}</p>'
+    else:
+        if partial:
+            out += f'<p class="hint">{esc(partial)}</p>'
+        if report.summary:
+            out += render_paragraphs(report.summary)
+    if not narrative.causes:
+        return out + '<p>확인된 원인 없음</p></section>'
     direct = [c for c in narrative.causes if c.cause_type == "direct"]
     root = [c for c in narrative.causes if c.cause_type != "direct"]
     if direct:
@@ -191,6 +204,8 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     obs=report.observations
     links=build_cross_links(obs)
     narrative=display_narrative(report,analysis_failed=analysis_failed)
+    withheld=withheld_reason(report,analysis_failed=analysis_failed)
+    partial='' if withheld else partial_verification_notice(report)
     ranking=render_query_ranking(obs.query_requests,obs.candidates,{p.candidate_id:p.reason for p in narrative.suspect_picks} if narrative else {},query_log_note(obs))
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
@@ -199,8 +214,8 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     body=(_overview(report, now=now)
           +render_query_trend(project_query_trend(obs),links)
           +_timeline(report,narrative)
-          +_incident_analysis(report, narrative, links)
+          +_incident_analysis(report, narrative, links, withheld, partial)
           +_recommendations_section(narrative)
-          +_future_improvements(report)
+          +('' if withheld else _future_improvements(report))
           +evidence)
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'

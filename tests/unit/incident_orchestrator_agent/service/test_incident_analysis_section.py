@@ -1,0 +1,201 @@
+"""AI 해석이 없거나 숨겨져도 코드 판정과 분석 구간이 리포트에 남는지 확인한다."""
+import html
+import re
+from datetime import datetime
+
+import pytest
+
+from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
+from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
+    CauseAssessment,
+    IncidentAnalysisReport,
+    Narrative,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import (
+    analysis_span,
+    display_narrative,
+    partial_verification_notice,
+    withheld_reason,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import (
+    render_report,
+)
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import (
+    render_text,
+)
+
+NO_LOG_VERDICT = "수집된 쿼리 실행 로그가 없습니다."
+NOT_GENERATED = "AI 분석을 생성하지 못해 관측값만 표시합니다."
+MISMATCHED = "AI 분석에 원문과 맞지 않는 부분이 남아 관측값만 표시합니다."
+NOT_FINISHED = "분석이 완전히 끝나지 않아 AI 해석을 숨기고 관측값만 표시합니다."
+PARTIAL = "일부 검증 — 근거 대조를 끝까지 마치지 못한 해석입니다."
+FALLBACK_SPAN_HINT = "AI 분석이 없어 수집 요청 구간 기준으로 표시했습니다."
+PLACEHOLDER_CAUSE = "수집된 자료로 지연 원인을 확정할 수 없습니다."
+ALL_NOTICES = (NOT_GENERATED, MISMATCHED, NOT_FINISHED, PARTIAL)
+
+T = lambda h, m: datetime(2026, 10, 23, h, m, tzinfo=KST)  # noqa: E731
+REQUESTED = ((T(18, 54), T(19, 4)),)
+
+
+def _text(page: str, section_id: str) -> str:
+    match = re.search(rf'<section id="{section_id}">.*?</section>', page, re.S)
+    assert match, f"{section_id} 섹션이 없다"
+    return html.unescape(" ".join(re.sub(r"<[^>]+>", " ", match.group(0)).split()))
+
+
+def _page(report: IncidentAnalysisReport, *, analysis_failed: bool = False) -> str:
+    return render_report(report, generated_at=T(23, 0), analysis_failed=analysis_failed)
+
+
+def _ai_report(*, status: str = "PASSED", **overrides) -> IncidentAnalysisReport:
+    fields = dict(
+        observations=Observations(requested=REQUESTED),
+        narrative=Narrative(causes=(CauseAssessment(statement="AI가 본 원인", mechanism="AI 메커니즘"),)),
+        verification_status=status,
+        summary="AI 요약 문장",
+        future_improvements=("AI 개선 항목",),
+        analyzed_from=T(18, 55),
+        analyzed_to=T(19, 1),
+    )
+    fields.update(overrides)
+    return IncidentAnalysisReport(**fields)
+
+
+def test_code_verdict_and_notice_remain_when_ai_analysis_is_missing():
+    report = IncidentAnalysisReport(observations=Observations(requested=REQUESTED))
+
+    analysis = _text(_page(report, analysis_failed=True), "incident-analysis")
+
+    assert NO_LOG_VERDICT in analysis
+    assert NOT_GENERATED in analysis
+    assert PLACEHOLDER_CAUSE in analysis
+
+
+def test_overview_falls_back_to_requested_span_when_ai_analysis_is_missing():
+    report = IncidentAnalysisReport(observations=Observations(requested=REQUESTED))
+
+    overview = _text(_page(report, analysis_failed=True), "overview")
+
+    assert "2026-10-23 18:54:00+09:00 KST" in overview
+    assert "2026-10-23 19:04:00+09:00 KST" in overview
+    assert "10분" in overview
+    assert FALLBACK_SPAN_HINT in overview
+    assert "미확인" not in overview
+
+
+def test_overview_stays_unknown_without_any_span():
+    overview = _text(_page(IncidentAnalysisReport(observations=Observations()), analysis_failed=True), "overview")
+
+    assert overview.count("미확인") == 3
+    assert FALLBACK_SPAN_HINT not in overview
+
+
+def test_verified_ai_analysis_shows_code_verdict_summary_and_causes_without_notice():
+    page = _page(_ai_report())
+    analysis = _text(page, "incident-analysis")
+
+    assert NO_LOG_VERDICT in analysis
+    assert "AI 요약 문장" in analysis
+    assert "AI가 본 원인" in analysis
+    assert PLACEHOLDER_CAUSE not in analysis
+    assert not any(text in analysis for text in ALL_NOTICES)
+    assert "AI 개선 항목" in page
+    overview = _text(page, "overview")
+    assert "2026-10-23 18:55:00+09:00 KST" in overview
+    assert FALLBACK_SPAN_HINT not in overview
+
+
+def test_partially_verified_ai_analysis_is_shown_with_a_notice():
+    page = _page(_ai_report(status="NOT_VERIFIED"))
+    analysis = _text(page, "incident-analysis")
+
+    assert NO_LOG_VERDICT in analysis
+    assert PARTIAL in analysis
+    assert "AI 요약 문장" in analysis
+    assert "AI가 본 원인" in analysis
+    assert PLACEHOLDER_CAUSE not in analysis
+    assert not any(text in analysis for text in (NOT_GENERATED, MISMATCHED, NOT_FINISHED))
+    assert "AI 개선 항목" in page
+
+
+@pytest.mark.parametrize(
+    ("status", "analysis_failed", "notice"),
+    [
+        ("MISMATCH", False, MISMATCHED),
+        ("MISMATCH", True, MISMATCHED),
+        ("PASSED", True, NOT_FINISHED),
+        ("NOT_VERIFIED", True, NOT_FINISHED),
+    ],
+)
+def test_withheld_ai_analysis_names_the_reason_and_hides_ai_text(status, analysis_failed, notice):
+    page = _page(_ai_report(status=status), analysis_failed=analysis_failed)
+    analysis = _text(page, "incident-analysis")
+
+    assert "AI 개선 항목" not in page
+    assert notice in analysis
+    assert NO_LOG_VERDICT in analysis
+    assert PARTIAL not in analysis
+    assert "AI 요약 문장" not in analysis
+    assert "AI가 본 원인" not in analysis
+    assert PLACEHOLDER_CAUSE in analysis
+
+
+def test_ai_span_wins_over_requested_span():
+    report = _ai_report()
+
+    assert analysis_span(report) == (T(18, 55), T(19, 1))
+
+
+def test_requested_span_covers_all_requested_ranges():
+    report = IncidentAnalysisReport(
+        observations=Observations(requested=((T(19, 0), T(19, 5)), (T(18, 54), T(18, 58)), (T(19, 2), T(19, 4))))
+    )
+
+    assert analysis_span(report) == (T(18, 54), T(19, 5))
+
+
+def test_no_span_without_ai_report_and_requests():
+    assert analysis_span(IncidentAnalysisReport(observations=Observations())) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("report", "analysis_failed", "reason_shown"),
+    [
+        (_ai_report(), False, False),
+        (_ai_report(), True, True),
+        (_ai_report(status="MISMATCH"), False, True),
+        (_ai_report(status="NOT_VERIFIED"), False, False),
+        (_ai_report(status="NOT_VERIFIED"), True, True),
+        (IncidentAnalysisReport(observations=Observations()), False, True),
+    ],
+)
+def test_display_narrative_follows_withheld_reason(report, analysis_failed, reason_shown):
+    narrative = display_narrative(report, analysis_failed=analysis_failed)
+
+    assert bool(withheld_reason(report, analysis_failed=analysis_failed)) is reason_shown
+    assert (narrative is report.narrative) is (not reason_shown)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("PASSED", ""), ("NOT_VERIFIED", PARTIAL), ("MISMATCH", "")],
+)
+def test_partial_verification_notice_only_for_unfinished_verification(status, expected):
+    assert partial_verification_notice(_ai_report(status=status)) == expected
+
+
+def test_plain_text_report_states_why_ai_analysis_is_missing():
+    report = IncidentAnalysisReport(observations=Observations(requested=REQUESTED))
+
+    text = render_text(report, analysis_failed=True)
+
+    assert NO_LOG_VERDICT in text
+    assert NOT_GENERATED in text
+
+
+def test_plain_text_report_marks_partially_verified_analysis():
+    text = render_text(_ai_report(status="NOT_VERIFIED"))
+
+    assert PARTIAL in text
+    assert "AI가 본 원인" in text
