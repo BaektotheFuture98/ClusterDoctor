@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -46,6 +47,25 @@ def _incident_response_format() -> dict:
         "name": "incident_report_object",
         "schema": {"type": "object", "additionalProperties": True},
     }}
+
+
+_CARRIED_FIELDS = ("title", "future_improvements")
+
+
+def _with_carried_fields(text: str, previous: dict) -> object:
+    """교정·재수정 응답이 생략한 title·future_improvements를 직전 판본 값으로 채운다.
+
+    두 필드는 이번 단계가 새로 판단하는 본문이 아니라 직전 판본이 이미 정한 값이다.
+    모델이 빠뜨렸다고 사건 전체 종합을 버리면 운영자는 관측값만 남은 리포트를 받는다.
+    판단 본문(summary·root_causes 등)은 채우지 않으므로 그쪽 누락은 계속 검증에서 실패한다.
+    JSON 객체가 아니면 그대로 돌려줘 검증이 실패하게 한다.
+    """
+    data = json.loads(text)
+    if isinstance(data, dict):
+        for key in _CARRIED_FIELDS:
+            if data.get(key) is None:
+                data[key] = previous[key]
+    return data
 
 
 class ReportWriter:
@@ -103,7 +123,6 @@ class ReportWriter:
                        window_reports: list[LogAnalysisReport],
                        observations: Observations, evidence: list[Evidence]) -> LogAnalysisReport:
         """추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다."""
-        import json
         from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
         from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
         spans = [*observations.requested,
@@ -143,7 +162,8 @@ class ReportWriter:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
         with llm_label("incident_review"):
             reviewed = self._call_llm(review_messages, response_format=_incident_response_format())
-        draft = IncidentDraftReport.model_validate_json(reviewed)
+        draft = IncidentDraftReport.model_validate(_with_carried_fields(
+            reviewed, {"title": draft.title, "future_improvements": draft.future_improvements}))
         if not draft.summary.strip():
             raise ValueError("사건 교정 응답에 요약이 없다")
         first = window_reports[0]
@@ -200,7 +220,8 @@ class ReportWriter:
         try:
             from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
             draft_type = IncidentDraftReport if incident_final else DraftReport
-            draft = draft_type.model_validate_json(text)
+            draft = draft_type.model_validate(_with_carried_fields(
+                text, {"title": report.title, "future_improvements": list(report.future_improvements)}))
             if not draft.summary.strip():
                 return None
         except Exception:

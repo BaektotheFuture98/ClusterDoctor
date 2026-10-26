@@ -6,6 +6,9 @@ LLM은 부르지 않는다. 호출자(call_llm)를 대본대로 답하는 함수
 import json
 from datetime import datetime
 
+import pytest
+from pydantic import ValidationError
+
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
@@ -28,6 +31,12 @@ _FIRST_PASS = {
     "recommendations": [],
     "unresolved_questions": [],
     "future_improvements": ["다른 노드의 같은 증상 여부를 확인한다."],
+}
+
+_REVIEW_WITHOUT_CARRIED = {
+    key: value
+    for key, value in _FIRST_PASS.items()
+    if key not in ("title", "future_improvements")
 }
 
 
@@ -88,3 +97,39 @@ def test_revision_input_carries_title_and_future_improvements():
     current = _json_after(_REPORT_MARKER, [{"content": prompt}])
     assert current["title"] == "쿼리 지연"
     assert current["future_improvements"] == ["재발 방지 조치"]
+
+
+def test_review_reply_without_title_keeps_first_pass_values():
+    """교정 응답이 title·future_improvements를 생략해도 1차 종합의 값이 유지된다."""
+    llm = ScriptedLlm(_FIRST_PASS, _REVIEW_WITHOUT_CARRIED)
+
+    report = _draft_incident(llm)
+
+    assert report.title == "쿼리 지연"
+    assert report.future_improvements == ("다른 노드의 같은 증상 여부를 확인한다.",)
+
+
+def test_review_reply_missing_a_core_field_still_fails():
+    """생략을 메워 주는 것은 title·future_improvements뿐이다. 판단 본문은 그대로 엄격하다."""
+    without_summary = {k: v for k, v in _REVIEW_WITHOUT_CARRIED.items() if k != "summary"}
+    llm = ScriptedLlm(_FIRST_PASS, without_summary)
+
+    with pytest.raises(ValidationError):
+        _draft_incident(llm)
+
+
+def test_incident_revision_without_title_is_still_applied():
+    report = _window_report().model_copy(
+        update={"title": "쿼리 지연", "future_improvements": ("재발 방지 조치",)}
+    )
+    revised_reply = {**_REVIEW_WITHOUT_CARRIED, "summary": "교정된 요약."}
+    llm = ScriptedLlm(revised_reply)
+
+    revised = ReportWriter(call_llm=llm).revise_report(
+        report, ("지적",), [], incident_final=True
+    )
+
+    assert revised is not None
+    assert revised.summary == "교정된 요약."
+    assert revised.title == "쿼리 지연"
+    assert revised.future_improvements == ("재발 방지 조치",)
