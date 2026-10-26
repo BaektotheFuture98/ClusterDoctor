@@ -126,17 +126,6 @@ def _recommendations_section(narrative) -> str:
     return out + '</ul></section>'
 
 
-def _future_improvements(report: IncidentAnalysisReport) -> str:
-    items = [s.strip() for s in report.future_improvements if s.strip()]
-    if not items:
-        return ''
-    return (
-        '<section id="future-improvements"><h2>향후 개선 방안</h2><ul>'
-        + ''.join(f'<li>{esc(item)}</li>' for item in items)
-        + '</ul></section>'
-    )
-
-
 def quotes(items):
     return ''.join(f'<pre class="quote">{esc(text)}</pre>' for text in visible_citations(items))
 
@@ -211,10 +200,9 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     evidence=('<details id="evidence"><summary>수집 데이터 보기</summary>'
               +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+'</details>')
     body=(_overview(report, now=now)
-          +render_query_trend(project_query_trend(obs),links)
-          +_timeline(report,narrative)
           +_incident_analysis(report, narrative, links, withheld, caveats)
           +_recommendations_section(narrative)
-          +('' if withheld else _future_improvements(report))
+          +render_query_trend(project_query_trend(obs),links)
+          +_timeline(report,narrative)
           +evidence)
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Elasticsearch 쿼리·노드 로그 분석</title>'+PRINT_OPEN_SCRIPT+'<style>'+css+_EXTRA_CSS+'</style></head><body><main class="wrap">'+body+'</main></body></html>'
