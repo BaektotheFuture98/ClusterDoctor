@@ -41,7 +41,6 @@ def to_incident_analysis_report(
         evidence=tuple(evidence),
         title=report.title,
         summary=report.summary,
-        future_improvements=report.future_improvements,
         timeline_annotations=tuple(
             TimelineAnnotation(
                 at=event.at,

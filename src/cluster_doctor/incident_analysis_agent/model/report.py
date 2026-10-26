@@ -129,7 +129,6 @@ class LogAnalysisReport(BaseModel):
     verification_issues: tuple[str, ...] = Field(default_factory=tuple)
     revision_count: int = 0
     title: str = ""
-    future_improvements: tuple[str, ...] = Field(default_factory=tuple)
 
     def cited_refs(self) -> set[str]:
         """리포트 본문이 실제로 인용한 참조 전부.

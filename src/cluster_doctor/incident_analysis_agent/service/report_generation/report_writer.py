@@ -49,33 +49,18 @@ def _incident_response_format() -> dict:
     }}
 
 
-_CARRIED_FIELDS = ("title", "future_improvements")
+def _with_carried_title(text: str, title: str) -> object:
+    """교정·재수정 응답이 생략한 title을 직전 판본 값으로 채운다.
 
-
-def _omitted(key: str, value: object) -> bool:
-    """응답이 비워 둔 것으로 볼 값.
-
-    title은 빈 문자열도 생략이다. 빈 제목이 좋은 제목을 덮으면 안 된다.
-    future_improvements의 빈 배열은 '근거 없는 항목을 뺐다'는 정당한 결과라 생략이 아니다.
-    """
-    if key == "title":
-        return not str(value or "").strip()
-    return value is None
-
-
-def _with_carried_fields(text: str, previous: dict) -> object:
-    """교정·재수정 응답이 생략한 title·future_improvements를 직전 판본 값으로 채운다.
-
-    두 필드는 이번 단계가 새로 판단하는 본문이 아니라 직전 판본이 이미 정한 값이다.
-    모델이 빠뜨렸다고 사건 전체 종합을 버리면 운영자는 관측값만 남은 리포트를 받는다.
-    판단 본문(summary·root_causes 등)은 채우지 않으므로 그쪽 누락은 계속 검증에서 실패한다.
-    JSON 객체가 아니면 그대로 돌려줘 검증이 실패하게 한다.
+    title은 이번 단계가 새로 판단하는 본문이 아니라 직전 판본이 이미 정한 값이다. 빈 문자열도
+    생략으로 본다 — 빈 제목이 좋은 제목을 덮으면 안 된다. 모델이 빠뜨렸다고 사건 전체 종합을
+    버리면 운영자는 관측값만 남은 리포트를 받는다. 판단 본문(summary·root_causes 등)은 채우지
+    않으므로 그쪽 누락은 계속 검증에서 실패한다. JSON 객체가 아니면 그대로 돌려줘 검증이
+    실패하게 한다.
     """
     data = json.loads(text)
-    if isinstance(data, dict):
-        for key in _CARRIED_FIELDS:
-            if _omitted(key, data.get(key)):
-                data[key] = previous[key]
+    if isinstance(data, dict) and not str(data.get("title") or "").strip():
+        data["title"] = title
     return data
 
 
@@ -173,8 +158,7 @@ class ReportWriter:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
         with llm_label("incident_review"):
             reviewed = self._call_llm(review_messages, response_format=_incident_response_format())
-        draft = IncidentDraftReport.model_validate(_with_carried_fields(
-            reviewed, {"title": draft.title, "future_improvements": draft.future_improvements}))
+        draft = IncidentDraftReport.model_validate(_with_carried_title(reviewed, draft.title))
         if not draft.summary.strip():
             raise ValueError("사건 교정 응답에 요약이 없다")
         first = window_reports[0]
@@ -231,8 +215,7 @@ class ReportWriter:
         try:
             from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
             draft_type = IncidentDraftReport if incident_final else DraftReport
-            draft = draft_type.model_validate(_with_carried_fields(
-                text, {"title": report.title, "future_improvements": list(report.future_improvements)}))
+            draft = draft_type.model_validate(_with_carried_title(text, report.title))
             if not draft.summary.strip():
                 return None
         except Exception:

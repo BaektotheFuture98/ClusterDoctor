@@ -225,18 +225,10 @@ class DraftReport(BaseModel):
     suggested_windows: list[DraftWindowSuggestion] = Field(
         default=[], description="needs_more_context가 true일 때 필요한 시간 범위."
     )
-    future_improvements: list[str] = Field(
-        default=[],
-        description=(
-            "향후 개선 방안. 비슷한 증상이 다른 노드나 랙에서도 관찰되는지, "
-            "반복 방지를 위한 장기 조치. 근거가 없으면 빈 배열."
-        ),
-    )
 
     _string_list = field_validator(
         "summary_evidence_refs",
         "unresolved_questions",
-        "future_improvements",
         mode="before",
     )(_as_string_list)
 
@@ -307,9 +299,6 @@ class DraftReport(BaseModel):
             evidence_refs=evidence_refs,
             verification_status=VerificationStatus.NOT_VERIFIED,
             revision_count=revision_count,
-            future_improvements=tuple(
-                s.strip() for s in self.future_improvements if s.strip()
-            ),
         )
 
     @staticmethod

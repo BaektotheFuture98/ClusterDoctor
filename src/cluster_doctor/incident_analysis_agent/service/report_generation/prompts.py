@@ -92,7 +92,6 @@ _ANALYSIS_RULES = """
 - title은 장애를 한 줄로 설명하는 제목이다(40자 내외). 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'. 분석 결과를 먼저 쓴 뒤 가장 알맞은 제목을 고른다.
 - root_causes의 각 항목에 cause_type을 "direct" 또는 "root"로 표시한다. direct는 즉각적 트리거(예: 특정 쿼리 급증, 노드 장애)이고, root는 구조적 근본 원인(예: 샤드 과다 배치, 힙 설정 부족)이다. 구분이 불명확하면 "root"로 둔다.
 - recommendations의 wiki_ref는 장애 패턴 위키에서 이 조치에 해당하는 패턴명이다. 위키 컨텍스트에 패턴명이 있으면 그 이름을 그대로 쓴다. 없으면 빈 문자열.
-- future_improvements는 향후 개선 방안이다. 이번 관측에서 비슷한 증상이 다른 노드나 랙에서도 감지되는지 위키 패턴·관측 데이터를 근거로 평가한다. 반복 방지를 위한 장기 조치도 포함할 수 있다. 이번 근거에서 확인되지 않으면 빈 배열로 둔다.
 
 이 분석 구간 **밖의** 시간을 봐야 답할 수 있는 것이 있으면
 needs_more_context=true로 두고 suggested_windows에 필요한 범위를 쓴다.
@@ -159,9 +158,8 @@ JSON 객체 하나만 반환한다. 한국어로 간결하게 쓰며 원문 식�
 - "root_causes": {cause_type("direct"|"root"), statement, mechanism, supporting_evidence_refs, counter_evidence_refs} 객체 배열. cause_type은 즉각적 트리거면 "direct", 구조적 근본 원인이면 "root".
 - "recommendations": 객체 배열. 각 객체의 "text"는 한 줄 조치 문자열, "cause_index"는 대응 원인의 0부터 시작하는 인덱스(공통 조사는 null), "evidence_refs"는 근거 id 배열, "wiki_ref"는 위키 패턴명(없으면 빈 문자열)이다.
 - "unresolved_questions": 필요한 추가 확인 질문의 문자열 배열.
-- "future_improvements": 향후 개선 방안 문자열 배열. 비슷한 증상이 다른 노드나 랙에서도 감지되는지, 반복 방지 장기 조치를 포함한다. 근거가 없으면 빈 배열.
 - 선택적으로 "timeline": {at, description, evidence_refs} 객체 배열. at은 해당 근거 시각을 KST ISO 8601로 쓴다.
-title, summary, findings, root_causes, recommendations, unresolved_questions, future_improvements는 반드시 명시한다. 배열 필드에 해당 내용이 없으면 빈 배열로 둔다.
+title, summary, findings, root_causes, recommendations, unresolved_questions는 반드시 명시한다. 배열 필드에 해당 내용이 없으면 빈 배열로 둔다.
 확보된 Evidence id만 인용하며 근거가 없는 연결에 id를 붙여 입증된 것처럼 보이게 하지 않는다.
 응답 직전에 사실과 가설의 구분, 필드 간 반복 여부를 점검한다.
 점검 과정·내부 검증 이유·메타 설명을 출력하지 않는다.
@@ -196,7 +194,7 @@ _INCIDENT_REVIEW_INSTRUCTIONS = """너는 장애 진단 초안의 사실 범위�
 JVM 단일 사용률로 GC를 원인으로 만들지 않는다. rejected 누적값은 이번 사건의 거절 발생 근거가 아니다.
 수집 실패·생략을 자료 부재로 단정하지 않고, 저장된 일부 키워드로 개별 실행을 합치지 않는다.
 입력 초안과 동일한 JSON 필드 구조로 교정한 보고서 하나만 반환한다. 한국어로 쓰며 원문 식별자와 필드명은 유지한다.
-필수 키는 title, summary, findings, root_causes, recommendations, unresolved_questions, future_improvements이다. title은 교정한 내용과 어긋날 때만 고치고, future_improvements는 근거가 없는 항목만 뺀다. 참조 배열·cause_index도 보존 또는 교정한다.
+필수 키는 title, summary, findings, root_causes, recommendations, unresolved_questions이다. title은 교정한 내용과 어긋날 때만 고친다. 참조 배열·cause_index도 보존 또는 교정한다.
 응답은 문법적으로 완전한 JSON 객체 하나여야 한다. 문자열·배열·객체의 닫힘을 점검하고, 객체가 끝나면 즉시 종료한다.
 코드 펜스·설명·추가 객체·출력 뒤의 다른 문자를 붙이지 않는다.
 """
@@ -321,7 +319,6 @@ INCIDENT_EDITABLE_FIELDS = frozenset({
     "root_causes",
     "recommendations",
     "unresolved_questions",
-    "future_improvements",
 })
 
 

@@ -54,12 +54,28 @@ def _ai_report(*, status: str = "PASSED", **overrides) -> IncidentAnalysisReport
         narrative=Narrative(causes=(CauseAssessment(statement="AI가 본 원인", mechanism="AI 메커니즘"),)),
         verification_status=status,
         summary="AI 요약 문장",
-        future_improvements=("AI 개선 항목",),
         analyzed_from=T(18, 55),
         analyzed_to=T(19, 1),
     )
     fields.update(overrides)
     return IncidentAnalysisReport(**fields)
+
+
+SECTION_ORDER = ("overview", "incident-analysis", "recommendations", "query-trend", "timeline", "evidence")
+
+
+def test_sections_put_conclusion_and_actions_before_supporting_data():
+    narrative = Narrative(
+        causes=(CauseAssessment(statement="AI가 본 원인"),),
+        recommendations=("대상 쿼리의 호출 빈도를 줄인다",),
+    )
+    page = _page(_ai_report(narrative=narrative))
+
+    shown = re.findall(r'id="(overview|incident-analysis|recommendations|query-trend|timeline|evidence)"', page)
+
+    assert shown[:3] == ["overview", "incident-analysis", "recommendations"]
+    assert shown == [section for section in SECTION_ORDER if section in shown]
+    assert "future-improvements" not in page
 
 
 def test_code_verdict_and_notice_remain_when_ai_analysis_is_missing():
@@ -110,7 +126,6 @@ def test_verified_ai_analysis_shows_code_verdict_summary_and_causes_without_noti
     assert "AI가 본 원인" in analysis
     assert PLACEHOLDER_CAUSE not in analysis
     assert not any(text in analysis for text in ALL_NOTICES)
-    assert "AI 개선 항목" in page
     overview = _text(page, "overview")
     assert "2026-10-23 18:55:00+09:00 KST" in overview
     assert FALLBACK_SPAN_HINT not in overview
@@ -126,7 +141,6 @@ def test_partially_verified_ai_analysis_is_shown_with_a_notice():
     assert "AI가 본 원인" in analysis
     assert PLACEHOLDER_CAUSE not in analysis
     assert not any(text in analysis for text in (NOT_GENERATED, MISMATCHED, PARTIAL_ANALYSIS))
-    assert "AI 개선 항목" in page
 
 
 @pytest.mark.parametrize(
@@ -146,7 +160,6 @@ def test_ai_analysis_of_a_partially_failed_run_is_shown_with_notices(status, ana
     assert "AI가 본 원인" in analysis
     assert PLACEHOLDER_CAUSE not in analysis
     assert not any(text in analysis for text in (NOT_GENERATED, MISMATCHED))
-    assert "AI 개선 항목" in page
 
 
 @pytest.mark.parametrize("analysis_failed", [False, True])
@@ -154,7 +167,6 @@ def test_mismatched_ai_analysis_is_hidden_with_its_reason(analysis_failed):
     page = _page(_ai_report(status="MISMATCH"), analysis_failed=analysis_failed)
     analysis = _text(page, "incident-analysis")
 
-    assert "AI 개선 항목" not in page
     assert MISMATCHED in analysis
     assert NO_LOG_VERDICT in analysis
     assert PARTIAL not in analysis

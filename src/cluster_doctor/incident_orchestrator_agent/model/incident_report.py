@@ -98,4 +98,3 @@ class IncidentAnalysisReport:
     analyzed_to: datetime | None = None
     title: str = ""
     summary: str = ""
-    future_improvements: tuple[str, ...] = ()
