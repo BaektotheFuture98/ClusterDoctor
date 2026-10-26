@@ -13,7 +13,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 _logger = logging.getLogger(__name__)
 
+# 연결·initialize·tool 호출을 모두 합친 상한이다.
 _TIMEOUT_SECONDS = 30
+# 위 상한이 안쪽에서 먹지 않을 때만 닿는 마지막 방어선.
+_BACKSTOP_GRACE_SECONDS = 5
 
 
 class MonitoringWikiClient:
@@ -25,11 +28,21 @@ class MonitoringWikiClient:
     def ask(self, question: str) -> str:
         """증상 질문을 위키에 보내고 관련 패턴 컨텍스트를 반환한다.
 
-        실패하면 빈 문자열을 반환한다. 호출자는 gaps에 기록하고 계속 진행한다.
+        실패하거나 상한을 넘기면 예외를 던진다. 호출자가 gaps에 기록하고 계속 진행한다.
+
+        ``with ThreadPoolExecutor``를 쓰지 않는 이유: 블록을 나갈 때 작업 스레드가
+        끝나기를 기다려서, 응답 없는 서버에서는 ``future.result(timeout=...)``이
+        타임아웃을 던진 뒤에도 httpx 읽기 타임아웃(300초)까지 호출자를 붙잡는다.
         """
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, self._ask(question))
-            return future.result(timeout=_TIMEOUT_SECONDS)
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="monitoring-wiki")
+        try:
+            future = pool.submit(asyncio.run, self._ask_within_deadline(question))
+            return future.result(timeout=_TIMEOUT_SECONDS + _BACKSTOP_GRACE_SECONDS)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    async def _ask_within_deadline(self, question: str) -> str:
+        return await asyncio.wait_for(self._ask(question), timeout=_TIMEOUT_SECONDS)
 
     async def _ask(self, question: str) -> str:
         from mcp.client.streamable_http import streamable_http_client
@@ -38,10 +51,7 @@ class MonitoringWikiClient:
         async with streamable_http_client(self._url) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                result = await asyncio.wait_for(
-                    s.call_tool("ask", {"question": question}),
-                    timeout=_TIMEOUT_SECONDS - 2,
-                )
+                result = await s.call_tool("ask", {"question": question})
         if result.is_error:
             raise RuntimeError(
                 result.content[0].text if result.content else "MCP 오류"
