@@ -30,7 +30,7 @@ NOT_GENERATED = "AI 분석을 생성하지 못해 관측값만 표시합니다."
 MISMATCHED = "AI 분석에 원문과 맞지 않는 부분이 남아 관측값만 표시합니다."
 NOT_FINISHED = "분석이 완전히 끝나지 않아 AI 해석을 숨기고 관측값만 표시합니다."
 PARTIAL = "일부 검증 — 근거 대조를 끝까지 마치지 못한 해석입니다."
-FALLBACK_SPAN_HINT = "AI 분석이 없어 수집 요청 구간 기준으로 표시했습니다."
+FALLBACK_SPAN_HINT = "AI 분석 구간이 없어 수집 요청 구간 기준으로 표시했습니다."
 PLACEHOLDER_CAUSE = "수집된 자료로 지연 원인을 확정할 수 없습니다."
 ALL_NOTICES = (NOT_GENERATED, MISMATCHED, NOT_FINISHED, PARTIAL)
 
@@ -82,6 +82,16 @@ def test_overview_falls_back_to_requested_span_when_ai_analysis_is_missing():
     assert "10분" in overview
     assert FALLBACK_SPAN_HINT in overview
     assert "미확인" not in overview
+
+
+def test_overview_falls_back_when_ai_report_lacks_one_end_of_its_span():
+    report = _ai_report(analyzed_to=None)
+
+    overview = _text(_page(report), "overview")
+
+    assert "2026-10-23 18:54:00+09:00 KST" in overview
+    assert "2026-10-23 19:04:00+09:00 KST" in overview
+    assert FALLBACK_SPAN_HINT in overview
 
 
 def test_overview_stays_unknown_without_any_span():
@@ -192,6 +202,13 @@ def test_plain_text_report_states_why_ai_analysis_is_missing():
 
     assert NO_LOG_VERDICT in text
     assert NOT_GENERATED in text
+
+
+def test_plain_text_report_hides_mismatched_analysis_and_states_why():
+    text = render_text(_ai_report(status="MISMATCH"))
+
+    assert MISMATCHED in text
+    assert "AI가 본 원인" not in text
 
 
 def test_plain_text_report_marks_partially_verified_analysis():
