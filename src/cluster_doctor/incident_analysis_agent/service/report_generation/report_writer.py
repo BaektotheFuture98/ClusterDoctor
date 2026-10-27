@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Collection
 from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
@@ -49,21 +50,39 @@ def _incident_response_format() -> dict:
     }}
 
 
-# 위키 응답을 종합·교정 프롬프트에 싣는 상한. 구간 범위와 누적 관측값이 쓰는 예산을 침범하지 않는다.
-_WIKI_CONTEXT_MAX_CHARS = 6000
+# 위키 색인·페이지를 프롬프트에 싣는 상한. 구간 범위와 누적 관측값이 쓰는 예산을 침범하지 않는다.
+_WIKI_INDEX_MAX_CHARS = 6000
+_WIKI_PAGES_MAX_CHARS = 6000
+_WIKI_MAX_PATTERNS = 3
+
+_INDEX_ROW_ID = re.compile(r"^\|\s*\[([^\]\s]+)\]\(", re.MULTILINE)
 
 
-def _keep_known_wiki_refs(report: LogAnalysisReport, wiki_context: str) -> LogAnalysisReport:
-    """위키 컨텍스트에 실제로 있는 패턴명만 ``wiki_ref``로 남긴다.
+def _cut_at_line(text: str, limit: int) -> str:
+    """``limit`` 이내에서 마지막 줄바꿈까지만 남긴다. 줄바꿈이 없으면 ``limit``에서 자른다."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    newline = head.rfind("\n")
+    return head[:newline] if newline > 0 else head
 
-    모델이 지어낸 이름이 위키 배지로 나가면 운영자는 존재하지 않는 패턴을 찾게 된다.
+
+def _index_pattern_ids(index: str) -> tuple[str, ...]:
+    """색인 표 행 ``| [<id>](…) | …``에서 패턴 id를 등장 순서대로, 중복 없이 뽑는다."""
+    return tuple(dict.fromkeys(_INDEX_ROW_ID.findall(index)))
+
+
+def _keep_known_wiki_refs(report: LogAnalysisReport, known_ids: Collection[str]) -> LogAnalysisReport:
+    """위키 색인에 실제로 있는 패턴 id만 ``wiki_ref``로 남긴다.
+
+    모델이 지어낸 id가 위키 배지로 나가면 운영자는 존재하지 않는 패턴을 찾게 된다.
     """
-    def unknown(ref: str) -> bool:
-        ref = ref.strip()
-        return not ref or ref not in wiki_context
+    def known(ref: str) -> bool:
+        return ref.strip() in known_ids
 
     recommendations = tuple(
-        item.model_copy(update={"wiki_ref": ""}) if item.wiki_ref and unknown(item.wiki_ref) else item
+        item.model_copy(update={"wiki_ref": item.wiki_ref.strip() if known(item.wiki_ref) else ""})
+        if item.wiki_ref else item
         for item in report.recommendations
     )
     return report.model_copy(update={"recommendations": recommendations})
@@ -138,11 +157,13 @@ class ReportWriter:
     def draft_incident(self, *, incident_id: str, cluster: str,
                        window_reports: list[LogAnalysisReport],
                        observations: Observations, evidence: list[Evidence],
-                       wiki_context: str = "") -> LogAnalysisReport:
+                       wiki_index: str = "",
+                       open_wiki_pages: Callable[[tuple[str, ...]], dict[str, str]] | None = None,
+                       ) -> LogAnalysisReport:
         """추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다.
 
-        ``wiki_context``는 참고용이다. 길이를 제한해 프롬프트 예산을 지키고, 위키에 없는 패턴명이
-        ``wiki_ref``로 남지 않게 한다.
+        ``wiki_index``는 참고용이다. 길이를 제한해 프롬프트 예산을 지키고, 색인에 없는 id는
+        ``wiki_ref``로 남지 않게 한다. 종합이 고른 패턴의 페이지만 ``open_wiki_pages``로 열어 교정에 싣는다.
         """
         from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
         from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
@@ -157,12 +178,13 @@ class ReportWriter:
         previous_json = json.dumps({"windows": previous}, ensure_ascii=False)
         if len(previous_json) > 12000:
             raise ValueError("구간별 범위 입력이 종합 예산을 초과했다")
-        wiki = wiki_context.strip()[:_WIKI_CONTEXT_MAX_CHARS]
+        index = _cut_at_line(wiki_index.strip(), _WIKI_INDEX_MAX_CHARS)
+        valid_ids = _index_pattern_ids(index)
         messages = build_incident_synthesis_messages(
             cluster=cluster, analyzed_from=start, analyzed_to=end,
             previous_windows_json=previous_json,
-            analysis_context=build_analysis_context(observations, evidence, max_chars=40000 - len(wiki), thresholds=self._thresholds),
-            wiki_context=wiki,
+            analysis_context=build_analysis_context(observations, evidence, max_chars=40000 - len(index), thresholds=self._thresholds),
+            wiki_index=index,
         )
         if sum(len(message['content']) for message in messages) > 60000:
             raise ValueError("사건 종합 입력이 예산을 초과했다")
@@ -174,13 +196,26 @@ class ReportWriter:
         if not draft.summary.strip():
             raise ValueError("사건 종합 응답에 요약이 없다")
         editable = draft.model_dump_json(include=INCIDENT_EDITABLE_FIELDS)
-        context_budget = min(40000, 60000 - len(editable) - len(_INCIDENT_REVIEW_INSTRUCTIONS) - len(wiki) - 500)
+        pages = ""
+        if valid_ids and open_wiki_pages is not None:
+            chosen = tuple(dict.fromkeys(
+                ref for ref in (item.wiki_ref.strip() for item in draft.recommendations) if ref in valid_ids
+            ))[:_WIKI_MAX_PATTERNS]
+            if chosen:
+                try:
+                    opened = open_wiki_pages(chosen)
+                except Exception as exc:
+                    _logger.warning("[incident] 위키 패턴 페이지를 열지 못했다: %s", exc)
+                    opened = {}
+                pages = _cut_at_line(
+                    "\n\n".join(opened[i].strip() for i in chosen if i in opened), _WIKI_PAGES_MAX_CHARS)
+        context_budget = min(40000, 60000 - len(editable) - len(_INCIDENT_REVIEW_INSTRUCTIONS) - len(pages) - 500)
         if context_budget < 1000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
         review_messages = build_incident_review_messages(
             analyzed_from=start, analyzed_to=end, draft_json=editable,
             analysis_context=build_analysis_context(observations, evidence, max_chars=context_budget, thresholds=self._thresholds),
-            wiki_context=wiki,
+            wiki_pages=pages,
         )
         if sum(len(message['content']) for message in review_messages) > 60000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
@@ -195,7 +230,7 @@ class ReportWriter:
             window=TimeRange(first.analyzed_from, first.analyzed_to),
             evidence_refs=tuple(e.evidence_id for e in evidence),
         ).model_copy(update={"analyzed_from": start, "analyzed_to": end})
-        return _keep_known_wiki_refs(report, wiki)
+        return _keep_known_wiki_refs(report, valid_ids)
 
     @staticmethod
     def _prior_summary(prior_report: LogAnalysisReport | None) -> str:
