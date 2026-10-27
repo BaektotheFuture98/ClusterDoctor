@@ -1,4 +1,4 @@
-"""MonitoringWikiClient.ask가 설정한 상한 안에서 끝나는지 로컬 서버로 검증한다.
+"""MonitoringWikiClient가 설정한 상한 안에서 끝나는지 로컬 서버로 검증한다.
 
 운영 상한 30초 대신 짧은 값을 쓴다. 상한을 못 지키는 코드는 이 파일에서 300초 가까이
 붙잡히므로, 호출은 별도 스레드에서 돌리고 기한 안에 안 끝나면 실패로 본다.
@@ -37,16 +37,16 @@ def _free_port() -> int:
 
 @pytest.fixture
 def start_wiki_server():
-    """`ask` tool이 delay_seconds 뒤에 답하는 실제 MCP 서버를 띄운다."""
+    """`get_index` tool이 delay_seconds 뒤에 답하는 실제 MCP 서버를 띄운다."""
     servers: list[uvicorn.Server] = []
 
     def start(delay_seconds: float) -> str:
         server = MCPServer("fake-wiki")
 
         @server.tool()
-        async def ask(question: str) -> str:
+        async def get_index() -> str:
             await asyncio.sleep(delay_seconds)
-            return f"wiki:{question}"
+            return "wiki:index"
 
         port = _free_port()
         config = uvicorn.Config(
@@ -89,14 +89,14 @@ def unresponsive_url():
         connection.close()
 
 
-def _ask_with_watchdog(url: str) -> tuple[dict, bool]:
-    """ask를 별도 스레드에서 실행하고 (결과, 기한 안에 끝났는지)를 돌려준다."""
+def _get_index_with_watchdog(url: str) -> tuple[dict, bool]:
+    """get_index를 별도 스레드에서 실행하고 (결과, 기한 안에 끝났는지)를 돌려준다."""
     outcome: dict = {}
 
     def call() -> None:
         started = time.monotonic()
         try:
-            outcome["answer"] = MonitoringWikiClient(url).ask("probe")
+            outcome["answer"] = MonitoringWikiClient(url).get_index()
         except BaseException as exc:  # noqa: BLE001 - 어떤 예외로 끝나는지 그대로 본다
             outcome["error"] = exc
         outcome["elapsed"] = time.monotonic() - started
@@ -108,24 +108,24 @@ def _ask_with_watchdog(url: str) -> tuple[dict, bool]:
 
 
 def test_returns_the_answer_from_the_server(start_wiki_server):
-    outcome, finished = _ask_with_watchdog(start_wiki_server(delay_seconds=0))
+    outcome, finished = _get_index_with_watchdog(start_wiki_server(delay_seconds=0))
 
     assert finished
-    assert outcome["answer"] == "wiki:probe"
+    assert outcome["answer"] == "wiki:index"
 
 
 def test_slow_tool_ends_at_the_deadline(start_wiki_server):
-    outcome, finished = _ask_with_watchdog(start_wiki_server(delay_seconds=30))
+    outcome, finished = _get_index_with_watchdog(start_wiki_server(delay_seconds=30))
 
     assert finished, f"{_ALLOWED_SECONDS}초 안에 끝나지 않았다"
-    assert isinstance(outcome["error"], Exception)  # BaseException이면 report_update의 except를 빠져나간다
+    assert isinstance(outcome["error"], Exception)  # BaseException이면 synthesize_incident의 except를 빠져나간다
 
 
 def test_unresponsive_server_ends_at_the_deadline(unresponsive_url):
-    outcome, finished = _ask_with_watchdog(unresponsive_url)
+    outcome, finished = _get_index_with_watchdog(unresponsive_url)
 
     assert finished, f"{_ALLOWED_SECONDS}초 안에 끝나지 않았다 — 설정 상한을 무시하고 붙잡혔다"
-    assert isinstance(outcome["error"], Exception)  # BaseException이면 report_update의 except를 빠져나간다
+    assert isinstance(outcome["error"], Exception)  # BaseException이면 synthesize_incident의 except를 빠져나간다
     assert outcome["elapsed"] < _ALLOWED_SECONDS
 
 

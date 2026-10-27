@@ -126,20 +126,6 @@ class ObservationBuilder:
         builder.master_log_total = int(state.get("master_log_total", 0))
         return builder
 
-    @classmethod
-    def from_observations(cls, window: TimeRange, observations: Observations) -> ObservationBuilder:
-        """누적된 Observations에서 프롬프트용 builder를 만든다. 사건 종합이 위키에 증상을 물을 때 쓴다."""
-        return cls.from_state(window, {
-            "timeline": observations.timeline,
-            "nodes": observations.nodes,
-            "master_events": observations.master_events,
-            "health": observations.health,
-            "candidates": observations.candidates,
-            "query_requests": observations.query_requests,
-            "source_statuses": observations.source_statuses,
-            "master_log_total": observations.master_log_total,
-        })
-
     def state_update(self) -> dict[str, object]:
         """로컬 mutable 작업 결과를 불변 AnalysisAgentState 값으로 되돌려 투영한다."""
         observations = self.to_observations()
@@ -372,27 +358,3 @@ class ObservationBuilder:
                 f"unassigned={last.unassigned_shards} nodes={last.number_of_nodes}"
             )
         return "\n".join(lines) or "(관측값 없음)"
-
-    def master_logs_for_prompt(self, max_lines: int = 20) -> str:
-        """마스터 노드 로그를 위키 질문용 블록으로 반환한다.
-
-        timestamp순으로 정렬된 rendered 줄을 최대 max_lines개만 싣는다.
-        level 필터 없이 전체를 포함한다 — 중요한 GC·shard 이벤트가 INFO로
-        찍히는 경우가 있어 level로 걸러내면 누락 위험이 있다.
-        """
-        if not self.master_logs:
-            return ""
-        ordered = sorted(
-            self.master_logs.values(),
-            key=lambda e: (e.timestamp is None, e.timestamp or _EPOCH),
-        )
-        all_rendered = [e.rendered for e in ordered if e.rendered]
-        lines = all_rendered[:max_lines]
-        if not lines:
-            return ""
-        suffix = (
-            f"\n(이하 {len(all_rendered) - max_lines}줄 생략)"
-            if len(all_rendered) > max_lines
-            else ""
-        )
-        return "마스터 노드 로그:\n" + "\n".join(lines) + suffix

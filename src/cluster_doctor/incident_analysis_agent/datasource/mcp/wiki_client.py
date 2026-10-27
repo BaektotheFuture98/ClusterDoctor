@@ -1,7 +1,7 @@
 """monitoring-wiki MCP 서버 클라이언트.
 
 메인 event loop와 독립된 스레드에서 asyncio.run()을 쓴다.
-report_update()는 동기 함수이고, ClusterGuard 프로세스는 이미 asyncio
+사건 종합(synthesize_incident)은 동기 함수이고, ClusterGuard 프로세스는 이미 asyncio
 loop 위에서 돌기 때문에 같은 스레드에서 새 loop를 열 수 없다.
 """
 
@@ -24,13 +24,6 @@ class MonitoringWikiClient:
 
     def __init__(self, url: str) -> None:
         self._url = url
-
-    def ask(self, question: str) -> str:
-        """증상 질문을 위키에 보내고 관련 패턴 컨텍스트를 반환한다.
-
-        실패하거나 상한을 넘기면 예외를 던진다. 호출자가 gaps에 기록하고 계속 진행한다.
-        """
-        return self._call_tool("ask", {"question": question})
 
     def get_index(self) -> str:
         """위키 패턴 색인(마크다운 표)을 반환한다.
