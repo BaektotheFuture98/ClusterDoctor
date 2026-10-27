@@ -116,7 +116,6 @@ class ReportWriter:
         request: LogAnalysisRequest,
         evidence: list[Evidence],
         state: ObservationBuilder,
-        wiki_context: str = "",
     ) -> DraftReport:
         """모든 근거를 놓고 원인을 묻는다. 실패하면 빈 초안.
 
@@ -140,7 +139,6 @@ class ReportWriter:
             prior_summary=self._prior_summary(request.prior_report),
             gaps=tuple(state.gaps),
             analysis_context=build_analysis_context(state.to_observations(), evidence, thresholds=self._thresholds),
-            wiki_context=wiki_context,
         )
         try:
             with llm_label("report_draft"):

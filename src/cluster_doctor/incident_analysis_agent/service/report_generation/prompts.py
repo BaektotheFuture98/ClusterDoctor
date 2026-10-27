@@ -91,7 +91,6 @@ _ANALYSIS_RULES = """
   없다고 단정하지 않는다. 누락 때문에 확인할 수 없는 판단은 unresolved_questions에 남긴다.
 - title은 장애를 한 줄로 설명하는 제목이다(40자 내외). 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'. 분석 결과를 먼저 쓴 뒤 가장 알맞은 제목을 고른다.
 - root_causes의 각 항목에 cause_type을 "direct" 또는 "root"로 표시한다. direct는 즉각적 트리거(예: 특정 쿼리 급증, 노드 장애)이고, root는 구조적 근본 원인(예: 샤드 과다 배치, 힙 설정 부족)이다. 구분이 불명확하면 "root"로 둔다.
-- recommendations의 wiki_ref는 장애 패턴 위키에서 이 조치에 해당하는 패턴명이다. 위키 컨텍스트에 패턴명이 있으면 그 이름을 그대로 쓴다. 없으면 빈 문자열.
 
 이 분석 구간 **밖의** 시간을 봐야 답할 수 있는 것이 있으면
 needs_more_context=true로 두고 suggested_windows에 필요한 범위를 쓴다.
@@ -255,7 +254,6 @@ def build_analysis_prompt(
     prior_summary: str = "",
     gaps: tuple[str, ...] = (),
     analysis_context: str = "",
-    wiki_context: str = "",
 ) -> str:
     """선별된 Evidence 전체를 놓고 원인을 묻는다."""
     sections = [
@@ -273,11 +271,6 @@ def build_analysis_prompt(
         sections += [
             "앞선 분석 (참고용, 이번 구간의 근거가 아니다):",
             prior_summary,
-        ]
-    if wiki_context:
-        sections += [
-            "장애 패턴 위키 (참고용, 이번 근거와 독립적이다):",
-            wiki_context,
         ]
     sections += [
         "코드가 센 관측값 (모델이 옮겨 적지 않는다. 참고만 한다):",
