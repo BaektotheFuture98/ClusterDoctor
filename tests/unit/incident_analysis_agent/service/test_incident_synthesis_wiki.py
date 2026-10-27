@@ -11,7 +11,9 @@ from types import SimpleNamespace
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, ReportRecommendation
+from cluster_doctor.incident_analysis_agent.model.report import (
+    LogAnalysisReport, ReportRecommendation, VerificationStatus,
+)
 from cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis import (
     synthesize_incident,
 )
@@ -34,7 +36,7 @@ class FakeWriter:
     @staticmethod
     def _report(wiki_refs: tuple[str, ...], cause_index: int | None = None) -> LogAnalysisReport:
         return LogAnalysisReport(
-            incident_id="inc-1", analyzed_from=START, analyzed_to=END,
+            incident_id="inc-1", analyzed_from=START, analyzed_to=END, summary="19:03에 최대 19.04초 지연이 관측됐다.",
             recommendations=tuple(
                 ReportRecommendation(text=f"조치 {n}", wiki_ref=ref, cause_index=cause_index)
                 for n, ref in enumerate(wiki_refs)
@@ -99,11 +101,11 @@ def test_without_a_wiki_client_nothing_is_passed():
 
 
 def test_index_is_read_once_and_pages_open_in_order_with_sections():
-    wiki = FakeWiki(index="색인 본문")
+    wiki = FakeWiki(index="| 패턴 |\n|---|\n| [a](patterns/a.md) |\n| [b](patterns/b.md) |")
 
     kwargs, _ = _synthesize(wiki)
 
-    assert kwargs["wiki_index"] == "색인 본문"
+    assert kwargs["wiki_index"] == wiki.index
     assert wiki.index_calls == 1
     assert wiki.pattern_calls == []
 
@@ -132,24 +134,42 @@ def test_blank_index_falls_back_to_no_wiki():
     assert kwargs["open_wiki_pages"] is None
 
 
-def test_a_failing_page_is_skipped_and_the_others_still_open(caplog):
-    wiki = FakeWiki(failing_ids=("a",))
+def test_index_without_readable_pattern_ids_falls_back_to_no_wiki_and_logs_a_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        kwargs, _ = _synthesize(FakeWiki(index="# 색인\n\n패턴 목록이 표 형식이 아니다"))
+
+    assert kwargs["wiki_index"] == ""
+    assert kwargs["open_wiki_pages"] is None
+    assert "패턴 id를 읽지 못해" in caplog.text
+
+
+def test_opening_pages_stops_at_the_first_failure_and_keeps_what_was_opened(caplog):
+    wiki = FakeWiki(failing_ids=("b",))
     kwargs, _ = _synthesize(wiki)
 
     with caplog.at_level(logging.WARNING):
-        pages = kwargs["open_wiki_pages"](("a", "b"))
+        pages = kwargs["open_wiki_pages"](("a", "b", "c"))
 
-    assert pages == {"b": "페이지 b"}
+    assert pages == {"a": "페이지 a"}
     assert [call[0] for call in wiki.pattern_calls] == ["a", "b"]
-    assert "a" in caplog.text
+    assert "b" in caplog.text
+
+
+def test_opening_pages_returns_nothing_when_the_first_page_fails():
+    wiki = FakeWiki(failing_ids=("a",))
+    kwargs, _ = _synthesize(wiki)
+
+    assert kwargs["open_wiki_pages"](("a", "b")) == {}
+    assert [call[0] for call in wiki.pattern_calls] == ["a"]
 
 
 def test_wiki_failure_does_not_change_the_verification_status():
-    _, with_wiki = _synthesize(FakeWiki())
-    _, failed = _synthesize(FakeWiki(index_error=RuntimeError("down")))
-    _, without = _synthesize(None)
+    statuses = [
+        _synthesize(wiki)[1].verification_status
+        for wiki in (FakeWiki(), FakeWiki(index_error=RuntimeError("down")), None)
+    ]
 
-    assert with_wiki.verification_status == failed.verification_status == without.verification_status
+    assert statuses == [VerificationStatus.PASSED] * 3
 
 
 def test_final_report_keeps_only_wiki_refs_that_are_in_the_index():

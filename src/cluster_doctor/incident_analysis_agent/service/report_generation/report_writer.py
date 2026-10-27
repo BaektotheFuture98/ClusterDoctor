@@ -55,7 +55,8 @@ def _incident_response_format() -> dict:
 
 # 위키 색인·페이지를 프롬프트에 싣는 상한. 구간 범위와 누적 관측값이 쓰는 예산을 침범하지 않는다.
 _WIKI_INDEX_MAX_CHARS = 6000
-_WIKI_PAGES_MAX_CHARS = 6000
+_WIKI_PAGE_MAX_CHARS = 6000
+_WIKI_PAGES_MAX_CHARS = 12000
 _WIKI_MAX_PATTERNS = 3
 
 
@@ -66,6 +67,32 @@ def _cut_at_line(text: str, limit: int) -> str:
     head = text[:limit]
     newline = head.rfind("\n")
     return head[:newline] if newline > 0 else head
+
+
+def _wiki_pages_text(opened: dict[str, str], chosen: tuple[str, ...]) -> str:
+    """열린 패턴 페이지를 고른 순서대로 이어 붙인다.
+
+    큰 페이지 하나가 뒤에 오는 패턴의 몫을 먹지 않도록 페이지마다 상한을 따로 두고, 합계 상한도 둔다.
+    어느 쪽이든 잘리면 경고한다. 잘린 페이지는 교정 모델이 일부만 보게 된다.
+    """
+    parts = []
+    for pattern_id in chosen:
+        page = opened.get(pattern_id, "").strip()
+        if not page:
+            continue
+        cut = _cut_at_line(page, _WIKI_PAGE_MAX_CHARS)
+        if len(cut) < len(page):
+            _logger.warning(
+                "위키 패턴 %s 페이지(%d자)가 상한 %d자를 넘어 %d자까지만 싣는다.",
+                pattern_id, len(page), _WIKI_PAGE_MAX_CHARS, len(cut))
+        parts.append(cut)
+    joined = "\n\n".join(parts)
+    cut = _cut_at_line(joined, _WIKI_PAGES_MAX_CHARS)
+    if len(cut) < len(joined):
+        _logger.warning(
+            "위키 패턴 페이지 합계(%d자)가 상한 %d자를 넘어 %d자까지만 싣는다. 뒤쪽 패턴은 일부만 보인다.",
+            len(joined), _WIKI_PAGES_MAX_CHARS, len(cut))
+    return cut
 
 
 def _with_carried_title(text: str, title: str) -> object:
@@ -156,7 +183,12 @@ class ReportWriter:
         previous_json = json.dumps({"windows": previous}, ensure_ascii=False)
         if len(previous_json) > 12000:
             raise ValueError("구간별 범위 입력이 종합 예산을 초과했다")
-        index = _cut_at_line(wiki_index.strip(), _WIKI_INDEX_MAX_CHARS)
+        full_index = wiki_index.strip()
+        index = _cut_at_line(full_index, _WIKI_INDEX_MAX_CHARS)
+        if len(index) < len(full_index):
+            _logger.warning(
+                "위키 색인(%d자)이 상한 %d자를 넘어 %d자까지만 싣는다. 뒤쪽 패턴은 모델에게 보이지 않는다.",
+                len(full_index), _WIKI_INDEX_MAX_CHARS, len(index))
         valid_ids = index_pattern_ids(index)
         messages = build_incident_synthesis_messages(
             cluster=cluster, analyzed_from=start, analyzed_to=end,
@@ -185,8 +217,7 @@ class ReportWriter:
                 except Exception as exc:
                     _logger.warning("[incident] 위키 패턴 페이지를 열지 못했다: %s", exc)
                     opened = {}
-                pages = _cut_at_line(
-                    "\n\n".join(opened[i].strip() for i in chosen if i in opened), _WIKI_PAGES_MAX_CHARS)
+                pages = _wiki_pages_text(opened, chosen)
         context_budget = min(40000, 60000 - len(editable) - len(_INCIDENT_REVIEW_INSTRUCTIONS) - len(pages) - 500)
         if context_budget < 1000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
