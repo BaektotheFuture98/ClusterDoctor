@@ -168,7 +168,7 @@ def test_report_update_never_touches_the_wiki():
     seams.report_writer.draft_report.side_effect = RuntimeError("writer failed")
     update = report_update(seams, state, "")
     assert seams.wiki_client.mock_calls == []
-    assert not any("위키" in str(gap) for gap in update.get("gaps", ()))
+    assert tuple(update["gaps"]) == ("리포트 작성이 실패했다: writer failed",)
     _, kwargs = seams.report_writer.draft_report.call_args
     assert "wiki_context" not in kwargs
 

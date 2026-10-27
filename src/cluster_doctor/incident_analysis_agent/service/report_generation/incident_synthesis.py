@@ -21,8 +21,8 @@ _WIKI_PAGE_SECTIONS = ("증상", "원인", "해결방법")
 def _wiki_access(seams) -> tuple[str, Callable[[tuple[str, ...]], dict[str, str]] | None]:
     """위키 색인을 한 번 읽고, 고른 패턴 페이지를 여는 함수를 돌려준다.
 
-    위키가 없거나 색인 조회가 실패하면 ("", None)이라 종합은 위키 없이 이어 간다. 페이지는 id마다
-    따로 열어, 일부가 실패해도 열린 것만 돌려준다.
+    위키가 없거나 색인 조회가 실패하거나 색인에서 패턴 id를 읽지 못하면 ("", None)이라 종합은 위키 없이
+    이어 간다. 페이지는 id마다 따로 열고, 하나가 실패하면 나머지는 열지 않고 그때까지 연 것만 돌려준다.
     """
     client = seams.wiki_client
     if client is None:
@@ -34,6 +34,9 @@ def _wiki_access(seams) -> tuple[str, Callable[[tuple[str, ...]], dict[str, str]
         return "", None
     if not index.strip():
         return "", None
+    if not index_pattern_ids(index):
+        _logger.warning("위키 색인에서 패턴 id를 읽지 못해 위키 없이 종합한다. 색인 형식이 바뀌었는지 확인한다.")
+        return "", None
 
     def open_pages(ids: tuple[str, ...]) -> dict[str, str]:
         pages: dict[str, str] = {}
@@ -41,7 +44,9 @@ def _wiki_access(seams) -> tuple[str, Callable[[tuple[str, ...]], dict[str, str]
             try:
                 pages[pattern_id] = client.get_pattern(pattern_id, sections=_WIKI_PAGE_SECTIONS)
             except Exception as exc:
-                _logger.warning("위키 패턴 %s 페이지를 열지 못해 건너뛴다: %s", pattern_id, exc)
+                # 색인에 있는 id가 열리지 않으면 위키 쪽 문제일 가능성이 높다. 나머지도 같은 대기를 겪지 않게 멈춘다.
+                _logger.warning("위키 패턴 %s 페이지를 열지 못해 나머지 패턴은 열지 않는다: %s", pattern_id, exc)
+                break
         return pages
 
     return index, open_pages
