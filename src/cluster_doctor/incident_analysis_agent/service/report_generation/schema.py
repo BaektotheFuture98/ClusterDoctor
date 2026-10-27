@@ -173,6 +173,12 @@ class DraftRecommendation(BaseModel):
 
     _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
 
+    @field_validator("wiki_ref", mode="before")
+    @classmethod
+    def _null_wiki_ref(cls, value):
+        """위키 참조는 보조 정보라, null 하나가 초안 전체를 버리게 하지 않는다."""
+        return "" if value is None else value
+
 
 class DraftReport(BaseModel):
     """모델의 구조화 응답을 받는 구간 보고서 초안 스키마.
