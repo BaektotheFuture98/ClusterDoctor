@@ -167,7 +167,7 @@ class DraftRecommendation(BaseModel):
     text: str = Field(default="", description="대상이 들어간 한 줄 조치(40자 내외).")
     wiki_ref: str = Field(
         default="",
-        description="위키 패턴과 일치하면 패턴 이름을 기재한다. 없으면 빈 문자열.",
+        description="위키 색인의 패턴 id와 일치하면 그 id를 그대로 기재한다. 없으면 빈 문자열.",
     )
     evidence_refs: list[str] = Field(default_factory=list)
 

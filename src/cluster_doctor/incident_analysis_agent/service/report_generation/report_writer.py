@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
@@ -37,6 +36,10 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.schema imp
     DraftReport,
     parse_draft,
 )
+from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import (
+    index_pattern_ids,
+    keep_known_wiki_refs,
+)
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import complete
 
 _logger = logging.getLogger(__name__)
@@ -55,8 +58,6 @@ _WIKI_INDEX_MAX_CHARS = 6000
 _WIKI_PAGES_MAX_CHARS = 6000
 _WIKI_MAX_PATTERNS = 3
 
-_INDEX_ROW_ID = re.compile(r"^\|\s*\[([^\]\s]+)\]\(", re.MULTILINE)
-
 
 def _cut_at_line(text: str, limit: int) -> str:
     """``limit`` 이내에서 마지막 줄바꿈까지만 남긴다. 줄바꿈이 없으면 ``limit``에서 자른다."""
@@ -65,27 +66,6 @@ def _cut_at_line(text: str, limit: int) -> str:
     head = text[:limit]
     newline = head.rfind("\n")
     return head[:newline] if newline > 0 else head
-
-
-def _index_pattern_ids(index: str) -> tuple[str, ...]:
-    """색인 표 행 ``| [<id>](…) | …``에서 패턴 id를 등장 순서대로, 중복 없이 뽑는다."""
-    return tuple(dict.fromkeys(_INDEX_ROW_ID.findall(index)))
-
-
-def _keep_known_wiki_refs(report: LogAnalysisReport, known_ids: Collection[str]) -> LogAnalysisReport:
-    """위키 색인에 실제로 있는 패턴 id만 ``wiki_ref``로 남긴다.
-
-    모델이 지어낸 id가 위키 배지로 나가면 운영자는 존재하지 않는 패턴을 찾게 된다.
-    """
-    def known(ref: str) -> bool:
-        return ref.strip() in known_ids
-
-    recommendations = tuple(
-        item.model_copy(update={"wiki_ref": item.wiki_ref.strip() if known(item.wiki_ref) else ""})
-        if item.wiki_ref else item
-        for item in report.recommendations
-    )
-    return report.model_copy(update={"recommendations": recommendations})
 
 
 def _with_carried_title(text: str, title: str) -> object:
@@ -177,7 +157,7 @@ class ReportWriter:
         if len(previous_json) > 12000:
             raise ValueError("구간별 범위 입력이 종합 예산을 초과했다")
         index = _cut_at_line(wiki_index.strip(), _WIKI_INDEX_MAX_CHARS)
-        valid_ids = _index_pattern_ids(index)
+        valid_ids = index_pattern_ids(index)
         messages = build_incident_synthesis_messages(
             cluster=cluster, analyzed_from=start, analyzed_to=end,
             previous_windows_json=previous_json,
@@ -228,7 +208,7 @@ class ReportWriter:
             window=TimeRange(first.analyzed_from, first.analyzed_to),
             evidence_refs=tuple(e.evidence_id for e in evidence),
         ).model_copy(update={"analyzed_from": start, "analyzed_to": end})
-        return _keep_known_wiki_refs(report, valid_ids)
+        return keep_known_wiki_refs(report, valid_ids)
 
     @staticmethod
     def _prior_summary(prior_report: LogAnalysisReport | None) -> str:

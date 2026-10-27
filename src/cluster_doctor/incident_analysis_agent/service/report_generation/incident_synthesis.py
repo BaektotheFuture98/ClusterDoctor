@@ -5,6 +5,10 @@ from collections.abc import Callable
 from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import concrete_targets
+from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import (
+    index_pattern_ids,
+    keep_known_wiki_refs,
+)
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import GroundingValidator
 
@@ -73,6 +77,8 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
             break
         report = revised
         revisions += 1
+    # 재수정 응답은 색인을 보지 않고 wiki_ref를 다시 쓸 수 있어, 최종 리포트도 색인 id로 한 번 더 제한한다.
+    report = keep_known_wiki_refs(report, index_pattern_ids(wiki_index))
     status = (VerificationStatus.MISMATCH if conflicts else
               VerificationStatus.NOT_VERIFIED if unavailable else VerificationStatus.PASSED)
     return report.model_copy(update={

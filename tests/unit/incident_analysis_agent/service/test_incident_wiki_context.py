@@ -16,6 +16,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation import rep
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
 )
+from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import index_pattern_ids
 
 INDEX_TITLE = "--- 장애 패턴 위키 색인 (참고용, 이번 근거와 독립적이다) ---"
 PAGES_TITLE = "--- 장애 패턴 위키 패턴 페이지 (참고용, 이번 근거와 독립적이다) ---"
@@ -36,11 +37,6 @@ FIRST_PASS = {
     "recommendations": [],
     "unresolved_questions": [],
 }
-
-
-def _with_recommendation(wiki_ref: str) -> dict:
-    recommendation = {"text": "대상 쿼리의 호출 빈도를 줄인다", "cause_index": None, "evidence_refs": [], "wiki_ref": wiki_ref}
-    return {**FIRST_PASS, "recommendations": [recommendation]}
 
 
 class ScriptedLlm:
@@ -223,8 +219,8 @@ def test_index_pattern_ids_reads_table_rows_in_order_once_and_ignores_other_line
         "본문 줄 [not-a-row](x.md)",
     ])
 
-    assert report_writer._index_pattern_ids(index) == ("massive-agg-query-timeout", "pat-b")
-    assert report_writer._index_pattern_ids("") == ()
+    assert index_pattern_ids(index) == ("massive-agg-query-timeout", "pat-b")
+    assert index_pattern_ids("") == ()
 
 
 def test_cut_at_line_boundaries():
