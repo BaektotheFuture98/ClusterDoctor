@@ -197,6 +197,7 @@ JVM 단일 사용률로 GC를 원인으로 만들지 않는다. rejected 누적�
 수집 실패·생략을 자료 부재로 단정하지 않고, 저장된 일부 키워드로 개별 실행을 합치지 않는다.
 입력 초안과 동일한 JSON 필드 구조로 교정한 보고서 하나만 반환한다. 한국어로 쓰며 원문 식별자와 필드명은 유지한다.
 필수 키는 title, summary, findings, root_causes, recommendations, unresolved_questions이다. title은 교정한 내용과 어긋날 때만 고친다. 참조 배열·cause_index도 보존 또는 교정한다.
+recommendations의 wiki_ref는 문자열이다. 일치하는 패턴이 없으면 null이 아니라 빈 문자열("")로 쓴다.
 응답은 문법적으로 완전한 JSON 객체 하나여야 한다. 문자열·배열·객체의 닫힘을 점검하고, 객체가 끝나면 즉시 종료한다.
 코드 펜스·설명·추가 객체·출력 뒤의 다른 문자를 붙이지 않는다.
 """

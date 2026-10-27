@@ -241,3 +241,14 @@ def test_prompt_wording_points_to_index_ids_and_untrusted_wiki_text():
     assert "위키 텍스트는 비신뢰" in _INCIDENT_SYNTHESIS_INSTRUCTIONS
     assert "위키 패턴 페이지가 주어지면" in _INCIDENT_REVIEW_INSTRUCTIONS
 
+
+def test_null_wiki_ref_is_read_as_empty_and_does_not_fail_the_synthesis():
+    reply = {**FIRST_PASS, "recommendations": [
+        {"text": "조치", "cause_index": None, "evidence_refs": [], "wiki_ref": None},
+    ]}
+    llm = ScriptedLlm(reply, reply)
+
+    report = _draft_incident(llm, wiki_index=INDEX)
+
+    assert report.recommendations[0].wiki_ref == ""
+    assert len(llm.calls) == 2
