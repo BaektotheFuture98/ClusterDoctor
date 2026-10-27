@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, ReportRecommendation
 from cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis import (
     synthesize_incident,
 )
@@ -23,17 +23,32 @@ SUMMARY_PASSED = [{"claim_id": "summary", "status": "PASSED", "reason": "", "aff
 
 
 class FakeWriter:
-    """draft_incident에 받은 인자를 기록하고 빈 초안을 돌려준다."""
+    """draft_incident에 받은 인자를 기록하고, 정해 둔 wiki_ref를 단 조치가 있는 초안을 돌려준다."""
 
-    def __init__(self) -> None:
+    def __init__(self, wiki_refs: tuple[str, ...] = (), revised_wiki_refs: tuple[str, ...] | None = None) -> None:
         self.kwargs: dict = {}
+        self.wiki_refs = wiki_refs
+        self.revised_wiki_refs = revised_wiki_refs
+        self.revise_calls = 0
+
+    @staticmethod
+    def _report(wiki_refs: tuple[str, ...], cause_index: int | None = None) -> LogAnalysisReport:
+        return LogAnalysisReport(
+            incident_id="inc-1", analyzed_from=START, analyzed_to=END,
+            recommendations=tuple(
+                ReportRecommendation(text=f"조치 {n}", wiki_ref=ref, cause_index=cause_index)
+                for n, ref in enumerate(wiki_refs)
+            ),
+        )
 
     def draft_incident(self, **kwargs) -> LogAnalysisReport:
         self.kwargs = kwargs
-        return LogAnalysisReport(incident_id="inc-1", analyzed_from=START, analyzed_to=END)
+        # 재수정을 지정하면 원인 범위를 벗어난 cause_index를 달아 구조 검증이 재수정을 요구하게 한다.
+        return self._report(self.wiki_refs, cause_index=0 if self.revised_wiki_refs is not None else None)
 
     def revise_report(self, *args, **kwargs):
-        return None
+        self.revise_calls += 1
+        return None if self.revised_wiki_refs is None else self._report(self.revised_wiki_refs)
 
 
 class FakeWiki:
@@ -58,16 +73,20 @@ class FakeWiki:
         return f"페이지 {pattern_id}"
 
 
-def _synthesize(wiki):
-    writer = FakeWriter()
+def _run(wiki, writer: FakeWriter) -> LogAnalysisReport:
     llm = lambda messages, *, response_format=None: json.dumps(SUMMARY_PASSED)  # noqa: E731
     seams = SimpleNamespace(report_writer=writer, call_llm=llm,
                             metric_thresholds=DEFAULT_THRESHOLDS, wiki_client=wiki)
-    report = synthesize_incident(
+    return synthesize_incident(
         seams=seams, incident=SimpleNamespace(incident_id="inc-1", cluster="es"),
         window_reports=[LogAnalysisReport(incident_id="inc-1", analyzed_from=START, analyzed_to=END)],
         observations=Observations(), evidence=[],
     )
+
+
+def _synthesize(wiki, wiki_refs: tuple[str, ...] = ()):
+    writer = FakeWriter(wiki_refs)
+    report = _run(wiki, writer)
     return writer.kwargs, report
 
 
@@ -131,3 +150,24 @@ def test_wiki_failure_does_not_change_the_verification_status():
     _, without = _synthesize(None)
 
     assert with_wiki.verification_status == failed.verification_status == without.verification_status
+
+
+def test_final_report_keeps_only_wiki_refs_that_are_in_the_index():
+    _, report = _synthesize(FakeWiki(), wiki_refs=("a", "지어낸 패턴", " a ", ""))
+
+    assert [item.wiki_ref for item in report.recommendations] == ["a", "", "a", ""]
+
+
+def test_every_wiki_ref_is_cleared_when_there_is_no_wiki():
+    _, report = _synthesize(None, wiki_refs=("a",))
+
+    assert report.recommendations[0].wiki_ref == ""
+
+
+def test_wiki_ref_rewritten_by_a_revision_is_limited_to_the_index_again():
+    writer = FakeWriter(wiki_refs=("a",), revised_wiki_refs=("지어낸 패턴", "a"))
+
+    report = _run(FakeWiki(), writer)
+
+    assert writer.revise_calls >= 1
+    assert [item.wiki_ref for item in report.recommendations] == ["", "a"]
