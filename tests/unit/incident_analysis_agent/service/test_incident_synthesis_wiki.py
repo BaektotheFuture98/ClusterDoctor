@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, VerificationStatus
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis import (
     synthesize_incident,
 )
