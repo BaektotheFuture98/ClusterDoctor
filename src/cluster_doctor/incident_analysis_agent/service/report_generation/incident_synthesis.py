@@ -1,10 +1,9 @@
 """누적된 사실로 최종 incident 서술을 만든다. 수집과 위임은 하지 않는다."""
 import logging
+from collections.abc import Callable
 
 from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
-from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
-from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import concrete_targets
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import GroundingValidator
@@ -12,29 +11,44 @@ from cluster_doctor.incident_analysis_agent.service.validation.grounding.groundi
 _logger = logging.getLogger(__name__)
 
 
-def _wiki_context(seams, window_reports, observations) -> str:
-    """누적 관측으로 위키에 증상을 한 번 묻는다. 관측이 없거나 조회가 실패해도 종합은 위키 없이 이어 간다."""
-    if seams.wiki_client is None:
-        return ""
-    builder = ObservationBuilder.from_observations(
-        TimeRange(window_reports[0].analyzed_from, window_reports[-1].analyzed_to), observations)
-    if not (builder.candidates or builder.timeline or builder.master_logs):
-        return ""
-    symptoms = "\n\n".join(part for part in (
-        builder.candidates_for_prompt(), builder.summary_for_prompt(), builder.master_logs_for_prompt(),
-    ) if part)
+_WIKI_PAGE_SECTIONS = ("증상", "원인", "해결방법")
+
+
+def _wiki_access(seams) -> tuple[str, Callable[[tuple[str, ...]], dict[str, str]] | None]:
+    """위키 색인을 한 번 읽고, 고른 패턴 페이지를 여는 함수를 돌려준다.
+
+    위키가 없거나 색인 조회가 실패하면 ("", None)이라 종합은 위키 없이 이어 간다. 페이지는 id마다
+    따로 열어, 일부가 실패해도 열린 것만 돌려준다.
+    """
+    client = seams.wiki_client
+    if client is None:
+        return "", None
     try:
-        return seams.wiki_client.ask(symptoms)
+        index = client.get_index()
     except Exception as exc:
-        _logger.warning("사건 종합의 위키 조회가 실패해 위키 없이 종합한다: %s", exc)
-        return ""
+        _logger.warning("사건 종합의 위키 색인 조회가 실패해 위키 없이 종합한다: %s", exc)
+        return "", None
+    if not index.strip():
+        return "", None
+
+    def open_pages(ids: tuple[str, ...]) -> dict[str, str]:
+        pages: dict[str, str] = {}
+        for pattern_id in ids:
+            try:
+                pages[pattern_id] = client.get_pattern(pattern_id, sections=_WIKI_PAGE_SECTIONS)
+            except Exception as exc:
+                _logger.warning("위키 패턴 %s 페이지를 열지 못해 건너뛴다: %s", pattern_id, exc)
+        return pages
+
+    return index, open_pages
 
 
 def synthesize_incident(*, seams, incident, window_reports, observations, evidence):
+    wiki_index, open_wiki_pages = _wiki_access(seams)
     report = seams.report_writer.draft_incident(
         incident_id=incident.incident_id, cluster=incident.cluster,
         window_reports=window_reports, observations=observations, evidence=evidence,
-        wiki_context=_wiki_context(seams, window_reports, observations),
+        wiki_index=wiki_index, open_wiki_pages=open_wiki_pages,
     )
     grounding = GroundingValidator(call_llm=seams.call_llm, metric_thresholds=seams.metric_thresholds)
     targets = concrete_targets(observations)
