@@ -158,6 +158,21 @@ def test_failed_report_attempts_still_consume_the_limit():
     assert seams.report_writer.draft_report.call_count == 2
 
 
+def test_report_update_never_touches_the_wiki():
+    state = {
+        **initial_analysis_agent_state(request()),
+        "collected": True,
+        "evidence": (MagicMock(evidence_id="E-i-1"),),
+    }
+    seams = MagicMock()
+    seams.report_writer.draft_report.side_effect = RuntimeError("writer failed")
+    update = report_update(seams, state, "")
+    assert seams.wiki_client.mock_calls == []
+    assert not any("위키" in str(gap) for gap in update.get("gaps", ()))
+    _, kwargs = seams.report_writer.draft_report.call_args
+    assert "wiki_context" not in kwargs
+
+
 def test_observation_round_trip_retains_untruncated_master_count():
     req = request()
     builder = ObservationBuilder.from_state(
