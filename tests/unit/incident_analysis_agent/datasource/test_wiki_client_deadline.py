@@ -12,6 +12,7 @@ import time
 import pytest
 import uvicorn
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from cluster_doctor.incident_analysis_agent.datasource.mcp import wiki_client
 from cluster_doctor.incident_analysis_agent.datasource.mcp.wiki_client import (
@@ -126,3 +127,92 @@ def test_unresponsive_server_ends_at_the_deadline(unresponsive_url):
     assert finished, f"{_ALLOWED_SECONDS}초 안에 끝나지 않았다 — 설정 상한을 무시하고 붙잡혔다"
     assert isinstance(outcome["error"], Exception)  # BaseException이면 report_update의 except를 빠져나간다
     assert outcome["elapsed"] < _ALLOWED_SECONDS
+
+
+@pytest.fixture
+def start_recording_server():
+    """get_index·get_pattern이 받은 인자를 기록하고 정해진 답을 돌려주는 MCP 서버를 띄운다."""
+    servers: list[uvicorn.Server] = []
+
+    def start(index_text: str = "| 패턴 |") -> tuple[str, list[dict]]:
+        calls: list[dict] = []
+        server = MCPServer("fake-wiki")
+
+        @server.tool()
+        async def get_index() -> str:
+            calls.append({"tool": "get_index"})
+            return index_text
+
+        @server.tool()
+        async def get_pattern(id: str, sections: list[str] | None = None) -> str:
+            calls.append({"tool": "get_pattern", "id": id, "sections": sections})
+            if id == "missing":
+                raise ToolError("패턴 missing가 없습니다")
+            return f"page:{id}"
+
+        port = _free_port()
+        config = uvicorn.Config(
+            server.streamable_http_app(), host="127.0.0.1", port=port, log_level="error"
+        )
+        running = uvicorn.Server(config)
+        threading.Thread(target=running.run, daemon=True).start()
+        started_by = time.monotonic() + 10
+        while not running.started and time.monotonic() < started_by:
+            time.sleep(0.05)
+        assert running.started, "테스트용 MCP 서버가 뜨지 않았다"
+        servers.append(running)
+        return f"http://127.0.0.1:{port}/mcp", calls
+
+    yield start
+    for running in servers:
+        running.should_exit = True
+
+
+def test_get_index_calls_the_tool_without_arguments(start_recording_server):
+    url, calls = start_recording_server(index_text="색인 본문")
+
+    assert MonitoringWikiClient(url).get_index() == "색인 본문"
+    assert calls == [{"tool": "get_index"}]
+
+
+def test_get_index_returns_empty_string_for_empty_content(start_recording_server):
+    url, _ = start_recording_server(index_text="")
+
+    assert MonitoringWikiClient(url).get_index() == ""
+
+
+def test_get_pattern_without_sections_sends_only_the_id(start_recording_server):
+    url, calls = start_recording_server()
+
+    assert MonitoringWikiClient(url).get_pattern("p") == "page:p"
+    assert calls == [{"tool": "get_pattern", "id": "p", "sections": None}]
+
+
+def test_get_pattern_with_sections_sends_them_as_a_list(start_recording_server):
+    url, calls = start_recording_server()
+
+    MonitoringWikiClient(url).get_pattern("p", ("원인", "해결방법"))
+
+    assert calls == [{"tool": "get_pattern", "id": "p", "sections": ["원인", "해결방법"]}]
+
+
+def test_get_pattern_omits_sections_key_when_empty(monkeypatch):
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        MonitoringWikiClient, "_call_tool", lambda self, name, args: sent.append((name, args)) or ""
+    )
+
+    MonitoringWikiClient("http://unused").get_pattern("p")
+    MonitoringWikiClient("http://unused").get_pattern("p", ("원인",))
+
+    assert sent == [
+        ("get_pattern", {"id": "p"}),
+        ("get_pattern", {"id": "p", "sections": ["원인"]}),
+    ]
+
+
+def test_get_pattern_raises_with_the_server_message_on_error(start_recording_server):
+    url, _ = start_recording_server()
+
+    with pytest.raises(RuntimeError, match="패턴 missing가 없습니다"):
+        MonitoringWikiClient(url).get_pattern("missing")
