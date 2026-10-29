@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from datetime import timedelta
 
 from cluster_doctor.incident_analysis_agent.model.time_range import (
-    MAX_TIME_RANGE_DURATION,
     TimeRange,
     merge_spans,
     split_span,
@@ -30,8 +29,8 @@ _logger = logging.getLogger(__name__)
 # 호출 상한(MAX_ANALYSIS_CALLS)이 헛되이 줄어든다.
 MIN_USEFUL_WINDOW = timedelta(minutes=1)
 
-# 첫 후보를 최초 관측 분보다 앞당기는 폭. 최초 관측은 신호가 유입된 시각일
-# 뿐이라, 그 직전의 관련 이벤트를 함께 봐야 원인에 닿는다.
+# 첫 후보를 최초 관측 분보다 앞당기는 폭. 원인은 증상보다 앞서 있고, 최초
+# 관측은 신호가 유입된 시각일 뿐이라 그 직전의 관련 이벤트를 봐야 원인에 닿는다.
 FIRST_WINDOW_LEAD = timedelta(minutes=5)
 
 
@@ -72,24 +71,18 @@ def plan_new_windows(
     return fresh[:limit]
 
 
-def initial_windows(first_seen, last_seen) -> list[TimeRange]:
-    """최초 관측 직전부터 관측된 유입의 앞부분까지 첫 후보 하나를 만든다.
+def initial_windows(first_seen) -> list[TimeRange]:
+    """최초 관측 직전부터 최초 관측 분의 끝까지 첫 후보 하나를 만든다.
 
-    최초 관측 분의 ``FIRST_WINDOW_LEAD`` 전부터 마지막 관측 분의 끝까지를
-    덮되, 시작에서 ``MAX_TIME_RANGE_DURATION``을 넘는 뒤쪽은 자른다. 원인은
-    관측 구간 전체가 아니라 최초 발생 시점 근처에 있는 경우가 많아 앞부분만
-    후보로 둔다. 더 이전을 볼지, 이 후보 이후를 더 볼지는 코드가 미리 정하지
-    않는다. 그 판단은
+    최초 관측 분의 ``FIRST_WINDOW_LEAD`` 전부터 그 분의 끝까지다. 최초 증상이
+    그 분 안에 있어 그 분은 포함하고, 그 뒤는 후보에 넣지 않는다. 발생 이후에
+    밀려서 생긴 지연은 원인이 아니라 증상이라 첫 분석에 쓸 값이 적다. 유입이
+    이어진 뒤쪽을 더 볼지는 코드가 미리 정하지 않고,
     ``list_candidate_windows``가 보여주는 정보(유입이 멎은 시각 포함)를
     보고 모델이 한다.
 
-    구간은 분 경계로 내림·올림한다. 운영자와 모델이 모두 분 단위로 읽고,
+    구간은 분 경계로 내림한다. 운영자와 모델이 모두 분 단위로 읽고,
     조회도 분 단위로 쪼개진다.
     """
     anchor = first_seen.replace(second=0, microsecond=0)
-    start = anchor - FIRST_WINDOW_LEAD
-    end = (last_seen + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    if end <= anchor:
-        end = anchor + timedelta(minutes=1)
-    end = min(end, start + MAX_TIME_RANGE_DURATION)
-    return [TimeRange(start=start, end=end)]
+    return [TimeRange(start=anchor - FIRST_WINDOW_LEAD, end=anchor + timedelta(minutes=1))]

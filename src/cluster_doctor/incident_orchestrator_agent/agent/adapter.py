@@ -117,9 +117,7 @@ class MainAgent:
             **initial_main_agent_state(
                 incident_id=incident.incident_id,
                 observed_end=request.observed_end,
-                pending_windows=tuple(
-                    initial_windows(request.observed_start, request.observed_end)
-                ),
+                pending_windows=tuple(initial_windows(request.observed_start)),
                 total_wait_seconds=request.settling_wait_seconds,
             ),
         }
