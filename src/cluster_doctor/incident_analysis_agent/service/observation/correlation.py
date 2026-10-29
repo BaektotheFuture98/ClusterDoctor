@@ -135,6 +135,22 @@ class Verdict:
 
 
 @dataclass(frozen=True)
+class WaitActionSummary:
+    """마스터 로그 전체에서 같은 종류의 응답 대기를 합친 값.
+
+    선별은 대상 노드만 다른 줄을 대표 한 줄로 줄이므로, 몇 개 노드로 번졌는지는
+    여기서 센다. 노드 카드는 상한으로 잘려도 이 값은 전체를 센다.
+    """
+
+    action: str
+    target_nodes: int
+    waits: int
+    late_responses: int
+    first: datetime | None
+    last: datetime | None
+
+
+@dataclass(frozen=True)
 class CrossLinks:
     slow_threshold: Decimal
     overlaps: tuple[WaitOverlap, ...]
@@ -146,6 +162,7 @@ class CrossLinks:
     profile_total: int = 0
     concentration: tuple[ShapeConcentration, ...] = ()
     cluster_events: ClusterEvents = ClusterEvents()
+    wait_actions: tuple[WaitActionSummary, ...] = ()
 
 
 def _host(value: str | None) -> str:
@@ -237,6 +254,24 @@ def _node_cards(observations: Observations, waits: tuple[MasterWait, ...]) -> tu
             queries_targeting=sum(1 for r in observations.query_requests if ip and _host(r.target_host) == ip),
         ))
     return tuple(sorted(cards, key=lambda card: card.node))
+
+
+def _wait_actions(waits: tuple[MasterWait, ...]) -> tuple[WaitActionSummary, ...]:
+    grouped: dict[str, list[MasterWait]] = defaultdict(list)
+    for wait in waits:
+        grouped[wait.action].append(wait)
+    rows = []
+    for action, items in grouped.items():
+        stamps = [w.event.timestamp for w in items if w.event.timestamp is not None]
+        rows.append(WaitActionSummary(
+            action=action,
+            target_nodes=len({w.target_node or w.target_node_id for w in items}),
+            waits=len(items),
+            late_responses=sum(1 for w in items if w.sent_at),
+            first=min(stamps, default=None),
+            last=max(stamps, default=None),
+        ))
+    return tuple(sorted(rows, key=lambda row: (-row.target_nodes, -row.waits, row.action)))
 
 
 def _profile(observations: Observations, slow_seconds: Decimal) -> tuple[QueryProfileRow, ...]:
@@ -371,6 +406,7 @@ def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLO
         profile_total=len(profile),
         concentration=_concentration(observations, slow_seconds),
         cluster_events=parse_cluster_events(observations.master_events, minutes),
+        wait_actions=_wait_actions(waits),
     )
 
 
@@ -465,6 +501,10 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str],
         "master_wait_overlaps": [overlap(o) for o in cut("master_wait_overlaps", with_queries, _PAYLOAD_LIST_LIMIT)],
         "minutes": [{"minute": _iso(m.minute), "slow_queries": m.slow_queries, "master_waits": m.master_waits}
                     for m in cut("minutes", links.minutes, _PAYLOAD_MINUTE_LIMIT)],
+        "master_wait_actions": [{
+            "action": a.action, "target_nodes": a.target_nodes, "waits": a.waits,
+            "late_responses": a.late_responses, "first": _iso(a.first), "last": _iso(a.last),
+        } for a in cut("master_wait_actions", links.wait_actions, _PAYLOAD_LIST_LIMIT)],
         "node_cards": [node(c) for c in cut("node_cards", sorted(links.nodes, key=_node_priority),
                                             _PAYLOAD_LIST_LIMIT)],
         "slow_query_profile": [{

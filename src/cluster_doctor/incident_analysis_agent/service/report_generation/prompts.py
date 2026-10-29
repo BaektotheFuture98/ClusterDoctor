@@ -30,6 +30,7 @@ _CROSS_LINK_RULES = """
 - master_wait_overlaps의 waiting_from~waiting_to가 마스터가 응답을 기다린 구간이다. 쿼리와의 동시성은 로그 시각이 아니라 이 구간으로 말한다.
 - overlap_under_both_assumptions는 쿼리 로그 시각 해석과 무관하게 겹친 실행이다. overlap_under_one_assumption은 해석에 따라 달라지므로 동시 실행이 확인됐다고 쓰지 않는다.
 - 늦게 응답한 노드는 node_cards에서 late_responses>0인 노드만이다.
+- master_wait_actions는 마스터 로그 전체에서 코드가 응답 대기 종류(action)별로 센 값이다. target_nodes는 대상 노드 수, waits는 줄 수, late_responses는 늦은 응답 수, first~last는 로그 시각 범위다. 노드 확산은 선별된 근거의 줄 수가 아니라 이 값으로 말한다.
 - node_cards의 node_log status=ok, row_count=0은 조회에 성공했고 0줄이었다는 뜻이다. 수집 실패와 구분한다.
 """
 
