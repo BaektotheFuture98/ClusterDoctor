@@ -36,7 +36,6 @@ from cluster_doctor.incident_analysis_agent.agent.state import (
 )
 from cluster_doctor.incident_analysis_agent.agent.tools import (
     _build_tools,
-    collect_update,
     report_update,
 )
 from cluster_doctor.incident_analysis_agent.model.analysis_contract import (
@@ -156,35 +155,31 @@ def finalize_update(seams: AnalysisSeams, state: dict) -> dict:
                     "analysis_goal": f"{current['request'].analysis_goal}\n[재분석] {'; '.join(analysis)}".strip(),
                 }
             )
-            fresh = initial_analysis_agent_state(
-                request, evidence_sequence=current.get("evidence_sequence", 0)
+            # 수집은 구간만 보고 목표를 보지 않아, 다시 모아도 같은 원문이다. 이미 모은
+            # 근거와 관측으로 불일치 사유를 목표에 붙여 초안만 다시 쓴다. 재분석은
+            # 작성 시도 상한과 별개의 1회 예산이라 시도 수를 비운 상태로 부른다.
+            redraft = _execution_projection(
+                report_update(
+                    seams,
+                    {**current, "request": request, "report_attempts": 0},
+                    request.analysis_goal,
+                )
             )
-            fresh = {**fresh, **collect_update(seams, fresh)}
-            fresh = {
-                **fresh,
-                **_execution_projection(
-                    report_update(seams, fresh, request.analysis_goal)
-                ),
-            }
-            if fresh.get("report") is None:
+            if redraft.get("report") is None:
                 current = {
                     **current,
-                    "evidence_sequence": fresh["evidence_sequence"],
-                    "gaps": tuple(current.get("gaps", ()))
-                    + tuple(fresh.get("gaps", ()))
+                    "gaps": tuple(
+                        dict.fromkeys((*current.get("gaps", ()), *redraft.get("gaps", ())))
+                    )
                     + ("원문 불일치 재분석에 실패했다.",),
                 }
                 break
-            # 재분석 결과로 덮어쓰지 않도록 기존 확장 결정은 유지하고 새 수집 공백은 보존한다.
             current = {
-                **fresh,
-                "suggested_windows": tuple(current.get("suggested_windows", ())),
-                "insufficient_reason": current.get("insufficient_reason", ""),
+                **current,
+                **redraft,
+                "request": request,
                 "report_attempts": current.get("report_attempts", 0)
-                + fresh.get("report_attempts", 0),
-                "gaps": tuple(
-                    dict.fromkeys((*current.get("gaps", ()), *fresh.get("gaps", ())))
-                ),
+                + redraft.get("report_attempts", 0),
             }
             report = current["report"]
             continue
