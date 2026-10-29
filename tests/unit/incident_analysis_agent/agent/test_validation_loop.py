@@ -92,8 +92,8 @@ def test_missing_report_returns_failed_summary_and_gap_without_exception():
     assert "no logs" in result.analysis_summary
 
 
-def test_failed_reanalysis_retains_report_and_consumed_sequence():
-    state = state_with_report()
+def test_failed_reanalysis_retains_report_and_gap():
+    state = {**state_with_report(), "evidence_sequence": 7}
     seams = MagicMock()
     mismatch = VerificationIssue(
         issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="raw mismatch"
@@ -107,10 +107,6 @@ def test_failed_reanalysis_retains_report_and_consumed_sequence():
             "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
         ) as grounding,
         patch(
-            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
-            return_value={"collected": True, "evidence_sequence": 7},
-        ),
-        patch(
             "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
             return_value={},
         ),
@@ -121,10 +117,16 @@ def test_failed_reanalysis_retains_report_and_consumed_sequence():
     assert update["evidence_sequence"] == 7
     assert update["reanalysis_count"] == 1
     assert update["report"].incident_id == state["report"].incident_id
+    assert "원문 불일치 재분석에 실패했다." in update["gaps"]
 
 
-def test_successful_reanalysis_uses_fresh_observations_and_actual_focus():
-    state = state_with_report()
+def test_successful_reanalysis_redrafts_from_collected_evidence_with_mismatch_focus():
+    state = {
+        **state_with_report(),
+        "evidence": ("collected evidence",),
+        "time_basis": "collected clock",
+        "report_attempts": 2,
+    }
     seams = MagicMock()
     mismatch = VerificationIssue(
         issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="raw mismatch"
@@ -139,28 +141,30 @@ def test_successful_reanalysis_uses_fresh_observations_and_actual_focus():
             "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
         ) as grounding,
         patch(
-            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
-            return_value={
-                "collected": True,
-                "evidence_sequence": 8,
-                "time_basis": "fresh clock",
-            },
-        ),
+            "cluster_doctor.incident_analysis_agent.agent.tools.EvidenceCollector"
+        ) as collector,
         patch(
             "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
-            return_value={"report": fresh_report},
+            return_value={"report": fresh_report, "report_attempts": 1},
         ) as write,
     ):
         grounding.return_value.validate.side_effect = [[mismatch], []]
         update = finalize_update(seams, state)
-    assert update["report"].verification_status is VerificationStatus.PASSED
+    collector.assert_not_called()
+    assert write.call_count == 1
+    redraft_state = write.call_args.args[1]
+    assert redraft_state["evidence"] == ("collected evidence",)
+    assert redraft_state["report_attempts"] == 0
+    assert "raw mismatch" in redraft_state["request"].analysis_goal
     assert "raw mismatch" in write.call_args.args[2]
+    assert update["report"].verification_status is VerificationStatus.PASSED
+    assert update["report_attempts"] == 3
     result = project_result({**state, **update})
-    assert result.observations.time_basis == "fresh clock"
+    assert result.observations.time_basis == "collected clock"
     assert result.report.summary == "fresh"
 
 
-def test_validation_exception_after_reanalysis_preserves_consumed_ids_and_fresh_artifacts():
+def test_validation_exception_after_reanalysis_preserves_redrafted_report():
     state = state_with_report()
     mismatch = VerificationIssue(
         issue_type=VerificationIssueType.ANALYSIS_MISMATCH, reason="bad"
@@ -175,14 +179,6 @@ def test_validation_exception_after_reanalysis_preserves_consumed_ids_and_fresh_
             "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
         ) as grounding,
         patch(
-            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
-            return_value={
-                "collected": True,
-                "evidence_sequence": 8,
-                "time_basis": "fresh clock",
-            },
-        ),
-        patch(
             "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
             return_value={"report": fresh_report},
         ),
@@ -193,11 +189,9 @@ def test_validation_exception_after_reanalysis_preserves_consumed_ids_and_fresh_
         ]
         update = finalize_update(MagicMock(), state)
     assert update["execution_failed"]
-    assert update["evidence_sequence"] == 8
     result = project_result({**state, **update})
     assert result.status.value == "FAILED"
     assert result.report.summary == "fresh"
-    assert result.observations.time_basis == "fresh clock"
     assert result.verification_status is VerificationStatus.NOT_VERIFIED
 
 
@@ -214,10 +208,6 @@ def test_reanalysis_is_never_repeated_after_a_second_analysis_mismatch():
         patch(
             "cluster_doctor.incident_analysis_agent.agent.subagent.GroundingValidator"
         ) as grounding,
-        patch(
-            "cluster_doctor.incident_analysis_agent.agent.subagent.collect_update",
-            return_value={"collected": True},
-        ),
         patch(
             "cluster_doctor.incident_analysis_agent.agent.subagent.report_update",
             return_value={"report": state["report"]},
