@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from functools import partial
 
 from cluster_doctor.exceptions import LlmApiError, LlmResponseError
@@ -164,6 +165,7 @@ class ReportWriter:
                        observations: Observations, evidence: list[Evidence],
                        wiki_index: str = "",
                        open_wiki_pages: Callable[[tuple[str, ...]], dict[str, str]] | None = None,
+                       onset: datetime | None = None,
                        ) -> LogAnalysisReport:
         """추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다.
 
@@ -194,7 +196,7 @@ class ReportWriter:
             cluster=cluster, analyzed_from=start, analyzed_to=end,
             previous_windows_json=previous_json,
             analysis_context=build_analysis_context(observations, evidence, max_chars=40000 - len(index), thresholds=self._thresholds),
-            wiki_index=index,
+            wiki_index=index, onset=onset,
         )
         if sum(len(message['content']) for message in messages) > 60000:
             raise ValueError("사건 종합 입력이 예산을 초과했다")
@@ -224,7 +226,7 @@ class ReportWriter:
         review_messages = build_incident_review_messages(
             analyzed_from=start, analyzed_to=end, draft_json=editable,
             analysis_context=build_analysis_context(observations, evidence, max_chars=context_budget, thresholds=self._thresholds),
-            wiki_pages=pages,
+            wiki_pages=pages, onset=onset,
         )
         if sum(len(message['content']) for message in review_messages) > 60000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
@@ -265,10 +267,11 @@ class ReportWriter:
         evidence: list[Evidence],
         *, observations: Observations | None = None,
         incident_final: bool = False,
+        onset: datetime | None = None,
     ) -> LogAnalysisReport | None:
         prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence,
             analysis_context=build_analysis_context(observations or Observations(), evidence, thresholds=self._thresholds),
-            incident_final=incident_final)
+            incident_final=incident_final, onset=onset)
         messages = ([{"role": "system", "content": _INCIDENT_REVIEW_INSTRUCTIONS}]
                     if incident_final else []) + [{"role": "user", "content": prompt}]
         if sum(len(message['content']) for message in messages) > 60000:

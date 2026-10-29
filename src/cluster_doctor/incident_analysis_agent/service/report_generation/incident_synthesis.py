@@ -52,12 +52,13 @@ def _wiki_access(seams) -> tuple[str, Callable[[tuple[str, ...]], dict[str, str]
     return index, open_pages
 
 
-def synthesize_incident(*, seams, incident, window_reports, observations, evidence):
+def synthesize_incident(*, seams, incident, window_reports, observations, evidence, onset=None):
+    """``onset``은 최초 관측 시각이다. 주어지면 초안·교정·재수정 입력에 함께 싣는다."""
     wiki_index, open_wiki_pages = _wiki_access(seams)
     report = seams.report_writer.draft_incident(
         incident_id=incident.incident_id, cluster=incident.cluster,
         window_reports=window_reports, observations=observations, evidence=evidence,
-        wiki_index=wiki_index, open_wiki_pages=open_wiki_pages,
+        wiki_index=wiki_index, open_wiki_pages=open_wiki_pages, onset=onset,
     )
     grounding = GroundingValidator(call_llm=seams.call_llm, metric_thresholds=seams.metric_thresholds)
     targets = concrete_targets(observations)
@@ -77,7 +78,8 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
         if not requests or round_no == 2:
             break
         revised = seams.report_writer.revise_report(report, tuple(requests), evidence,
-                                                    observations=observations, incident_final=True)
+                                                    observations=observations, incident_final=True,
+                                                    onset=onset)
         if revised is None:
             break
         report = revised

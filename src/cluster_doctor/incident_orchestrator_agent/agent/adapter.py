@@ -147,6 +147,7 @@ class MainAgent:
                 seams=self._seams, incident=incident,
                 window_reports=[w.report for w in windows],
                 observations=result.observations, evidence=list(result.evidence),
+                onset=request.observed_start,
             )
         except Exception:
             _logger.exception("사건 종합 분석 실패")
