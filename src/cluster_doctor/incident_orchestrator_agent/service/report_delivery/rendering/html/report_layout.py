@@ -65,8 +65,8 @@ def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) ->
         f'<h1>{esc(title)}</h1>'
         f'<table><tbody>'
         f'<tr><th>발생 및 인지 일시</th><td>{esc(start)}</td></tr>'
-        f'<tr><th>복구 완료 일시</th><td>{esc(end)}</td></tr>'
-        f'<tr><th>총 장애 시간</th><td>{esc(duration or "미확인")}</td></tr>'
+        f'<tr><th>분석 종료 일시</th><td>{esc(end)}</td></tr>'
+        f'<tr><th>분석 대상 시간</th><td>{esc(duration or "미확인")}</td></tr>'
         + generated +
         f'</tbody></table>'
         + fallback_hint +
