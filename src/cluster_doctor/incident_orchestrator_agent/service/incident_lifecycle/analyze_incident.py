@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
+from datetime import datetime
 
 from cluster_doctor.incident_orchestrator_agent.model.incident import (
     IncidentStatus,
@@ -85,7 +86,8 @@ class AnalyzeIncident:
             result = replace(result, status=forced[0], reason=forced[1], failed=True)
         gaps = result.gaps
         diagnostics = await self._deliver(
-            result, analysis_failed or result.failed, gaps, cluster=incident.cluster
+            result, analysis_failed or result.failed, gaps, cluster=incident.cluster,
+            onset=command.observed_start,
         )
         return IncidentOutcome(
             incident_id=incident.incident_id,
@@ -146,6 +148,7 @@ class AnalyzeIncident:
         gaps: tuple[str, ...],
         *,
         cluster: str = "",
+        onset: datetime | None = None,
     ) -> IncidentAnalysisDetails:
         # window마다 검증된 리포트가 따로 있다. 합치지 않고 마지막 window의
         # 것을 대표로 전달하되, 어느 window의 검증 불일치든 운영자가 볼 수
@@ -161,7 +164,7 @@ class AnalyzeIncident:
         if result.reason and result.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {result.reason}")
         rendered_report = to_incident_analysis_report(
-            report, observations, evidence, cluster=cluster
+            report, observations, evidence, cluster=cluster, onset=onset
         )
         publication = ReportPublication()
         try:

@@ -94,6 +94,7 @@ class IncidentAnalysisReport:
     verification_status: str = "NOT_VERIFIED"
     verification_issues: tuple[str, ...] = ()
     cluster: str = ""
+    onset: datetime | None = None
     analyzed_from: datetime | None = None
     analyzed_to: datetime | None = None
     title: str = ""
