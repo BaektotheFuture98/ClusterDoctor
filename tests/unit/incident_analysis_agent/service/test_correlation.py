@@ -82,3 +82,18 @@ def test_profile_groups_by_shape_not_keyword():
 def test_no_master_events_gives_empty_overlaps_and_cards():
     links = build_cross_links(_observations(master_events=()))
     assert links.overlaps == () and links.nodes == ()
+
+
+def test_wait_actions_count_target_nodes_across_all_master_lines():
+    from cluster_doctor.incident_analysis_agent.service.observation.correlation import cross_links_payload
+    other = FOLLOWER.replace("RC6-18", "RC6-19").replace("Vt2xoFlXTDmYm-BHlsgvBg", "Wt2xoFlXTDmYm-BHlsgvBh")
+    events = tuple(
+        MasterEvent(timestamp=at, node="RC13-03", level="WARN", logger="o.e.t.TransportService", line=line)
+        for at, line in ((_at(3, 37), FOLLOWER), (_at(3, 40), FOLLOWER), (_at(4, 2), other))
+    )
+    [row] = build_cross_links(_observations(master_events=events)).wait_actions
+    assert row.action == "internal:coordination/fault_detection/follower_check"
+    assert (row.target_nodes, row.waits, row.late_responses) == (2, 3, 3)
+    assert (row.first, row.last) == (_at(3, 37), _at(4, 2))
+    [payload] = cross_links_payload(build_cross_links(_observations(master_events=events)), {})["master_wait_actions"]
+    assert payload["target_nodes"] == 2 and payload["waits"] == 3

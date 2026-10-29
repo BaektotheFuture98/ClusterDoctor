@@ -101,8 +101,9 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
                 return
             if minutes[index]['slow_queries'] == 0 and minutes[index]['master_waits'] == 0:
                 drop('minutes', index)
+        # master_wait_actions는 노드 확산을 보여 주는 유일한 합계라 가장 늦게 버린다.
         for field in ('minutes', 'master_wait_overlaps', 'node_cards', 'slow_query_profile',
-                      'slow_concentration'):
+                      'slow_concentration', 'master_wait_actions'):
             while links[field] and over_budget():
                 drop(field, len(links[field]) - 1)
 
