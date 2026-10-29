@@ -325,6 +325,7 @@ def test_onset_reaches_final_revision_input():
     ReportWriter(call_llm=call).revise_report(first,('인용한 시각이 다름',),[],incident_final=True,onset=ONSET)
     assert ONSET_LINE in seen[0][1]['content']
     assert '최초 관측 시각이 주어지면' in seen[0][0]['content']
+    assert '너는 방금' not in seen[0][1]['content'] and '편집자' in seen[0][0]['content']
 
 
 def test_synthesis_passes_onset_to_draft_and_revision():
