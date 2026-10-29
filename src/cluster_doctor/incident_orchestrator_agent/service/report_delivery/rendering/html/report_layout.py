@@ -46,11 +46,13 @@ section p{max-width:none}
 def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) -> str:
     title = report.title or "Elasticsearch 클러스터 장애 분석"
     span_from, span_to = analysis_span(report)
-    start = stamp(span_from) if span_from else "미확인"
+    # 첫 분석 구간은 최초 관측보다 앞에서 시작하므로 발생 시각은 최초 관측 시각으로 쓴다.
+    onset = report.onset or span_from
+    start = stamp(onset) if onset else "미확인"
     end = stamp(span_to) if span_to else "미확인"
     duration = ""
-    if span_from and span_to:
-        delta = span_to - span_from
+    if onset and span_to:
+        delta = span_to - onset
         total_minutes = int(delta.total_seconds() // 60)
         duration = f"{total_minutes}분" if total_minutes >= 1 else f"{int(delta.total_seconds())}초"
     fallback_hint = (

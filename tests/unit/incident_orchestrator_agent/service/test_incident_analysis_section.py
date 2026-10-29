@@ -110,6 +110,15 @@ def test_overview_falls_back_when_ai_report_lacks_one_end_of_its_span():
     assert FALLBACK_SPAN_HINT in overview
 
 
+def test_overview_shows_first_observed_time_not_window_start():
+    onset = T(19, 0).replace(second=37)
+    overview = _text(_page(_ai_report(onset=onset, analyzed_to=T(19, 6))), "overview")
+
+    assert "발생 및 인지 일시 2026-10-23 19:00:37+09:00 KST" in overview
+    assert "18:55" not in overview
+    assert "총 장애 시간 5분" in overview
+
+
 def test_overview_stays_unknown_without_any_span():
     overview = _text(_page(IncidentAnalysisReport(observations=Observations()), analysis_failed=True), "overview")
 

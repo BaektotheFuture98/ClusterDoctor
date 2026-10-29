@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
@@ -29,11 +31,13 @@ def to_incident_analysis_report(
     evidence: list[Evidence],
     *,
     cluster: str = "",
+    onset: datetime | None = None,
 ) -> IncidentAnalysisReport:
     """분석 리포트가 없어도 관측값과 수집 근거를 전달한다."""
     if report is None:
         return IncidentAnalysisReport(
-            observations=observations, evidence=tuple(evidence), cluster=cluster
+            observations=observations, evidence=tuple(evidence), cluster=cluster,
+            onset=onset,
         )
 
     return IncidentAnalysisReport(
@@ -52,6 +56,7 @@ def to_incident_analysis_report(
         verification_status=report.verification_status.value,
         verification_issues=report.verification_issues,
         cluster=cluster,
+        onset=onset,
         analyzed_from=report.analyzed_from,
         analyzed_to=report.analyzed_to,
         narrative=Narrative(
