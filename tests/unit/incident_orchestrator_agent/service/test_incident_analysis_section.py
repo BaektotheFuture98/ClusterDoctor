@@ -116,7 +116,8 @@ def test_overview_shows_first_observed_time_not_window_start():
 
     assert "발생 및 인지 일시 2026-10-23 19:00:37+09:00 KST" in overview
     assert "18:55" not in overview
-    assert "총 장애 시간 5분" in overview
+    assert "분석 종료 일시 2026-10-23 19:06:00+09:00 KST" in overview
+    assert "분석 대상 시간 5분" in overview
 
 
 def test_overview_stays_unknown_without_any_span():
