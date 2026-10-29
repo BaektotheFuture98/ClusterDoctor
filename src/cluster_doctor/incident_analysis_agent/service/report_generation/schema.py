@@ -164,7 +164,7 @@ class DraftWindowSuggestion(BaseModel):
 
 class DraftRecommendation(BaseModel):
     cause_index: int | None = Field(default=None, ge=0, description="대응하는 root_causes의 0부터 시작하는 인덱스. 공통 조사는 null.")
-    text: str = Field(default="", description="대상이 들어간 한 줄 조치(40자 내외).")
+    text: str = Field(default="", description="대상이 들어간 한 줄 조치(60자 내외).")
     wiki_ref: str = Field(
         default="",
         description="사건 종합에서만 쓴다. 위키 색인이 주어졌을 때 일치하는 패턴 id를 그대로 기재하고, 그 밖에는 빈 문자열.",
@@ -186,15 +186,6 @@ class DraftReport(BaseModel):
     LogAnalysisReport로 변환·검증하기 전 값이며 운영자용 IncidentAnalysisReport가 아니다.
     """
 
-    title: str = Field(
-        default="",
-        description="장애 제목. 한 줄 40자 내외. 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'.",
-    )
-    summary: str = Field(
-        default="",
-        description="핵심 현상과 관측된 영향의 요약. 한두 문장. 확인되지 않은 영향은 지어내지 않는다.",
-    )
-    summary_evidence_refs: list[str] = Field(default_factory=list, description="요약의 근거 Evidence id.")
     timeline: list[DraftTimelineEntry] = Field(
         default=[], description="사고 전개를 시간순으로. 근거가 있는 시각만."
     )
@@ -230,6 +221,17 @@ class DraftReport(BaseModel):
     )
     suggested_windows: list[DraftWindowSuggestion] = Field(
         default=[], description="needs_more_context가 true일 때 필요한 시간 범위."
+    )
+    # 상세 판단을 먼저 쓰고 요약과 제목을 마지막에 쓰도록 맨 뒤에 둔다.
+    # 구조화 출력은 필드 순서대로 생성될 수 있다.
+    summary: str = Field(
+        default="",
+        description="핵심 현상과 관측된 영향의 요약. 한두 문장. 확인되지 않은 영향은 지어내지 않는다.",
+    )
+    summary_evidence_refs: list[str] = Field(default_factory=list, description="요약의 근거 Evidence id.")
+    title: str = Field(
+        default="",
+        description="장애 제목. 한 줄 40자 내외. 예: '쿼리 급증으로 인한 클러스터 전체 응답 지연'.",
     )
 
     _string_list = field_validator(

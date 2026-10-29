@@ -296,3 +296,85 @@ def test_invalid_editor_response_does_not_publish_draft_as_reviewed():
     replies=iter(['{"summary":"작성한 초안","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}','not json'])
     with pytest.raises(ValidationError):
         ReportWriter(call_llm=lambda *a,**k:next(replies)).draft_incident(incident_id='I',cluster='C',window_reports=[first],observations=Observations(),evidence=[])
+
+
+ONSET = START + timedelta(seconds=37)
+ONSET_LINE = '최초 관측 시각: 2026-10-05T17:16:37+09:00'
+
+
+def test_onset_reaches_draft_and_editor_inputs_only_when_given():
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1))
+    def run(**extra):
+        seen=[]
+        def call(messages,**kwargs):
+            seen.append(messages[1]['content'])
+            return '{"title":"제목","summary":"종합","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}'
+        ReportWriter(call_llm=call).draft_incident(incident_id='I',cluster='C',window_reports=[first],observations=Observations(),evidence=[],**extra)
+        return seen
+    with_onset=run(onset=ONSET)
+    assert len(with_onset)==2 and all(ONSET_LINE in user for user in with_onset)
+    assert not any('최초 관측 시각' in user for user in run())
+
+
+def test_onset_reaches_final_revision_input():
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),summary='보존할 사실')
+    seen=[]
+    def call(messages,**kwargs):
+        seen.append(messages)
+        return '{"summary":"교정한 사실","findings":[],"root_causes":[],"recommendations":[],"unresolved_questions":[]}'
+    ReportWriter(call_llm=call).revise_report(first,('인용한 시각이 다름',),[],incident_final=True,onset=ONSET)
+    assert ONSET_LINE in seen[0][1]['content']
+    assert '최초 관측 시각이 주어지면' in seen[0][0]['content']
+
+
+def test_synthesis_passes_onset_to_draft_and_revision():
+    from types import SimpleNamespace
+    from cluster_doctor.incident_analysis_agent.model.report import ReportRecommendation
+    from cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis import synthesize_incident
+    # 대응 원인이 없는 조치는 구조 오류라 재수정이 한 번 이상 호출된다.
+    broken=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),summary='요약',
+        recommendations=(ReportRecommendation(text='조사',cause_index=0),))
+    calls=[]
+    def draft_incident(**kwargs):
+        calls.append(('draft',kwargs.get('onset')))
+        return broken
+    def revise_report(report,issues,evidence,**kwargs):
+        calls.append(('revise',kwargs.get('onset')))
+        return None
+    writer=SimpleNamespace(draft_incident=draft_incident,revise_report=revise_report)
+    synthesize_incident(seams=SimpleNamespace(report_writer=writer,wiki_client=None,call_llm=lambda *a,**k:'[]',metric_thresholds=DEFAULT_THRESHOLDS),
+        incident=SimpleNamespace(incident_id='I',cluster='C'),window_reports=[broken],observations=Observations(),evidence=[],onset=ONSET)
+    assert calls==[('draft',ONSET),('revise',ONSET)]
+
+
+def test_analyzer_passes_first_observed_time_as_onset(monkeypatch):
+    from types import SimpleNamespace
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
+    from cluster_doctor.incident_orchestrator_agent.model.incident import Incident, IncidentStatus
+    from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
+    from cluster_doctor.incident_orchestrator_agent.model.window_result import WindowResult
+    from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),summary='구간')
+    analyzer=object.__new__(MainAgent)
+    analyzer._seams=SimpleNamespace()
+    analyzer._recursion_limit=40
+    def stream(state,*a,**k):
+        yield {**state,'window_results':(WindowResult(window=TimeRange(START,first.analyzed_to),report=first),),
+               'status':IncidentStatus.COMPLETED,'closing_reason':'완료'}
+    analyzer._compile=lambda _:SimpleNamespace(stream=stream)
+    seen={}
+    def synthesis(**kwargs):
+        seen.update(kwargs)
+        return first.model_copy(update={'verification_status':VerificationStatus.PASSED})
+    monkeypatch.setattr('cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis.synthesize_incident',synthesis)
+    incident=Incident(incident_id='I',cluster='C',trigger_time=START,kafka_receive_time=START)
+    analyzer.analyze(IncidentAnalysisRequest(incident,ONSET,first.analyzed_to,0))
+    assert seen['onset']==ONSET
+
+
+def test_draft_schema_asks_for_summary_and_title_after_details():
+    from cluster_doctor.incident_analysis_agent.service.report_generation.schema import DraftReport, IncidentDraftReport
+    for model in (DraftReport, IncidentDraftReport):
+        fields=list(model.model_fields)
+        assert fields[-3:]==['summary','summary_evidence_refs','title']
+        assert fields.index('recommendations')<fields.index('summary')
