@@ -9,7 +9,7 @@ from __future__ import annotations
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 
 _SYSTEM_PROMPT = """[역할]
-너는 Elasticsearch 장애의 한 시간 구간을 조사하는 진단 담당이다.
+너는 Elasticsearch 장애의 분석 구간 하나를 조사하는 진단 담당이다.
 
 [조사 범위]
 {window_label}
