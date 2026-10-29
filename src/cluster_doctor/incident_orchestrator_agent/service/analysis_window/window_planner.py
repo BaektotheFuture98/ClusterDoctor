@@ -30,6 +30,10 @@ _logger = logging.getLogger(__name__)
 # 호출 상한(MAX_ANALYSIS_CALLS)이 헛되이 줄어든다.
 MIN_USEFUL_WINDOW = timedelta(minutes=1)
 
+# 첫 후보를 최초 관측 분보다 앞당기는 폭. 최초 관측은 신호가 유입된 시각일
+# 뿐이라, 그 직전의 관련 이벤트를 함께 봐야 원인에 닿는다.
+FIRST_WINDOW_LEAD = timedelta(minutes=5)
+
 
 def plan_new_windows(
     suggested: "list[TimeRange] | tuple[TimeRange, ...]",
@@ -42,8 +46,9 @@ def plan_new_windows(
     제안끼리 먼저 합친다. SubAgent가 겹치는 제안을 둘 내놓으면(흔하다) 각각
     빼는 것만으로는 서로 겹친 후보 둘이 남는다.
 
-    가까운 과거부터 돌려준다. 제안이 여럿일 때 사고 시각에 붙은 쪽이 먼저
-    쓸모 있고, 예산이 모자라면 먼 쪽이 잘리는 편이 낫다.
+    시작 시각이 늦은 순서로 돌려주고, ``limit``을 넘으면 이른 쪽부터 버린다.
+    사고 이전을 거슬러 보는 제안이라면 늦은 쪽이 사고 시각에 붙어 있어 먼저
+    쓸모 있다. 사고 이후 구간이 섞이면 이 순서는 사고 시각과의 거리와 다르다.
     """
     if not suggested:
         return []
@@ -68,20 +73,23 @@ def plan_new_windows(
 
 
 def initial_windows(first_seen, last_seen) -> list[TimeRange]:
-    """관측된 유입의 시작점 근처로 딱 하나짜리 첫 후보를 만든다.
+    """최초 관측 직전부터 관측된 유입의 앞부분까지 첫 후보 하나를 만든다.
 
-    원인은 관측 구간 전체가 아니라 최초 발생 시점 근처에 있는 경우가
-    많다 — 그래서 여기서는 시작점 하나만 내놓는다. 더 이전을 볼지, 이
-    후보 이후를 더 볼지는 코드가 미리 정하지 않는다. 그 판단은
+    최초 관측 분의 ``FIRST_WINDOW_LEAD`` 전부터 마지막 관측 분의 끝까지를
+    덮되, 시작에서 ``MAX_TIME_RANGE_DURATION``을 넘는 뒤쪽은 자른다. 원인은
+    관측 구간 전체가 아니라 최초 발생 시점 근처에 있는 경우가 많아 앞부분만
+    후보로 둔다. 더 이전을 볼지, 이 후보 이후를 더 볼지는 코드가 미리 정하지
+    않는다. 그 판단은
     ``list_candidate_windows``가 보여주는 정보(유입이 멎은 시각 포함)를
     보고 모델이 한다.
 
     구간은 분 경계로 내림·올림한다. 운영자와 모델이 모두 분 단위로 읽고,
     조회도 분 단위로 쪼개진다.
     """
-    start = first_seen.replace(second=0, microsecond=0)
+    anchor = first_seen.replace(second=0, microsecond=0)
+    start = anchor - FIRST_WINDOW_LEAD
     end = (last_seen + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    if end <= start:
-        end = start + timedelta(minutes=1)
+    if end <= anchor:
+        end = anchor + timedelta(minutes=1)
     end = min(end, start + MAX_TIME_RANGE_DURATION)
     return [TimeRange(start=start, end=end)]
