@@ -1,7 +1,7 @@
 """누적된 사실로 최종 incident 서술을 만든다. 수집과 위임은 하지 않는다."""
 import logging
 
-from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
+from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus, WikiPatternRef
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import concrete_targets
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
@@ -71,4 +71,5 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
     return report.model_copy(update={
         'verification_status': status, 'verification_issues': tuple(conflicts + unavailable),
         'revision_count': revisions,
+        'wiki_patterns': tuple(WikiPatternRef(pattern.pattern_id, pattern.title) for pattern in wiki.patterns),
     })
