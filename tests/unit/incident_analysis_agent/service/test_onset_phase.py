@@ -2,6 +2,8 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import pytest
+
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import QueryLogEntry
@@ -33,11 +35,18 @@ def _query(at, run_time):
     )
 
 
-def test_phase_boundaries_follow_the_onset_minute():
-    assert onset_phase(_kst(13, 59, 59), ONSET) == "before"
-    assert onset_phase(_kst(14, 0, 0), ONSET) == "onset"
-    assert onset_phase(_kst(14, 0, 59), ONSET) == "onset"
-    assert onset_phase(_kst(14, 1, 0), ONSET) == "after"
+@pytest.mark.parametrize(
+    ("at", "phase"),
+    [
+        (_kst(13, 59, 59), "before"),
+        (_kst(14, 0, 0), "onset"),
+        (_kst(14, 0, 59), "onset"),
+        (_kst(14, 1, 0), "after"),
+    ],
+    ids=["last-second-before-the-minute", "start-of-the-minute", "end-of-the-minute", "start-of-the-next-minute"],
+)
+def test_phase_boundaries_follow_the_onset_minute(at, phase):
+    assert onset_phase(at, ONSET) == phase
 
 
 def test_phase_does_not_depend_on_the_timezone_of_the_input():

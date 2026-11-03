@@ -144,7 +144,7 @@ def test_collection_exception_still_preserves_consumed_ids():
     assert update["unresolved_gaps"] == (req.analysis_window,)
 
 
-def test_failed_report_attempts_still_consume_the_limit():
+def _collected_state_and_failing_seams():
     state = {
         **initial_analysis_agent_state(request()),
         "collected": True,
@@ -152,25 +152,29 @@ def test_failed_report_attempts_still_consume_the_limit():
     }
     seams = MagicMock()
     seams.report_writer.draft_report.side_effect = RuntimeError("writer failed")
+    return state, seams
+
+
+def test_failed_report_attempts_still_consume_the_limit():
+    state, seams = _collected_state_and_failing_seams()
     state = {**state, **report_update(seams, state, "")}
     state = {**state, **report_update(seams, state, "")}
     assert report_update(seams, state, "") == {}
     assert seams.report_writer.draft_report.call_count == 2
 
 
-def test_report_update_never_touches_the_wiki():
-    state = {
-        **initial_analysis_agent_state(request()),
-        "collected": True,
-        "evidence": (MagicMock(evidence_id="E-i-1"),),
-    }
-    seams = MagicMock()
-    seams.report_writer.draft_report.side_effect = RuntimeError("writer failed")
+def test_report_writer_failure_is_recorded_as_a_gap():
+    state, seams = _collected_state_and_failing_seams()
     update = report_update(seams, state, "")
-    assert seams.wiki_investigator.mock_calls == []
     assert tuple(update["gaps"]) == ("리포트 작성이 실패했다: writer failed",)
+
+
+def test_window_report_draft_never_touches_the_wiki():
+    state, seams = _collected_state_and_failing_seams()
+    report_update(seams, state, "")
+    assert seams.wiki_investigator.mock_calls == []
     _, kwargs = seams.report_writer.draft_report.call_args
-    assert "wiki_context" not in kwargs
+    assert not [name for name in kwargs if "wiki" in name]
 
 
 def test_observation_round_trip_retains_untruncated_master_count():
