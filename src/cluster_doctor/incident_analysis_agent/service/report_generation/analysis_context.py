@@ -13,11 +13,16 @@ from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links, cross_links_payload
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_analysis_agent.service.observation.log_format import format_log_line
+from cluster_doctor.incident_analysis_agent.service.report_generation.onset_phase import onset_phase
 from cluster_doctor.incident_analysis_agent.service.evidence_collection.limits import MAX_EVIDENCE_PER_SOURCE, MAX_EVIDENCE_TOTAL, MAX_RAW_LOG_CHARS
 
 
 def build_analysis_context(observations: Observations, evidence: list[Evidence], *, max_chars: int = MAX_RAW_LOG_CHARS,
-                           thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS) -> str:
+                           thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS,
+                           onset: datetime | None = None) -> str:
+    def phase(at: datetime) -> dict:
+        return {'phase': onset_phase(at, onset)} if onset is not None else {}
+
     ranked = rank_query_requests(observations.query_requests)
     data = {
         'report_timezone': 'Asia/Seoul',
@@ -29,8 +34,8 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
             execution_seconds=str(row.execution_seconds) if row.execution_seconds is not None else None,
             cmd=row.record.cmd, request_host=row.record.host, target_host=row.target_host,
             index_name=row.index_name, conditions=row.conditions, keywords=row.record.keyword,
-            keyword_omitted=row.record.keyword_omitted) for row in ranked[:10]],
-        'minute_observations': [asdict(row) for row in observations.timeline],
+            keyword_omitted=row.record.keyword_omitted, **phase(row.record.timestamp)) for row in ranked[:10]],
+        'minute_observations': [{**asdict(row), **phase(row.minute)} for row in observations.timeline],
         'source_statuses': [asdict(status) for status in observations.source_statuses],
         'node_metrics': [asdict(row) for row in observations.nodes],
         'cross_links': cross_links_payload(
@@ -40,8 +45,10 @@ def build_analysis_context(observations: Observations, evidence: list[Evidence],
         'evidence': [dict(evidence_id=e.evidence_id, event_time=e.event_time.astimezone(KST).isoformat(),
             source=e.source, time_origin=e.time_origin,
             provenance=e.provenance.model_dump(mode='json') if e.provenance else None,
-            message=e.message[:400]) for e in evidence],
+            message=e.message[:400], **phase(e.event_time)) for e in evidence],
     }
+    if onset is not None:
+        data['onset_kst'] = onset.astimezone(KST).isoformat()
     def encode():
         return json.dumps(data, ensure_ascii=False,
             default=lambda value: value.astimezone(KST).isoformat() if isinstance(value, datetime) else str(value))
