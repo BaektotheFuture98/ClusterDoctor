@@ -26,6 +26,14 @@ class WikiPattern:
     reason: str
     page: str
 
+    @property
+    def title(self) -> str:
+        """페이지 본문의 첫 ``# `` 제목. 없으면 패턴 id."""
+        for line in self.page.splitlines():
+            if line.startswith("# "):
+                return line[2:].strip() or self.pattern_id
+        return self.pattern_id
+
 
 @dataclass(frozen=True)
 class WikiFindings:

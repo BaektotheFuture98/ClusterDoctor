@@ -42,6 +42,14 @@ class SuspectPick:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class WikiPatternRef:
+    """사건 종합이 고른 위키 패턴의 표시용 이름. 패턴 본문은 싣지 않는다."""
+
+    pattern_id: str
+    title: str
+
+
 class TimelineEvent(BaseModel):
     """구조화 보고서의 시각별 주장과 그 근거 참조.
 
@@ -84,6 +92,8 @@ class RootCause(BaseModel):
     cause_type: str = "root"
     supporting_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
     counter_evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
+    # 사건 종합에서만 채운다. 위키는 지식 근거라 supporting_evidence_refs를 대신하지 않는다.
+    wiki_ref: str = ""
 
 
 class ReportRecommendation(BaseModel):
@@ -121,6 +131,9 @@ class LogAnalysisReport(BaseModel):
     # 담는다 — took·쿼리 원문·노드명은 코드가 id로 조인해 붙인다. 모델이 옮겨
     # 적게 시키면 틀리고, 실제로 틀렸다(``took=미확인``).
     suspect_picks: tuple[SuspectPick, ...] = Field(default_factory=tuple)
+
+    # 사건 종합이 고른 위키 패턴. wiki_ref를 패턴 제목과 함께 보여 주는 데 쓴다.
+    wiki_patterns: tuple[WikiPatternRef, ...] = Field(default_factory=tuple)
 
     evidence_refs: tuple[str, ...] = Field(default_factory=tuple)
 
