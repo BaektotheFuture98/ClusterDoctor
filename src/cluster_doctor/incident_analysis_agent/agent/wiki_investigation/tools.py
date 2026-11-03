@@ -14,10 +14,8 @@ from collections.abc import Callable
 
 from langchain_core.tools import BaseTool, StructuredTool
 
-from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import (
-    index_pattern_ids,
-)
 from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import cut_at_line
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.index import index_pattern_ids
 
 _logger = logging.getLogger(__name__)
 

@@ -20,12 +20,12 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.report_wri
     ReportWriter,
 )
 from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
-from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import index_pattern_ids
 from cluster_doctor.incident_analysis_agent.agent.wiki_investigation import findings as findings_module
 from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import (
     WikiFindings,
     WikiPattern,
 )
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.index import index_pattern_ids
 
 WIKI_HEADER = "--- 장애 패턴 위키 조사 결과 "
 WIKI_TITLE = "--- 장애 패턴 위키 조사 결과 (참고용, 이번 근거와 독립적이다) ---"
