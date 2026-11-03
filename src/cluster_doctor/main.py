@@ -39,6 +39,10 @@ from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (
     require_supported_provider,
 )
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.investigator import (
+    WikiInvestigator,
+    make_agent_runner,
+)
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
     build_structured_call,
@@ -207,9 +211,15 @@ def compose_analysis_service(settings: Settings, resources: RuntimeResources) ->
         heap_warn_percent=settings.node_heap_warn_percent,
         queue_warn=settings.node_queue_warn,
     )
-    wiki_client = (
-        MonitoringWikiClient(settings.monitoring_wiki_url.strip())
-        if settings.monitoring_wiki_url.strip()
+    model = build_chat_model(
+        provider=provider, model=settings.llm_model, api_key=settings.llm_api_key
+    )
+    wiki_url = settings.monitoring_wiki_url.strip()
+    wiki_investigator = (
+        WikiInvestigator(
+            client=MonitoringWikiClient(wiki_url), run_agent=make_agent_runner(model)
+        )
+        if wiki_url
         else None
     )
     seams = AnalysisSeams(
@@ -226,10 +236,7 @@ def compose_analysis_service(settings: Settings, resources: RuntimeResources) ->
         report_writer=ReportWriter(call_llm=call_llm, metric_thresholds=thresholds),
         metric_thresholds=thresholds,
         analysis_concurrency=settings.analysis_concurrency,
-        wiki_client=wiki_client,
-    )
-    model = build_chat_model(
-        provider=provider, model=settings.llm_model, api_key=settings.llm_api_key
+        wiki_investigator=wiki_investigator,
     )
     analysis_agent = AnalysisAgent(model=model, seams=seams)
     analysis_subagent = AnalysisSubagentAdapter(analysis_agent=analysis_agent)
