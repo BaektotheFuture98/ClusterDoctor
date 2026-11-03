@@ -1,3 +1,4 @@
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.index import index_pattern_ids
 from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.tools import (
     WIKI_PAGE_SECTIONS,
     WikiToolbox,
@@ -13,6 +14,8 @@ INDEX = (
 
 
 class FakeClient:
+    """정해 둔 색인과 페이지를 돌려주고 호출을 기록하는 가짜 위키 클라이언트. test_wiki_investigator도 쓴다."""
+
     def __init__(self, *, index=INDEX, fail_pattern=False):
         self.index = index
         self.fail_pattern = fail_pattern
@@ -75,7 +78,7 @@ def test_unknown_id_never_reaches_the_wiki():
     assert client.pattern_calls == []
 
 
-def test_pattern_uses_fixed_sections_and_is_cached():
+def test_a_pattern_is_fetched_once_with_the_fixed_sections():
     client = FakeClient()
     toolbox = WikiToolbox(client)
     toolbox.get_index()
@@ -198,3 +201,18 @@ def test_toolbox_without_a_deadline_never_expires():
     toolbox.get_pattern("heap-pressure")
 
     assert list(toolbox.pages) == ["heap-pressure"]
+
+
+def test_index_pattern_ids_reads_table_rows_in_order_once_and_ignores_other_lines():
+    index = "\n".join([
+        "# 색인", "",
+        "| 패턴 | 요약 | 리소스 | 대표 시그니처 | confidence | last_seen |",
+        "|---|---|---|---|---|---|",
+        "| [massive-agg-query-timeout](patterns/massive-agg-query-timeout.md) | 요약 | query | master: <TS> | medium | 2026-10-22 |",
+        "| [pat-b](patterns/pat-b.md) | 요약 | data | x | low | 2026-10-01 |",
+        "| [massive-agg-query-timeout](patterns/massive-agg-query-timeout.md) | 중복 | | | | |",
+        "본문 줄 [not-a-row](x.md)",
+    ])
+
+    assert index_pattern_ids(index) == ("massive-agg-query-timeout", "pat-b")
+    assert index_pattern_ids("") == ()

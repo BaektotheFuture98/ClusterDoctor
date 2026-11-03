@@ -1,5 +1,6 @@
 import json
 import logging
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -52,13 +53,20 @@ def test_findings_are_empty_when_the_answer_is_not_json():
     assert findings.known_ids == ()
 
 
-def test_findings_are_empty_when_the_runner_raises():
+@pytest.mark.parametrize(
+    "error", [RuntimeError("boom"), TimeoutError("시간 상한")], ids=["runner-error", "guard-timeout"],
+)
+def test_findings_are_empty_and_the_error_is_logged_when_the_runner_raises(error, caplog):
     def run(toolbox, context):
-        raise RuntimeError("boom")
+        toolbox.get_index()
+        toolbox.get_pattern("heap-pressure")
+        raise error
 
-    findings = WikiInvestigator(client=FakeClient(), run_agent=run).investigate("{}")
+    with caplog.at_level(logging.WARNING):
+        findings = WikiInvestigator(client=FakeClient(), run_agent=run).investigate("{}")
 
     assert findings.known_ids == ()
+    assert type(error).__name__ in caplog.text
 
 
 def test_wiki_failure_leaves_no_patterns_even_if_the_answer_names_one():
@@ -99,21 +107,31 @@ def test_parse_picks_caps_at_three_patterns():
     assert [pick[0] for pick in picks] == ["a", "b", "c"]
 
 
-def test_prompt_block_carries_page_text_but_not_the_reason():
+@pytest.mark.parametrize(
+    ("text", "limit", "expected"),
+    [
+        ("abc\ndef", 7, "abc\ndef"),
+        ("abc\ndef\nghi", 9, "abc\ndef"),
+        ("abc\ndef\nghi", 8, "abc\ndef"),
+        ("abcdefghij", 4, "abcd"),
+        ("", 4, ""),
+    ],
+    ids=["fits", "cuts-at-the-last-newline", "limit-right-after-a-newline", "no-newline-cuts-at-the-limit", "empty"],
+)
+def test_cut_at_line_keeps_whole_lines_within_the_limit(text, limit, expected):
+    assert findings_module.cut_at_line(text, limit) == expected
+
+
+def test_prompt_block_lists_each_page_under_its_id_and_leaves_out_the_reason():
     findings = WikiFindings(patterns=(
         WikiPattern("heap-pressure", "힙 압박 증상 일치", "# heap-pressure\n증상 본문"),
         WikiPattern("gc-overhead", "GC 시간 증가가 일치", "# gc-overhead\nGC 본문"),
     ))
 
-    block = findings.as_prompt_block()
-
-    assert block == (
+    assert findings.as_prompt_block() == (
         "[패턴 heap-pressure]\n# heap-pressure\n증상 본문\n\n"
         "[패턴 gc-overhead]\n# gc-overhead\nGC 본문"
     )
-    assert "힙 압박 증상 일치" not in block
-    assert "GC 시간 증가가 일치" not in block
-    assert "선택 이유" not in block
 
 
 def test_prompt_block_is_empty_without_patterns():
@@ -153,7 +171,12 @@ def test_log_line_names_opened_and_chosen_patterns_with_reasons(caplog):
     assert "[('heap-pressure', '힙 압박 증상 일치')]" in line
 
 
-def test_time_budget_defaults_to_three_minutes_and_sets_the_toolbox_deadline():
+@pytest.mark.parametrize(
+    ("options", "start", "deadline"),
+    [({}, 1000, 1180), ({"time_budget_seconds": 30}, 5, 35)],
+    ids=["default-three-minutes", "overridden"],
+)
+def test_toolbox_deadline_is_the_start_time_plus_the_time_budget(options, start, deadline):
     seen = {}
 
     def run(toolbox, context):
@@ -161,53 +184,20 @@ def test_time_budget_defaults_to_three_minutes_and_sets_the_toolbox_deadline():
         seen["clock"] = toolbox.clock
         return _answer()
 
-    clock = FakeClock(now=1000)
-    WikiInvestigator(client=FakeClient(), run_agent=run, clock=clock).investigate("{}")
+    clock = FakeClock(now=start)
+    WikiInvestigator(client=FakeClient(), run_agent=run, clock=clock, **options).investigate("{}")
 
-    assert WIKI_TIME_BUDGET_SECONDS == 180
-    assert seen["deadline"] == 1180
+    assert seen["deadline"] == deadline
     assert seen["clock"] is clock
-
-
-def test_time_budget_can_be_overridden():
-    seen = {}
-
-    def run(toolbox, context):
-        seen["deadline"] = toolbox.deadline
-        return _answer()
-
-    WikiInvestigator(
-        client=FakeClient(), run_agent=run, time_budget_seconds=30, clock=FakeClock(now=5),
-    ).investigate("{}")
-
-    assert seen["deadline"] == 35
-
-
-class _Handler:
-    def __init__(self):
-        self.calls = 0
-
-    def __call__(self, request):
-        self.calls += 1
-        return "answer"
-
-
-def test_guard_passes_every_call_before_the_deadline():
-    clock = FakeClock()
-    guard = WikiTimeGuardMiddleware(10, clock)
-    handler = _Handler()
-
-    for _ in range(5):
-        assert guard.wrap_model_call("request", handler) == "answer"
-
-    assert handler.calls == 5
 
 
 def test_guard_allows_exactly_one_model_call_after_the_deadline_then_raises():
     clock = FakeClock()
     guard = WikiTimeGuardMiddleware(10, clock)
-    handler = _Handler()
-    guard.wrap_model_call("request", handler)
+    handler = MagicMock(return_value="answer")
+
+    for _ in range(3):
+        assert guard.wrap_model_call("request", handler) == "answer"
     clock.now = 10
 
     assert guard.wrap_model_call("request", handler) == "answer"
@@ -216,42 +206,18 @@ def test_guard_allows_exactly_one_model_call_after_the_deadline_then_raises():
     with pytest.raises(TimeoutError):
         guard.wrap_model_call("request", handler)
 
-    assert handler.calls == 2
+    assert handler.call_count == 4
 
 
 async def test_async_guard_allows_exactly_one_model_call_after_the_deadline_then_raises():
-    clock = FakeClock(now=11)
-    guard = WikiTimeGuardMiddleware(10, clock)
-    calls = []
-
-    async def handler(request):
-        calls.append(request)
-        return "answer"
+    guard = WikiTimeGuardMiddleware(10, FakeClock(now=11))
+    handler = AsyncMock(return_value="answer")
 
     assert await guard.awrap_model_call("request", handler) == "answer"
     with pytest.raises(TimeoutError):
         await guard.awrap_model_call("request", handler)
 
-    assert len(calls) == 1
-
-
-def test_findings_are_empty_when_the_guard_stops_the_model(caplog):
-    clock = FakeClock()
-
-    def run(toolbox, context):
-        guard = WikiTimeGuardMiddleware(toolbox.deadline, toolbox.clock)
-        toolbox.get_index()
-        toolbox.get_pattern("heap-pressure")
-        clock.advance(WIKI_TIME_BUDGET_SECONDS)
-        guard.wrap_model_call("request", _Handler())
-        guard.wrap_model_call("request", _Handler())
-        return _answer(("heap-pressure", "일치"))
-
-    with caplog.at_level(logging.WARNING):
-        findings = WikiInvestigator(client=FakeClient(), run_agent=run, clock=clock).investigate("{}")
-
-    assert findings.known_ids == ()
-    assert "TimeoutError" in caplog.text
+    assert handler.await_count == 1
 
 
 class ScriptedModel(BaseChatModel):
