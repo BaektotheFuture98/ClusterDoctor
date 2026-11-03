@@ -4,7 +4,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 
 def test_report_does_not_include_offender_grouping():
     html=render_report(report())
-    assert '가해자 집계' not in html and '느린 개별 실행 로그' in html
+    assert '가해자 집계' not in html and 'Elasticsearch Query 원문' in html
 
 
 def test_ssh_source_is_visible_without_evidence_ids_or_links():

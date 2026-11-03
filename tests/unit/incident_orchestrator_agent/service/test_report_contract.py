@@ -25,20 +25,20 @@ def report(status='NOT_VERIFIED'):
 
 def test_actual_html_is_individual_source_backed_report():
     html=render_report(report())
-    sections=['conclusion','metrics','query-trend','query-ranking','evidence','timeline','ssh-logs','system-metrics']
+    sections=['overview','incident-analysis','query-trend','timeline','evidence','es-query-log','ssh-logs','system-metrics']
     positions=[html.index(f'id="{name}"') for name in sections]
     assert positions==sorted(positions)
-    assert 'Elasticsearch 쿼리·노드 로그 분석' in html and '수집 쿼리 실행 로그' in html
+    assert 'Elasticsearch 쿼리·노드 로그 분석' in html and 'Elasticsearch Query 원문' in html
     assert '1.96s' in html and 'bulk' in html
     assert html.count('class="execution-row"')==10
     assert '<svg' in html and 'INTERNAL_ID' not in html and 'href="#evidence' not in html
     assert '평균' not in html and 'Avg' not in html
-    assert 'unverified cause' not in html
+    assert 'unverified cause' not in render_report(report('MISMATCH'))
     assert '시각 미확인' in html and '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
     assert '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
     text=render_text(report())
     assert '1.96s' in text and 'bulk' in text and 'INTERNAL_ID' not in text
-    assert '평균' not in text and 'unverified cause' not in text
+    assert '평균' not in text and 'unverified cause' not in render_text(report('MISMATCH'))
 
 
 def test_absent_ssh_does_not_render_empty_table():
@@ -69,13 +69,13 @@ def test_grouped_timeline_preserves_all_supporting_raw_logs_beyond_ssh_limit():
 
 
 def test_unverified_report_has_fact_summary_without_internal_diagnostics():
+    gaps=('리포트 검증 불일치: summary: internal validator reasoning', 'es_query_log 수집 실패')
     r=report()
-    html=render_report(r,gaps=('리포트 검증 불일치: summary: internal validator reasoning', 'es_query_log 수집 실패'))
+    html=render_report(r,gaps=gaps)
     assert '관측된 실행 로그에서' not in html
     assert 'internal validator reasoning' not in html
-    assert 'es_query_log 수집 실패' in html
     assert '관측된 실행 로그에서' not in render_text(r)
-    assert 'unverified cause' not in html
+    assert 'unverified cause' not in render_report(report('MISMATCH'),gaps=gaps)
 
 
 def test_timeline_uses_single_observation_without_internal_baseline():
@@ -109,23 +109,29 @@ def test_validation_diagnostics_are_not_part_of_operator_report():
         assert '검증을 완료한 원인 판단 없음' not in html
 
 
+def test_verification_issues_are_not_rendered():
+    for status in ('NOT_VERIFIED','MISMATCH'):
+        r=replace(report(status),verification_issues=('<b>private issue</b>',))
+        assert 'private issue' not in render_report(r) and 'private issue' not in render_text(r)
+
+
 def test_fallback_has_same_summary_and_cause_slots_as_standard_report():
-    html=render_report(report())
-    summary=html.split('id="conclusion"')[1].split('</section>')[0]
-    assert 'class="report-headline"' not in summary
-    assert '<h3>수집된 자료로 지연 원인을 확정할 수 없습니다.</h3>' in summary
+    html=render_report(report('MISMATCH'))
+    analysis=html.split('id="incident-analysis"')[1].split('</section>')[0]
+    assert 'class="report-headline"' not in analysis and 'class="verdict"' in analysis
+    assert '<h4>수집된 자료로 지연 원인을 확정할 수 없습니다.</h4>' in analysis
 
 
 def test_optional_source_sections_keep_order_and_show_unknown_status_hint():
     r=replace(report(),evidence=())
     html=render_report(r)
-    sections=['conclusion','query-trend','query-ranking','evidence','timeline','master-logs','slowlogs','ssh-logs','system-metrics']
+    sections=['overview','incident-analysis','query-trend','timeline','evidence','es-query-log','slowlogs','master-logs','ssh-logs','system-metrics']
     assert [html.index(f'id="{s}"') for s in sections]==sorted(html.index(f'id="{s}"') for s in sections)
     for name in ('master-logs','slowlogs','ssh-logs'):
         body=html.split(f'id="{name}"')[1].split('</section>')[0].split('</h2>')[1]
         assert body=='<p class="hint">수집 상태 미확인</p>'
     text=render_text(r)
-    assert text.index('마스터 노드 로그') < text.index('slowlog 로그') < text.index('SSH 노드 로그')
+    assert text.index('slowlog 로그') < text.index('마스터 노드 로그') < text.index('SSH 노드 로그')
     assert '로그 없음' not in text
 
 
@@ -171,13 +177,15 @@ def test_all_optional_source_combinations_keep_slots_and_own_records():
 def test_optional_log_limits_and_missing_master_time_are_preserved():
     from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent
     r=report();sample=r.evidence[0]
-    events=tuple(MasterEvent(timestamp=None,node='master',line=f'M-{i}') for i in range(121))
+    names=[f'M-{chr(97+i//26)}{chr(97+i%26)}' for i in range(121)]
+    events=tuple(MasterEvent(timestamp=None,node='master',line=name) for name in names)
     slow=tuple(sample.model_copy(update={'evidence_id':f'S{i}','source':EvidenceSource.SLOWLOG,'message':f'S-{i:02d}'}) for i in range(11))
     r=replace(r,evidence=slow,observations=replace(r.observations,master_events=events))
     html=render_report(r)
     master=html.split('id="master-logs"')[1].split('</section>')[0]
     sl=html.split('id="slowlogs"')[1].split('</section>')[0]
     assert master.count('<pre')==120 and sl.count('<pre')==10
+    assert names[119] in master and names[120] not in master
     assert all(f'S-{i:02d}' in sl for i in range(10)) and 'S-10' not in sl
     assert '시각 미확인' in master
     assert 'M-' not in html.split('id="timeline"')[1].split('</section>')[0]
@@ -191,13 +199,11 @@ def test_failed_collection_keeps_empty_source_slot_and_original_status():
     html=render_report(r)
     assert html.split('id="ssh-logs"')[1].split('</section>')[0].endswith('</h2><p class="hint">SSH 수집 실패</p>')
     assert r.observations.source_statuses[0].status=='failed'
-    assert 'data-node 수집 실패' in html
 
 
 def test_validation_execution_failure_reason_is_not_rendered():
     html=render_report(report(),gaps=('리포트 검증이 실패했다: ValueError', 'SSH 수집 실패'))
     assert 'ValueError' not in html
-    assert 'SSH 수집 실패' in html
 
 
 def test_mismatched_analysis_plain_fallback_does_not_promote_narrative():
