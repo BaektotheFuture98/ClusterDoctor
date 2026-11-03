@@ -167,7 +167,7 @@ def test_report_update_never_touches_the_wiki():
     seams = MagicMock()
     seams.report_writer.draft_report.side_effect = RuntimeError("writer failed")
     update = report_update(seams, state, "")
-    assert seams.wiki_client.mock_calls == []
+    assert seams.wiki_investigator.mock_calls == []
     assert tuple(update["gaps"]) == ("리포트 작성이 실패했다: writer failed",)
     _, kwargs = seams.report_writer.draft_report.call_args
     assert "wiki_context" not in kwargs

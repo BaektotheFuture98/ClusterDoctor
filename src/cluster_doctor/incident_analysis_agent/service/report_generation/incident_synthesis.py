@@ -1,64 +1,44 @@
 """누적된 사실로 최종 incident 서술을 만든다. 수집과 위임은 하지 않는다."""
 import logging
-from collections.abc import Callable
 
 from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import concrete_targets
-from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import (
-    index_pattern_ids,
-    keep_known_wiki_refs,
-)
+from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
+from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import keep_known_wiki_refs
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import GroundingValidator
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import WikiFindings
 
 _logger = logging.getLogger(__name__)
 
 
-_WIKI_PAGE_SECTIONS = ("증상", "원인", "해결방법")
+# 위키 조사 에이전트가 읽는 관측 JSON의 상한. 색인과 패턴 페이지가 같은 대화에 실리므로 사건 종합보다 작게 둔다.
+_WIKI_CONTEXT_MAX_CHARS = 24000
 
 
-def _wiki_access(seams) -> tuple[str, Callable[[tuple[str, ...]], dict[str, str]] | None]:
-    """위키 색인을 한 번 읽고, 고른 패턴 페이지를 여는 함수를 돌려준다.
-
-    위키가 없거나 색인 조회가 실패하거나 색인에서 패턴 id를 읽지 못하면 ("", None)이라 종합은 위키 없이
-    이어 간다. 페이지는 id마다 따로 열고, 하나가 실패하면 나머지는 열지 않고 그때까지 연 것만 돌려준다.
-    """
-    client = seams.wiki_client
-    if client is None:
-        return "", None
+def _investigate_wiki(seams, observations, evidence, onset) -> WikiFindings:
+    """위키 조사 에이전트를 사건당 한 번 돌린다. 위키가 없거나 조사가 실패하면 빈 결과라 종합은 위키 없이 이어 간다."""
+    investigator = seams.wiki_investigator
+    if investigator is None:
+        return WikiFindings()
     try:
-        index = client.get_index()
+        context = build_analysis_context(
+            observations, evidence, max_chars=_WIKI_CONTEXT_MAX_CHARS,
+            thresholds=seams.metric_thresholds, onset=onset)
+        return investigator.investigate(context)
     except Exception as exc:
-        _logger.warning("사건 종합의 위키 색인 조회가 실패해 위키 없이 종합한다: %s", exc)
-        return "", None
-    if not index.strip():
-        return "", None
-    if not index_pattern_ids(index):
-        _logger.warning("위키 색인에서 패턴 id를 읽지 못해 위키 없이 종합한다. 색인 형식이 바뀌었는지 확인한다.")
-        return "", None
-
-    def open_pages(ids: tuple[str, ...]) -> dict[str, str]:
-        pages: dict[str, str] = {}
-        for pattern_id in ids:
-            try:
-                pages[pattern_id] = client.get_pattern(pattern_id, sections=_WIKI_PAGE_SECTIONS)
-            except Exception as exc:
-                # 색인에 있는 id가 열리지 않으면 위키 쪽 문제일 가능성이 높다. 나머지도 같은 대기를 겪지 않게 멈춘다.
-                _logger.warning("위키 패턴 %s 페이지를 열지 못해 나머지 패턴은 열지 않는다: %s", pattern_id, exc)
-                break
-        return pages
-
-    return index, open_pages
+        _logger.warning("위키 조사가 실패해 위키 없이 종합한다: %s", type(exc).__name__)
+        return WikiFindings()
 
 
 def synthesize_incident(*, seams, incident, window_reports, observations, evidence, onset=None):
     """``onset``은 최초 관측 시각이다. 주어지면 초안·교정·재수정 입력에 함께 싣는다."""
-    wiki_index, open_wiki_pages = _wiki_access(seams)
+    wiki = _investigate_wiki(seams, observations, evidence, onset)
     report = seams.report_writer.draft_incident(
         incident_id=incident.incident_id, cluster=incident.cluster,
         window_reports=window_reports, observations=observations, evidence=evidence,
-        wiki_index=wiki_index, open_wiki_pages=open_wiki_pages, onset=onset,
+        onset=onset, wiki=wiki,
     )
     grounding = GroundingValidator(call_llm=seams.call_llm, metric_thresholds=seams.metric_thresholds)
     targets = concrete_targets(observations)
@@ -84,8 +64,8 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
             break
         report = revised
         revisions += 1
-    # 재수정 응답은 색인을 보지 않고 wiki_ref를 다시 쓸 수 있어, 최종 리포트도 색인 id로 한 번 더 제한한다.
-    report = keep_known_wiki_refs(report, index_pattern_ids(wiki_index))
+    # 재수정 응답은 위키 조사 결과를 보지 않고 wiki_ref를 다시 쓸 수 있어, 최종 리포트도 에이전트가 연 패턴 id로 한 번 더 제한한다.
+    report = keep_known_wiki_refs(report, wiki.known_ids)
     status = (VerificationStatus.MISMATCH if conflicts else
               VerificationStatus.NOT_VERIFIED if unavailable else VerificationStatus.PASSED)
     return report.model_copy(update={

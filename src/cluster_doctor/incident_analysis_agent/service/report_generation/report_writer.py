@@ -38,9 +38,9 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.schema imp
     parse_draft,
 )
 from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import (
-    index_pattern_ids,
     keep_known_wiki_refs,
 )
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import WikiFindings
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import complete
 
 _logger = logging.getLogger(__name__)
@@ -52,48 +52,6 @@ def _incident_response_format() -> dict:
         "name": "incident_report_object",
         "schema": {"type": "object", "additionalProperties": True},
     }}
-
-
-# 위키 색인·페이지를 프롬프트에 싣는 상한. 구간 범위와 누적 관측값이 쓰는 예산을 침범하지 않는다.
-_WIKI_INDEX_MAX_CHARS = 6000
-_WIKI_PAGE_MAX_CHARS = 6000
-_WIKI_PAGES_MAX_CHARS = 12000
-_WIKI_MAX_PATTERNS = 3
-
-
-def _cut_at_line(text: str, limit: int) -> str:
-    """``limit`` 이내에서 마지막 줄바꿈까지만 남긴다. 줄바꿈이 없으면 ``limit``에서 자른다."""
-    if len(text) <= limit:
-        return text
-    head = text[:limit]
-    newline = head.rfind("\n")
-    return head[:newline] if newline > 0 else head
-
-
-def _wiki_pages_text(opened: dict[str, str], chosen: tuple[str, ...]) -> str:
-    """열린 패턴 페이지를 고른 순서대로 이어 붙인다.
-
-    큰 페이지 하나가 뒤에 오는 패턴의 몫을 먹지 않도록 페이지마다 상한을 따로 두고, 합계 상한도 둔다.
-    어느 쪽이든 잘리면 경고한다. 잘린 페이지는 교정 모델이 일부만 보게 된다.
-    """
-    parts = []
-    for pattern_id in chosen:
-        page = opened.get(pattern_id, "").strip()
-        if not page:
-            continue
-        cut = _cut_at_line(page, _WIKI_PAGE_MAX_CHARS)
-        if len(cut) < len(page):
-            _logger.warning(
-                "위키 패턴 %s 페이지(%d자)가 상한 %d자를 넘어 %d자까지만 싣는다.",
-                pattern_id, len(page), _WIKI_PAGE_MAX_CHARS, len(cut))
-        parts.append(cut)
-    joined = "\n\n".join(parts)
-    cut = _cut_at_line(joined, _WIKI_PAGES_MAX_CHARS)
-    if len(cut) < len(joined):
-        _logger.warning(
-            "위키 패턴 페이지 합계(%d자)가 상한 %d자를 넘어 %d자까지만 싣는다. 뒤쪽 패턴은 일부만 보인다.",
-            len(joined), _WIKI_PAGES_MAX_CHARS, len(cut))
-    return cut
 
 
 def _with_carried_title(text: str, title: str) -> object:
@@ -163,14 +121,13 @@ class ReportWriter:
     def draft_incident(self, *, incident_id: str, cluster: str,
                        window_reports: list[LogAnalysisReport],
                        observations: Observations, evidence: list[Evidence],
-                       wiki_index: str = "",
-                       open_wiki_pages: Callable[[tuple[str, ...]], dict[str, str]] | None = None,
                        onset: datetime | None = None,
+                       wiki: WikiFindings | None = None,
                        ) -> LogAnalysisReport:
-        """추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다.
+        """이 호출 안에서는 추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다.
 
-        ``wiki_index``는 참고용이다. 길이를 제한해 프롬프트 예산을 지키고, 색인에 없는 id는
-        ``wiki_ref``로 남지 않게 한다. 종합이 고른 패턴의 페이지만 ``open_wiki_pages``로 열어 교정에 싣는다.
+        ``wiki``는 위키 조사 에이전트가 열어 고른 패턴이다. 참고용이며 근거가 아니다.
+        초안·교정 프롬프트에 같은 조사 결과를 싣고, ``wiki_ref``는 그 패턴 id로만 남긴다.
         """
         from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
         from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
@@ -185,18 +142,15 @@ class ReportWriter:
         previous_json = json.dumps({"windows": previous}, ensure_ascii=False)
         if len(previous_json) > 12000:
             raise ValueError("구간별 범위 입력이 종합 예산을 초과했다")
-        full_index = wiki_index.strip()
-        index = _cut_at_line(full_index, _WIKI_INDEX_MAX_CHARS)
-        if len(index) < len(full_index):
-            _logger.warning(
-                "위키 색인(%d자)이 상한 %d자를 넘어 %d자까지만 싣는다. 뒤쪽 패턴은 모델에게 보이지 않는다.",
-                len(full_index), _WIKI_INDEX_MAX_CHARS, len(index))
-        valid_ids = index_pattern_ids(index)
+        wiki = wiki or WikiFindings()
+        wiki_block = wiki.as_prompt_block()
         messages = build_incident_synthesis_messages(
             cluster=cluster, analyzed_from=start, analyzed_to=end,
             previous_windows_json=previous_json,
-            analysis_context=build_analysis_context(observations, evidence, max_chars=40000 - len(index), thresholds=self._thresholds),
-            wiki_index=index, onset=onset,
+            analysis_context=build_analysis_context(
+                observations, evidence, max_chars=40000 - len(wiki_block),
+                thresholds=self._thresholds, onset=onset),
+            wiki_findings=wiki_block, onset=onset,
         )
         if sum(len(message['content']) for message in messages) > 60000:
             raise ValueError("사건 종합 입력이 예산을 초과했다")
@@ -208,25 +162,15 @@ class ReportWriter:
         if not draft.summary.strip():
             raise ValueError("사건 종합 응답에 요약이 없다")
         editable = draft.model_dump_json(include=INCIDENT_EDITABLE_FIELDS)
-        pages = ""
-        if valid_ids and open_wiki_pages is not None:
-            chosen = tuple(dict.fromkeys(
-                ref for ref in (item.wiki_ref.strip() for item in draft.recommendations) if ref in valid_ids
-            ))[:_WIKI_MAX_PATTERNS]
-            if chosen:
-                try:
-                    opened = open_wiki_pages(chosen)
-                except Exception as exc:
-                    _logger.warning("[incident] 위키 패턴 페이지를 열지 못했다: %s", exc)
-                    opened = {}
-                pages = _wiki_pages_text(opened, chosen)
-        context_budget = min(40000, 60000 - len(editable) - len(_INCIDENT_REVIEW_INSTRUCTIONS) - len(pages) - 500)
+        context_budget = min(40000, 60000 - len(editable) - len(_INCIDENT_REVIEW_INSTRUCTIONS) - len(wiki_block) - 500)
         if context_budget < 1000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
         review_messages = build_incident_review_messages(
             analyzed_from=start, analyzed_to=end, draft_json=editable,
-            analysis_context=build_analysis_context(observations, evidence, max_chars=context_budget, thresholds=self._thresholds),
-            wiki_pages=pages, onset=onset,
+            analysis_context=build_analysis_context(
+                observations, evidence, max_chars=context_budget,
+                thresholds=self._thresholds, onset=onset),
+            wiki_findings=wiki_block, onset=onset,
         )
         if sum(len(message['content']) for message in review_messages) > 60000:
             raise ValueError("사건 교정 입력이 예산을 초과했다")
@@ -241,7 +185,7 @@ class ReportWriter:
             window=TimeRange(first.analyzed_from, first.analyzed_to),
             evidence_refs=tuple(e.evidence_id for e in evidence),
         ).model_copy(update={"analyzed_from": start, "analyzed_to": end})
-        return keep_known_wiki_refs(report, valid_ids)
+        return keep_known_wiki_refs(report, wiki.known_ids)
 
     @staticmethod
     def _prior_summary(prior_report: LogAnalysisReport | None) -> str:
@@ -270,7 +214,8 @@ class ReportWriter:
         onset: datetime | None = None,
     ) -> LogAnalysisReport | None:
         prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence,
-            analysis_context=build_analysis_context(observations or Observations(), evidence, thresholds=self._thresholds),
+            analysis_context=build_analysis_context(
+                observations or Observations(), evidence, thresholds=self._thresholds, onset=onset),
             incident_final=incident_final, onset=onset)
         messages = ([{"role": "system", "content": _INCIDENT_REVIEW_INSTRUCTIONS}]
                     if incident_final else []) + [{"role": "user", "content": prompt}]

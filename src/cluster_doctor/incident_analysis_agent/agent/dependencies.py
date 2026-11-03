@@ -32,8 +32,8 @@ from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
 )
-from cluster_doctor.incident_analysis_agent.datasource.mcp.wiki_client import (
-    MonitoringWikiClient,
+from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.investigator import (
+    WikiInvestigator,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (
     MAX_CONCURRENCY,
@@ -48,7 +48,9 @@ class AnalysisSeams:
     단계다. 어느 쪽도 포트 하나로 표현되지 않는다 — 수집기는 datasource
     의존성 여럿을 받아야 하고, 리포트 작성은 LLM 하나만 있으면 된다. 각
     소비자(``EvidenceCollector``, ``node_investigation``, ``ReportWriter``,
-    ``GroundingValidator``)는 여기서 자기가 필요한 필드만 꺼내 쓴다.
+    ``GroundingValidator``)는 여기서 자기가 필요한 필드만 꺼내 쓴다. 사건 종합
+    (``synthesize_incident``)도 이 컨테이너에서 ``report_writer``와
+    ``wiki_investigator``를 꺼내 쓴다.
     """
 
     fetch_logs: Callable[[TimeRange], LogFetchResult]
@@ -60,4 +62,4 @@ class AnalysisSeams:
     report_writer: ReportWriter
     metric_thresholds: NodeMetricThresholds = DEFAULT_THRESHOLDS
     analysis_concurrency: int = MAX_CONCURRENCY
-    wiki_client: MonitoringWikiClient | None = None
+    wiki_investigator: WikiInvestigator | None = None
