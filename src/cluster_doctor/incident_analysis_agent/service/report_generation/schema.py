@@ -60,6 +60,20 @@ def _as_string_list(value: object) -> object:
     return value
 
 
+def _wiki_ref_text(value: object) -> str:
+    """위키 참조는 보조 정보라, 형식이 어긋난 값 하나가 초안 전체를 버리게 하지 않는다.
+
+    문자열은 그대로, 배열은 첫 번째 문자열 항목으로 받고 ``null``·그 밖의 형식은 빈 문자열로 둔다.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                return item
+    return ""
+
+
 class DraftTimelineEntry(BaseModel):
     """모델 응답의 타임라인 초안 한 항목.
 
@@ -136,6 +150,17 @@ class DraftCause(BaseModel):
     )(_as_string_list)
 
 
+class IncidentDraftCause(DraftCause):
+    """사건 종합의 원인 후보. 구간 단계 스키마를 키우지 않으려고 위키 참조는 여기에만 둔다."""
+
+    wiki_ref: str = Field(
+        default="",
+        description="위키 조사 결과의 패턴 id 하나. 증상이 관측과 맞고 그 관측이 supporting_evidence_refs에 있을 때만 쓰고, 그 밖에는 빈 문자열.",
+    )
+
+    _wiki_ref = field_validator("wiki_ref", mode="before")(_wiki_ref_text)
+
+
 class DraftSuspectPick(BaseModel):
     """코드가 제시한 후보 중 모델이 고른 것.
 
@@ -167,17 +192,13 @@ class DraftRecommendation(BaseModel):
     text: str = Field(default="", description="대상이 들어간 한 줄 조치(60자 내외).")
     wiki_ref: str = Field(
         default="",
-        description="사건 종합에서만 쓴다. 위키 색인이 주어졌을 때 일치하는 패턴 id를 그대로 기재하고, 그 밖에는 빈 문자열.",
+        description="사건 종합에서만 쓴다. 위키 조사 결과가 주어졌을 때 그 패턴 id를 그대로 기재하고, 그 밖에는 빈 문자열.",
     )
     evidence_refs: list[str] = Field(default_factory=list)
 
     _string_list = field_validator("evidence_refs", mode="before")(_as_string_list)
 
-    @field_validator("wiki_ref", mode="before")
-    @classmethod
-    def _null_wiki_ref(cls, value):
-        """위키 참조는 보조 정보라, null 하나가 초안 전체를 버리게 하지 않는다."""
-        return "" if value is None else value
+    _wiki_ref = field_validator("wiki_ref", mode="before")(_wiki_ref_text)
 
 
 class DraftReport(BaseModel):
@@ -286,6 +307,8 @@ class DraftReport(BaseModel):
                     cause_type=item.cause_type,
                     supporting_evidence_refs=tuple(item.supporting_evidence_refs),
                     counter_evidence_refs=tuple(item.counter_evidence_refs),
+                    # 구간 단계의 DraftCause에는 위키 참조가 없다.
+                    wiki_ref=getattr(item, "wiki_ref", ""),
                 )
                 for item in self.root_causes
             ),
@@ -357,7 +380,7 @@ class IncidentDraftReport(DraftReport):
     title: str
     summary: str
     findings: list[DraftFinding]
-    root_causes: list[DraftCause]
+    root_causes: list[IncidentDraftCause]
     recommendations: list[DraftRecommendation]
     unresolved_questions: list[str]
 
