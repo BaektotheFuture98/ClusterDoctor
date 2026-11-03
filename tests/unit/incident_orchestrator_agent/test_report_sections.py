@@ -70,8 +70,8 @@ def test_verdict_lines():
 
 
 def test_conclusion_has_no_severity_banner_and_mentions_nodes():
-    html = render_conclusion(build_cross_links(_OBS), causes_html="<h3>원인</h3>")
-    assert 'id="conclusion"' in html and "<h3>원인</h3>" in html
+    html = render_conclusion(build_cross_links(_OBS))
+    assert 'id="conclusion"' in html
     assert "노드 1대(RC6-18)" in html
     assert "LOW" not in html and "HIGH" not in html
 

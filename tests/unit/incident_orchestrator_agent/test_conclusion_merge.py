@@ -48,8 +48,8 @@ def _html(report, **kw):
 
 def test_section_order_and_removed_sections():
     html = _html(_report(_narrative()))
-    order = ['id="conclusion"', "원인 문장", "메커니즘 문단", "조치 하나", "조치 둘", 'id="metrics"', 'id="query-trend"',
-             'id="query-ranking"', '<details id="evidence">']
+    order = ['id="overview"', 'id="incident-analysis"', "원인 문장", "메커니즘 문단", 'id="recommendations"', "조치 하나", "조치 둘",
+             'id="query-trend"', 'id="timeline"', '<details id="evidence">']
     positions = [html.index(marker) for marker in order]
     assert positions == sorted(positions)
     assert 'id="causes"' not in html and 'id="actions"' not in html
@@ -61,18 +61,19 @@ def _summary_report(evidence=()):
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
     source = LogAnalysisReport(
         incident_id="I", analyzed_from=NOW, analyzed_to=NOW,
-        summary="숨겨질 요약", summary_evidence_refs=tuple(e.evidence_id for e in evidence),
+        summary="요약 문장", summary_evidence_refs=tuple(e.evidence_id for e in evidence),
         root_causes=(RootCause(statement="원인 문장", mechanism="메커니즘 문단"),),
         verification_status=VerificationStatus.PASSED,
     )
     return to_incident_analysis_report(source, _report(None).observations, list(evidence))
 
 
-def test_summary_is_not_shown_in_html_or_text():
+def test_summary_is_shown_in_html_analysis_section_but_not_in_text():
     report = _summary_report()
-    assert "숨겨질 요약" not in _html(report)
-    assert "숨겨질 요약" not in render_text(report)
-    assert 'class="report-headline"' not in _html(report)
+    html = _html(report)
+    assert "요약 문장" in html[html.index('id="incident-analysis"'):html.index('id="query-trend"')]
+    assert "요약 문장" not in render_text(report)
+    assert 'class="report-headline"' not in html
 
 
 def test_internal_summary_only_citations_are_not_listed():
@@ -84,11 +85,8 @@ def test_internal_summary_only_citations_are_not_listed():
     assert "요약에만 인용된 원문" not in render_text(report).split("결론")[1].split("핵심 요약")[0]
 
 
-def test_findings_are_first_inside_folded_evidence():
+def test_findings_are_not_in_main_body_and_follow_causes_in_text():
     html = _html(_report(_narrative()))
-    evidence = html[html.index('<details id="evidence">'):]
-    assert evidence.index('id="findings"') < evidence.index('id="cross-source"')
-    assert evidence.index("관측 제목") < evidence.index("관측 설명")
     assert "관측 제목" not in html[:html.index('<details id="evidence">')]
     text = render_text(_report(_narrative()))
     assert text.index("원인 문장") < text.index("주요 관측") < text.index("관측 제목")
@@ -132,12 +130,14 @@ def test_conclusion_renders_headline_bold_and_detail_hint_escaped():
 
 
 def test_fallback_narrative_shows_verdict_and_unconfirmed_cause():
-    report = _report(_narrative(), status="NOT_VERIFIED")
+    report = _report(_narrative(), status="MISMATCH")
     html = _html(report)
-    conclusion = html[html.index('id="conclusion"'):html.index('id="metrics"')]
-    assert 'class="verdict"' in conclusion
-    assert "<h3>수집된 자료로 지연 원인을 확정할 수 없습니다.</h3>" in conclusion
-    assert "관측된 실행 로그에서" not in html and "메커니즘 문단" not in conclusion
+    analysis = html[html.index('id="incident-analysis"'):html.index('id="query-trend"')]
+    assert 'class="verdict"' in analysis
+    assert "<h4>수집된 자료로 지연 원인을 확정할 수 없습니다.</h4>" in analysis
+    assert "관측된 실행 로그에서" not in html and "메커니즘 문단" not in analysis
     failed = _html(_report(_narrative()), analysis_failed=True)
-    assert "구간 분석 중 실패가 있어" in failed and "AI 분석에 실패해 관측값만 표시합니다." not in failed
+    failed_analysis = failed[failed.index('id="incident-analysis"'):failed.index('id="query-trend"')]
+    assert "일부 분석 실패" in failed_analysis and "메커니즘 문단" in failed_analysis
+    assert "AI 분석에 실패해 관측값만 표시합니다." not in failed
     assert "수집된 자료로 지연 원인을 확정할 수 없습니다." in render_text(report)

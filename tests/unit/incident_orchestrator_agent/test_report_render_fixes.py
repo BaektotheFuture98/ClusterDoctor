@@ -33,12 +33,6 @@ def _html(report):
     return render_layout(report, NOW, gaps=(), analysis_failed=False, css="")
 
 
-def test_metric_card_label_names_master_wait():
-    html = _html(_report())
-    assert "마스터 응답 지연 노드" in html
-    assert ">응답 지연 노드<" not in html
-
-
 def test_slowlog_cited_line_printed_once_with_mark():
     slow = _slow("E1", "N03", "took 32s 느린쿼리")
     cite = EvidenceCitation("E1", slow)
@@ -55,15 +49,6 @@ def test_slowlog_contradicting_line_printed_once_with_mark():
     html = _html(_report((slow,), narrative))
     assert html.count("took 32s 느린쿼리") == 1
     assert "[반증 인용]" in html
-
-
-def test_non_slowlog_citation_still_listed_in_citations():
-    master = Evidence(evidence_id="E2", event_time=datetime(2026, 10, 14, 14, 0, tzinfo=KST),
-                      source=EvidenceSource.MASTER_LOG, message="마스터 원문")
-    cite = EvidenceCitation("E2", master)
-    narrative = Narrative(causes=(CauseAssessment(statement="원인", mechanism="설명", supporting=(cite,)),))
-    html = _html(_report((master,), narrative))
-    assert "마스터 원문" in html[html.index('id="citations"'):]
 
 
 def test_slowlog_node_leads_metric_table_and_text():

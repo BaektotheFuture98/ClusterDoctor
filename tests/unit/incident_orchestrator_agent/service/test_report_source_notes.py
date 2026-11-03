@@ -38,10 +38,10 @@ def slow_evidence():
 
 
 TEXT_SECTIONS = {
-    'master-logs': ('마스터 노드 로그', 'slowlog 로그'),
-    'slowlogs': ('slowlog 로그', 'SSH 노드 로그'),
+    'es-query-log': ('느린 개별 실행 로그', 'slowlog 로그'),
+    'slowlogs': ('slowlog 로그', '마스터 노드 로그'),
+    'master-logs': ('마스터 노드 로그', 'SSH 노드 로그'),
     'ssh-logs': ('SSH 노드 로그', '시스템 지표 · 관측 최대값'),
-    'query-ranking': ('느린 개별 실행 로그', '마스터 노드 로그'),
 }
 
 
@@ -104,12 +104,12 @@ def test_ssh_note_absent_when_evidence_exists():
 
 def test_empty_query_table_messages():
     failed = make([st('es_query_log', 'failed', None, 'ch timeout')], queries=())
-    check(failed, 'query-ranking', '수집 실패: ch timeout')
+    check(failed, 'es-query-log', '수집 실패: ch timeout')
     for statuses in ([], [st('es_query_log', 'ok', 0)]):
-        check(make(statuses, queries=()), 'query-ranking', '쿼리 실행 로그가 수집되지 않았습니다. 수집 상태를 확인하세요')
+        check(make(statuses, queries=()), 'es-query-log', '쿼리 실행 로그가 수집되지 않았습니다. 수집 상태를 확인하세요')
     assert '수집된 실행 로그 없음' not in render_report(make([], queries=()))
 
 
 def test_query_table_has_no_note_when_rows_exist():
     html = render_report(make([st('es_query_log', 'ok', 12)]))
-    assert 'hint' not in section(html, 'query-ranking')
+    assert 'hint' not in section(html, 'es-query-log')

@@ -7,6 +7,7 @@ from cluster_doctor.incident_analysis_agent.model.report import SuspectPick
 from cluster_doctor.incident_analysis_agent.service.observation.compute import slow_candidates
 from tests.unit.incident_orchestrator_agent.service.test_report_contract import report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_renderer import render_report
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 
 
 def test_verified_cause_and_action_include_visible_original_source():
@@ -14,8 +15,9 @@ def test_verified_cause_and_action_include_visible_original_source():
     n=Narrative(causes=(CauseAssessment(statement='가설',supporting=(citation,),contradicting=(citation,)),),
         recommendations=(Recommendation('확인 목적',citations=(citation,)),))
     html=render_report(replace(r,narrative=n))
-    assert '가설' in html and '판단에 인용된 원문' in html
-    assert '확인 목적' in html and '/es/log' in html and 'WARN &lt;stack&gt;&amp;' in html
+    assert '가설' in html and '확인 목적' in html
+    collected=html[html.index('<details id="evidence">'):]
+    assert '/es/log' in collected and 'WARN &lt;stack&gt;&amp;' in collected
     assert e.evidence_id not in html and 'href="#evidence' not in html
 
 
@@ -38,14 +40,20 @@ def test_partially_verified_interpretations_and_actions_are_shown_with_notice():
 def test_dangling_reference_has_no_id_or_link():
     r=report('PASSED')
     n=Narrative(causes=(CauseAssessment(statement='hypothesis',supporting=(EvidenceCitation('MISSING-ID',None),)),))
-    html=render_report(replace(r,narrative=n))
-    assert '인용 원문 확인 불가' in html and 'MISSING-ID' not in html
+    assert 'MISSING-ID' not in render_report(replace(r,narrative=n))
+    text=render_text(replace(r,narrative=n))
+    assert '인용 원문 확인 불가' in text and 'MISSING-ID' not in text
 
 
-def test_finding_title_detail_are_escaped():
+def test_narrative_text_is_escaped_and_finding_markup_is_not_emitted():
     r=report('PASSED')
-    html=render_report(replace(r,narrative=Narrative(findings=(Finding(severity='Warning',title='<b>title</b>',detail='<script>detail</script>'),))))
-    assert '&lt;b&gt;title&lt;/b&gt;' in html and '&lt;script&gt;detail&lt;/script&gt;' in html
+    n=Narrative(causes=(CauseAssessment(statement='<b>cause</b>',mechanism='<i>mechanism</i>'),),recommendations=(Recommendation('<u>action</u>'),),
+        findings=(Finding(severity='Warning',title='<b>title</b>',detail='<script>detail</script>'),))
+    html=render_report(replace(r,narrative=n))
+    for escaped in ('&lt;b&gt;cause&lt;/b&gt;','&lt;i&gt;mechanism&lt;/i&gt;','&lt;u&gt;action&lt;/u&gt;'):
+        assert escaped in html
+    for raw in ('<b>','<i>mechanism','<u>action','<script>detail'):
+        assert raw not in html
     assert '<script>' not in html.replace(PRINT_OPEN_SCRIPT,'')
 
 
