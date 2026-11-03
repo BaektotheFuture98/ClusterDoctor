@@ -32,6 +32,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.prompts im
     build_revision_prompt,
     INCIDENT_EDITABLE_FIELDS,
     _INCIDENT_REVIEW_INSTRUCTIONS,
+    _INCIDENT_REVISION_INSTRUCTIONS,
 )
 from cluster_doctor.incident_analysis_agent.service.report_generation.schema import (
     DraftReport,
@@ -217,7 +218,7 @@ class ReportWriter:
             analysis_context=build_analysis_context(
                 observations or Observations(), evidence, thresholds=self._thresholds, onset=onset),
             incident_final=incident_final, onset=onset)
-        messages = ([{"role": "system", "content": _INCIDENT_REVIEW_INSTRUCTIONS}]
+        messages = ([{"role": "system", "content": _INCIDENT_REVISION_INSTRUCTIONS}]
                     if incident_final else []) + [{"role": "user", "content": prompt}]
         if sum(len(message['content']) for message in messages) > 60000:
             _logger.warning("수정 입력이 예산을 초과해 기존 보고서를 보존한다")
