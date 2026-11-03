@@ -1,4 +1,4 @@
-"""위키 색인에서 패턴 id를 읽고, 리포트의 ``wiki_ref``를 그 id로 제한한다."""
+"""위키 색인에서 패턴 id를 읽고, 리포트의 ``wiki_ref``를 주어진 패턴 id로 제한한다."""
 
 import re
 from collections.abc import Collection
@@ -14,8 +14,9 @@ def index_pattern_ids(index: str) -> tuple[str, ...]:
 
 
 def keep_known_wiki_refs(report: LogAnalysisReport, known_ids: Collection[str]) -> LogAnalysisReport:
-    """위키 색인에 실제로 있는 패턴 id만 ``wiki_ref``로 남긴다.
+    """주어진 패턴 id 목록에 있는 ``wiki_ref``만 남긴다.
 
+    호출처는 위키 조사 에이전트가 열어 고른 패턴 id(``WikiFindings.known_ids``)를 넘긴다.
     모델이 지어낸 id가 위키 배지로 나가면 운영자는 존재하지 않는 패턴을 찾게 된다.
     """
     def known(ref: str) -> bool:

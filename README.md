@@ -60,16 +60,17 @@ flowchart TD
     end
     M -->|"finish_incident로 종료"| Y1
     subgraph Y["사건 종합 · 그래프 밖에서 코드가 호출"]
-        Y1["초안 작성 LLM<br/>구간 리포트·누적 근거 + 위키 색인"] --> Y2["교정 LLM<br/>초안이 고른 위키 패턴 페이지 참고"]
-        Y2 --> Y3["검증·재수정<br/>검증 최대 3회"]
+        Y1["위키 조사 에이전트 (위키 연결 시)<br/>색인 읽기 → 후보 페이지 열기 → 대조"] --> Y2["초안 작성 LLM<br/>구간 리포트·누적 근거 + 고른 패턴 페이지"]
+        Y2 --> Y3["교정 LLM<br/>고른 패턴 페이지 참고"]
+        Y3 --> Y4["검증·재수정<br/>검증 최대 3회"]
     end
-    Y3 --> R["HTML 보고서<br/>로컬 저장 → SFTP"]
+    Y4 --> R["HTML 보고서<br/>로컬 저장 → SFTP"]
 ```
 
 1. **신호 수신**: Kafka 메시지에서 발생 시각을 읽어 `ProblemLogSignal`을 만듭니다. 로그 종류는 거르지 않습니다. 발생 시각이 수신 시각보다 30분 넘게 앞서거나 미래이면 수신 시각을 대신 씁니다.
 2. **유입 정착 대기**: 30초마다 새 신호가 있는지 보고, 연속 두 번 없으면 사건을 엽니다. 누적 대기는 최대 5분입니다.
 3. **구간 분석**: Main Agent가 분석할 시간 구간을 고르고 Analysis SubAgent에 하나씩 맡깁니다. 결과를 보고 더 볼 구간이 있는지 판단하거나 종료합니다.
-4. **사건 종합**: Main Agent 그래프가 끝나면 코드가 구간 리포트와 누적 근거로 사건 전체 리포트를 합성·검증합니다. Main Agent의 도구가 아니라 별도 LLM 호출이며, 위키가 연결돼 있으면 이 단계에서만 장애 패턴을 참고합니다.
+4. **사건 종합**: Main Agent 그래프가 끝나면 코드가 (위키가 연결돼 있으면) 위키 조사 에이전트를 사건당 한 번 돌리고, 그 결과와 구간 리포트·누적 근거로 사건 전체 리포트를 합성·검증합니다. 둘 다 Main Agent의 도구가 아니라 그래프 밖에서 코드가 호출하며, 장애 패턴은 이 단계에서만 참고합니다.
 5. **보고서 발행**: HTML을 로컬에 먼저 저장하고, 설정돼 있으면 SFTP로 올립니다.
 
 정착 대기와 분석은 하나의 루프입니다. 한 사건의 분석이 끝나야 다음 신호의 정착 판단을 시작하고, 그 사이 들어온 신호는 큐에 쌓입니다. 진행 중인 사건에 새 신호를 합치거나 끝난 사건을 다시 실행하지 않습니다.
@@ -117,14 +118,19 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 
 구간 리포트가 하나 이상 있고 취소되지 않았으면, 코드가 누적 근거로 사건 전체 리포트를 합성하고 검증합니다. 합성에 실패해도 마지막 구간 리포트로 대신하지 않습니다.
 
-`MONITORING_WIKI_URL`이 설정돼 있으면 장애 패턴 위키(MCP)를 참고합니다.
+`MONITORING_WIKI_URL`이 설정돼 있으면 위키 조사 에이전트가 사건당 한 번 장애 패턴 위키(MCP)를 조사합니다. 에이전트의 도구는 `get_index`와 `get_pattern` 두 개입니다.
 
-1. `get_index`로 패턴 색인을 읽어 종합 프롬프트에 넣습니다.
-2. 모델이 권장 조치의 `wiki_ref`에 일치하는 패턴 id를 적습니다.
-3. 코드가 그 패턴 페이지(증상·원인·해결방법, 최대 3개)를 `get_pattern`으로 열어 교정 단계에 넣습니다.
-4. 최종 `wiki_ref`는 색인에 있는 id만 남깁니다. 보고서의 권장 조치 옆에 위키 배지로 표시됩니다.
+1. `get_index`로 패턴 색인을 읽습니다.
+2. 관측과 증상이 같아 보이는 후보를 `get_pattern`으로 열어(최대 3개) 증상·원인·해결방법을 관측과 대조합니다. 맞지 않으면 다른 후보를 엽니다.
+3. 맞는 패턴 id를 답하면, 코드가 그 패턴 페이지의 본문을 초안 작성·교정 프롬프트에 싣습니다. 맞는 패턴이 없으면 위키 없이 종합합니다. 고른 이유는 프롬프트에 싣지 않고 로그에만 남깁니다.
+4. 최종 `wiki_ref`는 에이전트가 고르고 실제로 연 패턴 id만 남깁니다. 보고서의 권장 조치 옆에 위키 배지로 표시됩니다.
 
-우리 관측 데이터는 위키로 보내지 않습니다. 색인 조회가 실패하거나 색인에서 패턴 id를 읽지 못하면 경고를 남기고 위키 없이 종합합니다. 패턴 페이지가 열리지 않으면 나머지는 열지 않고 그때까지 연 페이지만 씁니다.
+사건 종합이 모델에 넘기는 관측 JSON에는 최초 관측 분(`onset_kst`)이 들어가고, 근거·느린 쿼리·분별 관측 항목마다 그 분 기준 `before`·`onset`·`after` 표시(`phase`)가 붙습니다. 패턴의 원인은 `before`·`onset` 근거로 대조하고, `after` 근거는 증상·영향 대조에만 씁니다. `phase`는 프롬프트용 JSON에만 있고 저장하는 근거 데이터에는 없습니다.
+
+위키로는 색인 조회와 색인에 있는 패턴 id만 보내고, 우리 관측 데이터는 보내지 않습니다. 조사에는 모델 호출과 위키 호출을 합쳐 180초의 시간 상한이 있습니다. 상한을 넘기면 위키를 더 열지 않고 모델 호출도 최종 답을 위한 한 번만 더 허용하며(진행 중인 호출은 끊지 않습니다), 그 한 번으로 답하지 못하면 조사를 실패로 봅니다.
+
+- 색인이나 페이지 조회가 실패하거나 색인에서 패턴 id를 읽지 못하면 경고를 남기고 위키를 끕니다. 이후 호출은 위키로 나가지 않습니다.
+- 에이전트가 실패하거나 시간 상한 안에 끝나지 못하면 경고를 남기고 위키 없이 종합합니다.
 
 ### 상태와 데이터 소유
 
@@ -250,7 +256,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 
 ### 재시도와 rate limit
 
-- 직접 호출은 `litellm_client.complete()`, 에이전트는 `ChatLiteLLM`을 씁니다. litellm 내부 재시도는 끄고, 애플리케이션이 429·503만 **최대 2회** 다시 시도합니다. 두 경로가 같은 대기 정책(`_retry_wait`)을 씁니다.
+- 직접 호출은 `litellm_client.complete()`, 에이전트는 `ChatLiteLLM`을 씁니다. litellm 내부 재시도는 끄고, 애플리케이션이 429·503만 **최대 2회** 다시 시도합니다. 두 경로가 같은 대기 정책(`_retry_wait`)을 씁니다. 위키 조사 에이전트도 `ChatLiteLLM` 경로라 같은 재시도·가명화 미들웨어를 거칩니다.
 - 대기 시간은 숫자인 `Retry-After` 헤더를 먼저 보고, 없으면 오류 본문의 `retryDelay`를 읽어 1초를 더합니다.
 - 제공된 대기가 60초를 넘거나, 대기 시간 없이 토큰 한도(`quotaId`에 Token) 429가 오면 다시 시도하지 않습니다. 그 밖의 429·503은 5초 뒤 다시 시도합니다.
 - Gemini 직접 호출에만 최소 호출 간격 5초(분당 12회)를 둡니다. 에이전트 호출에는 적용되지 않습니다.
@@ -369,7 +375,7 @@ src/cluster_doctor/
 | 근거 수집 | [incident_analysis_agent/service/evidence_collection/collector.py](src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py) |
 | 검증 루프 | [incident_analysis_agent/agent/subagent.py](src/cluster_doctor/incident_analysis_agent/agent/subagent.py) |
 | 구조 검사 / 원문 대조 | [service/validation/consistency/](src/cluster_doctor/incident_analysis_agent/service/validation/consistency/) / [service/validation/grounding/](src/cluster_doctor/incident_analysis_agent/service/validation/grounding/) |
-| 사건 종합·위키 | [incident_analysis_agent/service/report_generation/incident_synthesis.py](src/cluster_doctor/incident_analysis_agent/service/report_generation/incident_synthesis.py) |
+| 사건 종합·위키 조사 | [incident_analysis_agent/service/report_generation/incident_synthesis.py](src/cluster_doctor/incident_analysis_agent/service/report_generation/incident_synthesis.py), [incident_analysis_agent/agent/wiki_investigation/](src/cluster_doctor/incident_analysis_agent/agent/wiki_investigation/) |
 | 위키 MCP client | [incident_analysis_agent/datasource/mcp/wiki_client.py](src/cluster_doctor/incident_analysis_agent/datasource/mcp/wiki_client.py) |
 | HTML 렌더링 | [incident_orchestrator_agent/service/report_delivery/rendering/html/](src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/) |
 | 파일·SFTP 발행 | [incident_orchestrator_agent/service/report_delivery/publication/](src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/publication/) |
