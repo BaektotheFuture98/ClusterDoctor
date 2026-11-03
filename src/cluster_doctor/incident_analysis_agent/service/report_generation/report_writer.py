@@ -127,7 +127,7 @@ class ReportWriter:
                        ) -> LogAnalysisReport:
         """이 호출 안에서는 추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다.
 
-        ``wiki``는 위키 조사 에이전트가 열어 고른 패턴이다. 참고용이며 근거가 아니다.
+        ``wiki``는 위키 조사 에이전트가 열어 고른 패턴이다. 지식 근거이며 관측이 아니다.
         초안·교정 프롬프트에 같은 조사 결과를 싣고, ``wiki_ref``는 그 패턴 id로만 남긴다.
         """
         from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport
