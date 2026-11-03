@@ -43,4 +43,4 @@ def test_string_wiki_ref_is_left_as_written():
 
 
 def test_review_instructions_say_an_empty_wiki_ref_is_an_empty_string_not_null():
-    assert "null이 아니라 빈 문자열" in _INCIDENT_REVIEW_INSTRUCTIONS
+    assert "null이나 배열이 아니라 빈 문자열" in _INCIDENT_REVIEW_INSTRUCTIONS
