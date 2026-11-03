@@ -45,6 +45,7 @@ def to_incident_analysis_report(
         evidence=tuple(evidence),
         title=report.title,
         summary=report.summary,
+        wiki_patterns=report.wiki_patterns,
         timeline_annotations=tuple(
             TimelineAnnotation(
                 at=event.at,
@@ -84,6 +85,7 @@ def to_incident_analysis_report(
                     statement=cause.statement,
                     mechanism=cause.mechanism,
                     cause_type=cause.cause_type,
+                    wiki_ref=cause.wiki_ref,
                     supporting=citations(
                         cause.supporting_evidence_refs, tuple(evidence)
                     ),

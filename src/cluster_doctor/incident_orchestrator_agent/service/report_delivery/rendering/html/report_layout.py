@@ -10,6 +10,7 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.wiki_label import wiki_label
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_ranking import render_query_ranking
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
@@ -34,7 +35,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,mono
 #overview table{width:auto;margin-top:12px}
 #overview th{background:none;font-weight:600;padding:6px 16px 6px 0;border:none;width:160px}
 #overview td{border:none;padding:6px 0}
-.wiki-badge{font-size:11px;background:#e8f0fe;color:#1a56a5;border-radius:4px;padding:2px 6px;margin-left:6px;white-space:nowrap}
+.wiki-badge{font-size:11px;background:#e8f0fe;color:#1a56a5;border-radius:4px;padding:2px 6px;margin-left:6px;overflow-wrap:anywhere}
 section p{max-width:none}
 #incident-analysis h3{margin:16px 0 8px;font-size:16px;color:#52657b;border-bottom:1px solid #dde4ef;padding-bottom:4px}
 #incident-analysis h4{margin:10px 0 4px;font-size:14px}
@@ -87,6 +88,11 @@ def _verdict_block(links) -> str:
     return out
 
 
+def _wiki_badge(wiki_ref: str, report: IncidentAnalysisReport) -> str:
+    label = wiki_label(wiki_ref or '', report.wiki_patterns)
+    return f' <span class="wiki-badge">위키: {esc(label)}</span>' if label else ''
+
+
 def _incident_analysis(report: IncidentAnalysisReport, narrative, links, withheld: str = '', caveats: tuple[str, ...] = ()) -> str:
     out = '<section id="incident-analysis"><h2>현상 및 원인</h2>' + _verdict_block(links)
     if withheld:
@@ -102,15 +108,15 @@ def _incident_analysis(report: IncidentAnalysisReport, narrative, links, withhel
     if direct:
         out += '<h3>직접적 원인</h3>'
         for c in direct:
-            out += f'<h4>{esc(c.statement)}</h4>' + render_paragraphs(c.mechanism)
+            out += f'<h4>{esc(c.statement)}{_wiki_badge(c.wiki_ref, report)}</h4>' + render_paragraphs(c.mechanism)
     if root:
         out += '<h3>근본적 원인</h3>'
         for c in root:
-            out += f'<h4>{esc(c.statement)}</h4>' + render_paragraphs(c.mechanism)
+            out += f'<h4>{esc(c.statement)}{_wiki_badge(c.wiki_ref, report)}</h4>' + render_paragraphs(c.mechanism)
     return out + '</section>'
 
 
-def _recommendations_section(narrative) -> str:
+def _recommendations_section(narrative, report: IncidentAnalysisReport) -> str:
     items = [
         (str(a).strip(), getattr(a, 'wiki_ref', ''))
         for a in (narrative.recommendations if narrative else ())
@@ -120,11 +126,7 @@ def _recommendations_section(narrative) -> str:
         return ''
     out = '<section id="recommendations"><h2>권장 조치</h2><ul class="actions">'
     for text, wiki_ref in items:
-        badge = (
-            f' <span class="wiki-badge">위키: {esc(wiki_ref)}</span>'
-            if wiki_ref else ''
-        )
-        out += f'<li>{esc(text)}{badge}</li>'
+        out += f'<li>{esc(text)}{_wiki_badge(wiki_ref, report)}</li>'
     return out + '</ul></section>'
 
 
@@ -203,7 +205,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
               +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+'</details>')
     body=(_overview(report, now=now)
           +_incident_analysis(report, narrative, links, withheld, caveats)
-          +_recommendations_section(narrative)
+          +_recommendations_section(narrative, report)
           +render_query_trend(project_query_trend(obs),links)
           +_timeline(report,narrative)
           +evidence)
