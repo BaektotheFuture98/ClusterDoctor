@@ -12,7 +12,7 @@ from datetime import datetime
 
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
-from cluster_doctor.incident_analysis_agent.model.report import SuspectPick
+from cluster_doctor.incident_analysis_agent.model.report import SuspectPick, WikiPatternRef
 from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import (
     EvidenceCitation,
 )
@@ -25,6 +25,7 @@ class CauseAssessment:
     contradicting: tuple[EvidenceCitation, ...] = ()
     mechanism: str = ""
     cause_type: str = "root"
+    wiki_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -99,3 +100,4 @@ class IncidentAnalysisReport:
     analyzed_to: datetime | None = None
     title: str = ""
     summary: str = ""
+    wiki_patterns: tuple[WikiPatternRef, ...] = ()

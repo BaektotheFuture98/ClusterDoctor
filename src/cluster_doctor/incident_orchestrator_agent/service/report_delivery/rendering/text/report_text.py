@@ -34,6 +34,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import unique_citations
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.wiki_label import wiki_label
     from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import node_line, verdict_line
     obs=report.observations
@@ -48,6 +49,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     out.extend((withheld,) if withheld else result_caveats(report,analysis_failed=analysis_failed))
     for index, c in enumerate(narrative.causes):
         out.append(c.statement)
+        if c.wiki_ref: out.append('위키 근거: '+wiki_label(c.wiki_ref,report.wiki_patterns))
         if c.mechanism: out.append('판단 설명: '+c.mechanism)
         actions=tuple(a for a in narrative.recommendations if getattr(a,'cause_index',None)==index)
         supporting=unique_citations(c.supporting, *(getattr(a,'citations',()) for a in actions))
@@ -55,7 +57,9 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
         out.extend('반증: '+s for s in visible_citations(unique_citations(c.contradicting)))
     if not narrative.causes:out.append('확인된 원인 없음')
     for a in narrative.recommendations:
-        if str(a).strip():out.append('확인·조치: '+str(a))
+        if str(a).strip():
+            label=wiki_label(getattr(a,'wiki_ref',''),report.wiki_patterns)
+            out.append('확인·조치: '+str(a)+(f' (위키: {label})' if label else ''))
     for a in narrative.recommendations:
         cause_index=getattr(a,'cause_index',None)
         if cause_index is None or not 0<=cause_index<len(narrative.causes):
