@@ -139,7 +139,7 @@ def test_not_found_with_ip_connects_by_address_with_cluster_defaults():
 
 @pytest.mark.parametrize(
     "ip,defaults",
-    [("", ("/var/log/es", "prod")), ("not-an-ip", ("/var/log/es", "prod")), ("10.0.1.23", (None, ""))],
+    [("", ("/var/log/es", "prod")), ("not_an_ip", ("/var/log/es", "prod")), ("10.0.1.23", (None, ""))],
 )
 def test_not_found_without_usable_address_keeps_reason(ip, defaults):
     fetcher = Fetcher()
@@ -147,6 +147,12 @@ def test_not_found_without_usable_address_keeps_reason(ip, defaults):
     reason = f"ES 노드 목록에 없는 노드라 로그를 수집하지 못했다 (id={ID_A})"
     assert result.source_statuses[0].error == reason and reason in result.gaps
     assert fetcher.calls == []
+
+
+def test_not_found_with_hostname_connects_by_that_hostname():
+    fetcher = Fetcher()
+    run([ProblemNodeCandidate(node_id=ID_A, ip="data-03.example.com")], resolver(), fetcher)
+    assert fetcher.calls == [("data-03.example.com", "/var/log/es", "prod")]
 
 
 def test_resolved_node_does_not_query_defaults():

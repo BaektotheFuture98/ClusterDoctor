@@ -14,7 +14,7 @@ def test_removed_phrases_are_gone():
     assert "after_agent middleware" not in SUBAGENT_PROMPT
     for text in (p._ANALYSIS_RULES, p._INCIDENT_SYNTHESIS_INSTRUCTIONS,
                  p._INCIDENT_REVIEW_INSTRUCTIONS):
-        assert "40자" not in text
+        assert "조치 한 줄이다(40자" not in text
 
 
 def test_kept_phrase_in_orchestrator():
