@@ -41,7 +41,7 @@ def test_empty_minute_input_never_calls_llm_or_allocator():
     def forbidden(*args, **kwargs):
         raise AssertionError('unexpected call')
     result = run_analysis(AnalysisSpec(source=EvidenceSource.NODE_LOG, label='logs', what_matters='', what_is_noise=''), [], forbidden, new_evidence_id=forbidden)
-    assert result.evidence == []
+    assert result.evidence == ()
     assert result.analyzed_minutes == 0
 
 

@@ -33,7 +33,9 @@ def test_revision_includes_complete_editable_report():
     assert "E-counter" in prompt
     assert "action to preserve" in prompt
     payload = prompt.split("--- 현재 리포트 (JSON) ---\n", 1)[1].split("\n\n", 1)[0]
-    assert json.loads(payload)["recommendations"] == [{"text": "action to preserve", "evidence_refs": []}]
+    assert json.loads(payload)["recommendations"] == [
+        {"text": "action to preserve", "wiki_ref": "", "evidence_refs": []}
+    ]
 
 
 def test_revision_keeps_summary_and_action_refs_and_context():

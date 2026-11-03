@@ -15,6 +15,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.schema imp
 # 사건 종합 호출은 provider에 타입을 강제하지 않는 느슨한 response_format을 쓰므로
 # 배열이어야 할 필드에 문자열이 올 수 있다.
 INCIDENT = {
+    "title": "제목",
     "summary": "요약",
     "findings": [],
     "root_causes": [
