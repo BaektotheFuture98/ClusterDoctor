@@ -4,7 +4,8 @@
 재시도 규칙이 갈라지면 한쪽만 한도 오류로 죽는다 — Main/SubAgent 호출이 429
 한 번에 ``Agent 실행 실패``로 끝나던 원인이다. ChatLiteLLM 자체 재시도는
 소비 증폭 때문에 꺼 두었으므로(``chat_model.py``), 여기서 오류 종류를 가려
-``_MAX_RETRIES``번까지만 다시 부른다.
+``_retry_wait``가 정한 횟수(429는 ``_MAX_RETRIES``, 503은 대기 목록 길이)까지만
+다시 부른다.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ import openai
 from langchain.agents.middleware import AgentMiddleware
 
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (
-    _MAX_RETRIES,
+    _MAX_ATTEMPTS,
+    _retry_limit,
     _retry_wait,
 )
 
@@ -28,7 +30,7 @@ _logger = logging.getLogger(__name__)
 
 def _wait_or_raise(exc: openai.APIError, attempt: int) -> float:
     status = getattr(exc, "status_code", None) or "unknown"
-    wait = _retry_wait(exc, status) if attempt < _MAX_RETRIES else None
+    wait = _retry_wait(exc, status, attempt)
     if wait is None:
         raise exc
     # str(exc)는 본문·URL이 실릴 수 있어 로그에 싣지 않는다.
@@ -37,14 +39,14 @@ def _wait_or_raise(exc: openai.APIError, attempt: int) -> float:
         status,
         wait,
         attempt + 1,
-        _MAX_RETRIES,
+        _retry_limit(status),
     )
     return wait
 
 
 class RateLimitRetryMiddleware(AgentMiddleware):
     def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
-        for attempt in range(_MAX_RETRIES + 1):
+        for attempt in range(_MAX_ATTEMPTS):
             try:
                 return handler(request)
             except openai.APIError as exc:
@@ -54,7 +56,7 @@ class RateLimitRetryMiddleware(AgentMiddleware):
     async def awrap_model_call(
         self, request: Any, handler: Callable[[Any], Any]
     ) -> Any:
-        for attempt in range(_MAX_RETRIES + 1):
+        for attempt in range(_MAX_ATTEMPTS):
             try:
                 return await handler(request)
             except openai.APIError as exc:
