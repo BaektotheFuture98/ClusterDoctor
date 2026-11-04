@@ -36,6 +36,9 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.window_p
 )
 
 TASK_TOOL_NAME = "task"
+PROPOSE_ANALYSIS_TOOL_NAME = "propose_analysis"
+FINISH_INCIDENT_TOOL_NAME = "finish_incident"
+LIST_CANDIDATE_WINDOWS_TOOL_NAME = "list_candidate_windows"
 
 _PROPOSE_DESCRIPTION = f"""분석 구간을 검증하고, 승인된 구간과 목표를 저장한다.
 시작은 포함하고 종료는 포함하지 않는다. 한 번에 최대 {int(MAX_TIME_RANGE_DURATION.total_seconds() / 60)}분이다.
@@ -43,7 +46,7 @@ _PROPOSE_DESCRIPTION = f"""분석 구간을 검증하고, 승인된 구간과 �
 전부 분석한 구간, 구간 길이 상한 초과, 분·호출 예산 소진, 잘못된 시각은 거절한다.
 응답에는 실제 승인 구간 또는 거절 사유가 나온다."""
 
-_TASK_DESCRIPTION = f"""propose_analysis가 승인한 구간 하나를 {ANALYSIS_SUBAGENT}에 위임한다.
+_TASK_DESCRIPTION = f"""{PROPOSE_ANALYSIS_TOOL_NAME}가 승인한 구간 하나를 {ANALYSIS_SUBAGENT}에 위임한다.
 승인 하나에 한 번만 호출할 수 있다. 분석 구간과 목표는 승인 기록에서 읽는다.
 반환된 JSON의 구간 분석 결과를 읽고 다음 행동을 판단한다."""
 
@@ -68,7 +71,7 @@ def _state(runtime: ToolRuntime) -> Mapping[str, object]:
 
 
 def make_propose_analysis_tool() -> BaseTool:
-    @tool("propose_analysis", description=_PROPOSE_DESCRIPTION)
+    @tool(PROPOSE_ANALYSIS_TOOL_NAME, description=_PROPOSE_DESCRIPTION)
     def propose_analysis(
         start_kst: Annotated[str, "분석 시작 시각. KST 기준 ISO 8601 문자열."],
         end_kst: Annotated[str, "분석 종료 시각. KST 기준 ISO 8601 문자열."],
@@ -85,9 +88,9 @@ def make_propose_analysis_tool() -> BaseTool:
         except (InvalidTimeRangeError, ValueError, GuardrailViolation) as exc:
             rejects = int(state.get("rejected_decision_count", 0)) + 1
             suffix = (
-                " finish_incident로 종료해라."
+                f" {FINISH_INCIDENT_TOOL_NAME}로 종료해라."
                 if rejects >= MAX_REJECTED_DECISIONS
-                else " list_candidate_windows를 확인해라."
+                else f" {LIST_CANDIDATE_WINDOWS_TOOL_NAME}를 확인해라."
             )
             return Command(
                 update={
@@ -101,7 +104,7 @@ def make_propose_analysis_tool() -> BaseTool:
             )
         message = (
             f"승인: {format_kst(admitted.start)} ~ {format_kst(admitted.end)} "
-            f'({window_minutes(admitted)}분). 이제 task(subagent_type="{ANALYSIS_SUBAGENT}")으로 위임해라.'
+            f'({window_minutes(admitted)}분). 이제 {TASK_TOOL_NAME}(subagent_type="{ANALYSIS_SUBAGENT}")으로 위임해라.'
         )
         return Command(
             update={
@@ -120,7 +123,7 @@ def make_propose_analysis_tool() -> BaseTool:
 
 def make_finish_incident_tool() -> BaseTool:
     @tool(
-        "finish_incident",
+        FINISH_INCIDENT_TOOL_NAME,
         description="Incident를 종료 상태로 닫는다. 응답으로 종료 결과 또는 거절 사유를 반환한다.",
     )
     def finish_incident(
@@ -176,7 +179,7 @@ def make_finish_incident_tool() -> BaseTool:
 
 def make_list_candidate_windows_tool() -> BaseTool:
     @tool(
-        "list_candidate_windows",
+        LIST_CANDIDATE_WINDOWS_TOOL_NAME,
         description=(
             "아직 분석하지 않은 후보 구간과 남은 분·호출 예산, 마지막 관측 시각을 반환한다. "
             "추가 구간 제안은 후보 목록에 반영된다."

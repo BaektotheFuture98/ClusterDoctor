@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from cluster_doctor.incident_orchestrator_agent.agent.tools import TASK_TOOL_NAME
+from cluster_doctor.incident_orchestrator_agent.agent.tools import (
+    FINISH_INCIDENT_TOOL_NAME,
+    LIST_CANDIDATE_WINDOWS_TOOL_NAME,
+    PROPOSE_ANALYSIS_TOOL_NAME,
+    TASK_TOOL_NAME,
+)
 
 _SYSTEM_PROMPT_TEMPLATE = """[역할]
 너는 Elasticsearch 장애 진단 시스템의 Main Agent다.
@@ -12,7 +17,7 @@ Incident 하나에서 어느 시간대를 분석하고 언제 종료할지 결�
 [첫 분석]
 시작 메시지의 최초 관측 시각을 기준으로 삼는다. 트리거 시각과 다를 수 있다.
 최초 관측 시각을 분 단위로 내린 시각의 5분 전부터 그 분의 끝까지 제안한다.
-list_candidate_windows의 첫 후보가 이 구간이다. 마지막 관측 시각은 첫 구간의 끝을 정하지 않는다.
+<<list>>의 첫 후보가 이 구간이다. 마지막 관측 시각은 첫 구간의 끝을 정하지 않는다.
 예: 최초 14:00:37이면 마지막 관측이 언제든 13:55~14:01이다.
 첫 분석 목표는 최초 증상과 그 직전의 관련 이벤트를 확인하는 것이다.
 최초·마지막 관측은 유입된 신호의 발생 시각이며 원인 발생·회복 시각을 확정하지 않는다.
@@ -39,13 +44,13 @@ analysis_summary와 failure_reason에서 추가 확인이 필요한 내용을 �
 
 [도구 사용 순서]
 도구는 하나씩 호출하고 결과를 기다린다.
-매 구간은 list_candidate_windows → propose_analysis → 실제 승인 구간 확인 → <<task>>
+매 구간은 <<list>> → <<propose>> → 실제 승인 구간 확인 → <<task>>
 순서로 진행한다. 개별 도구의 입력·승인·거절 규칙은 해당 도구 설명을 따른다.
 문장에 다른 시각을 적어도 그 구간이 분석되지는 않는다.
 거절되면 사유를 반영한다. 같은 요청을 그대로 반복하지 않는다.
 
 [종료]
-추가 분석 판단 기준을 만족하는 조사를 더 진행할 수 없으면 finish_incident를 호출한다.
+추가 분석 판단 기준을 만족하는 조사를 더 진행할 수 없으면 <<finish>>를 호출한다.
 - COMPLETED: 구간 리포트가 하나 이상 있다. 원인 미확정이나 예산 소진만으로 FAILED를 고르지 않는다.
 - FAILED: 리포트를 하나도 확보하지 못해 분석이 성립하지 않는다.
 - CANCELLED: 명시적인 취소 요청이 있다.
@@ -55,4 +60,9 @@ analysis_summary와 failure_reason에서 추가 확인이 필요한 내용을 �
 """
 
 # 본문 전체를 서식으로 해석하지 않고 도구 이름만 치환한다.
-SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace("<<task>>", TASK_TOOL_NAME)
+SYSTEM_PROMPT = (
+    _SYSTEM_PROMPT_TEMPLATE.replace("<<list>>", LIST_CANDIDATE_WINDOWS_TOOL_NAME)
+    .replace("<<propose>>", PROPOSE_ANALYSIS_TOOL_NAME)
+    .replace("<<task>>", TASK_TOOL_NAME)
+    .replace("<<finish>>", FINISH_INCIDENT_TOOL_NAME)
+)

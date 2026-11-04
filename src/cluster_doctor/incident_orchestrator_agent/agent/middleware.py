@@ -25,6 +25,8 @@ from cluster_doctor.incident_orchestrator_agent.agent.state import (
 )
 from cluster_doctor.incident_orchestrator_agent.model.incident import IncidentStatus
 from cluster_doctor.incident_orchestrator_agent.agent.tools import (
+    FINISH_INCIDENT_TOOL_NAME,
+    PROPOSE_ANALYSIS_TOOL_NAME,
     TASK_TOOL_NAME,
     describe_analysis_task,
 )
@@ -36,7 +38,9 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrai
     window_minutes,
 )
 
-_MUTATING = frozenset({"propose_analysis", "task", "finish_incident"})
+_MUTATING = frozenset(
+    {PROPOSE_ANALYSIS_TOOL_NAME, TASK_TOOL_NAME, FINISH_INCIDENT_TOOL_NAME}
+)
 
 
 class AnalysisTaskDescriptionMiddleware(AgentMiddleware):
@@ -95,7 +99,7 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
         blocked = block_extra_calls(state, _MUTATING)
         allowed = next((c for c in calls if c["name"] in _MUTATING), None)
         update = {"messages": blocked} if blocked else {}
-        if allowed is None or allowed["name"] != "task":
+        if allowed is None or allowed["name"] != TASK_TOOL_NAME:
             if blocked:
                 update["rejected_decision_count"] = state.get(
                     "rejected_decision_count", 0
@@ -107,7 +111,7 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
             admitted = state.get(ADMITTED_WINDOW)
             if not admitted:
                 raise GuardrailViolation(
-                    "승인된 분석 구간이 없다. propose_analysis를 먼저 불러라."
+                    f"승인된 분석 구간이 없다. {PROPOSE_ANALYSIS_TOOL_NAME}를 먼저 불러라."
                 )
             window = TimeRange(
                 start=parse_kst(admitted["start"]), end=parse_kst(admitted["end"])
@@ -127,7 +131,7 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
                     ToolMessage(
                         f"위임 거절: {exc}",
                         tool_call_id=allowed["id"],
-                        name="task",
+                        name=TASK_TOOL_NAME,
                         status="error",
                     ),
                 ],
@@ -155,7 +159,7 @@ class DelegationGuardrailMiddleware(AgentMiddleware):
         }
 
     def wrap_tool_call(self, request, handler):
-        if request.tool_call["name"] != "task":
+        if request.tool_call["name"] != TASK_TOOL_NAME:
             return handler(request)
         call_id = request.tool_call["id"]
         if request.state.get("admitted_task_call_id") != call_id:
