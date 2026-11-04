@@ -181,12 +181,17 @@ def require_supported_provider(provider: str) -> str:
 # 재시도는 429와 503, 두 경우뿐이다. 분당 토큰 한도 429는 provider가 알려 준
 # 대기 시간(retryDelay)을 기다린 뒤에만 재시도한다 — 바로 다시 보내면 실패가
 # 보장된 채 소비만 늘기 때문이다. 토큰 한도 오류는 대기 시간을 모르면 재시도하지
-# 않으며, 그 외 429/503에는 아래 기본 대기를 적용한다.
-_RETRYABLE_STATUS = frozenset({429, 503})
-# 한 호출이 같은 요청을 다시 보내는 최대 횟수. 일반 호출과 에이전트 호출이 공유한다.
+# 않고, 그 밖의 429도 짧게(최대 2번) 끝낸다. 503은 provider의 수요 급증이며
+# 10초 남짓 안에 풀리지 않아 Main Agent 첫 호출부터 실패한 적이 있다. provider가
+# 대기 시간을 주지 않으면 15/30/60초씩 늘려 가며 최대 3번 기다린다.
+# 429 재시도 횟수. 일반 호출과 에이전트 호출이 공유한다.
 _MAX_RETRIES = 2
-# provider가 대기 시간을 알려 주지 않을 때 한 번의 재시도에 적용할 대기.
+# provider가 대기 시간을 알려 주지 않을 때 429 재시도에 적용할 대기.
 _FALLBACK_BACKOFF_SECONDS = 5.0
+# 대기 시간이 없는 503의 시도별 대기. 길이가 503 재시도 횟수다.
+_UNAVAILABLE_BACKOFF_SECONDS = (15.0, 30.0, 60.0)
+# 두 재시도 루프의 반복 상한(첫 호출 포함). 재시도 여부는 ``_retry_wait``가 정한다.
+_MAX_ATTEMPTS = 1 + max(_MAX_RETRIES, len(_UNAVAILABLE_BACKOFF_SECONDS))
 # provider가 알려 준 대기가 이보다 길면 기다리지 않고 실패시킨다. 일 단위
 # 한도처럼 분석 한 건이 기다릴 수 없는 경우다.
 _MAX_RETRY_WAIT_SECONDS = 60.0
@@ -195,13 +200,24 @@ _RETRY_DELAY_PATTERN = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
 _TOKEN_QUOTA_PATTERN = re.compile(r'"quotaId"\s*:\s*"[^"]*Token', re.IGNORECASE)
 
 
-def _retry_wait(exc: Exception, status) -> float | None:
+def _retry_limit(status) -> int:
+    """상태 코드별 최대 재시도 횟수. 재시도하지 않는 상태는 0이다."""
+    if status == 503:
+        return len(_UNAVAILABLE_BACKOFF_SECONDS)
+    if status == 429:
+        return _MAX_RETRIES
+    return 0
+
+
+def _retry_wait(exc: Exception, status, attempt: int = 0) -> float | None:
     """재시도할 가치가 있으면 대기 초를, 없으면 ``None``을 돌려준다.
+
+    ``attempt``는 0부터 센, 지금 실패한 호출의 순번이다.
 
     ``str(exc)``는 여기서 값을 파싱하는 데만 쓰고 로그나 예외 메시지에 싣지
     않는다 — 그 본문에 요청 URL이 들어올 수 있다.
     """
-    if status not in _RETRYABLE_STATUS:
+    if attempt >= _retry_limit(status):
         return None
 
     text = str(exc)
@@ -223,6 +239,8 @@ def _retry_wait(exc: Exception, status) -> float | None:
     if delay is None:
         if token_quota:
             return None
+        if status == 503:
+            return _UNAVAILABLE_BACKOFF_SECONDS[attempt]
         return _FALLBACK_BACKOFF_SECONDS
     if delay > _MAX_RETRY_WAIT_SECONDS:
         return None
@@ -268,7 +286,7 @@ def complete(
     if response_format is not None:
         kwargs["response_format"] = response_format
 
-    for attempt in range(_MAX_RETRIES + 1):
+    for attempt in range(_MAX_ATTEMPTS):
         try:
             with _llm_slots:
                 _throttle(provider)
@@ -282,7 +300,7 @@ def complete(
             # litellm의 동명 APIError가 아니라 openai의 APIError를 상속한다.
             status = getattr(exc, "status_code", None) or "unknown"
             trace.failed(f"status={status}")
-            wait = _retry_wait(exc, status) if attempt < _MAX_RETRIES else None
+            wait = _retry_wait(exc, status, attempt)
             if wait is not None:
                 _logger.warning(
                     "LLM provider=%s rejected the request with status=%s; "
@@ -291,7 +309,7 @@ def complete(
                     status,
                     wait,
                     attempt + 1,
-                    _MAX_RETRIES,
+                    _retry_limit(status),
                 )
                 time.sleep(wait)
                 continue

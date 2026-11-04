@@ -9,6 +9,7 @@ from cluster_doctor.exceptions import LlmApiError
 from cluster_doctor.incident_analysis_agent.agent.runtime import litellm_client, rate_limit_retry
 
 RETRIES = 2
+UNAVAILABLE_RETRIES = 3
 
 
 def _unavailable() -> openai.InternalServerError:
@@ -20,7 +21,7 @@ def test_retry_limit_is_two():
     assert litellm_client._MAX_RETRIES == RETRIES
 
 
-def test_complete_retries_twice_then_raises(monkeypatch, caplog):
+def test_complete_retries_unavailable_three_times_then_raises(monkeypatch, caplog):
     calls = []
 
     def failing_completion(**kwargs):
@@ -34,10 +35,10 @@ def test_complete_retries_twice_then_raises(monkeypatch, caplog):
         with pytest.raises(LlmApiError):
             litellm_client.complete([{"role": "user", "content": "q"}], "nvidia_nim", "model", "key")
 
-    assert len(calls) == RETRIES + 1
+    assert len(calls) == UNAVAILABLE_RETRIES + 1
     retry_logs = [r.getMessage() for r in caplog.records if "retrying in" in r.getMessage()]
-    assert len(retry_logs) == RETRIES
-    assert retry_logs[0].endswith("(1/2)") and retry_logs[1].endswith("(2/2)")
+    assert len(retry_logs) == UNAVAILABLE_RETRIES
+    assert [log[-5:] for log in retry_logs] == ["(1/3)", "(2/3)", "(3/3)"]
 
 
 def test_complete_stops_retrying_after_a_success(monkeypatch):
@@ -65,7 +66,7 @@ def test_complete_stops_retrying_after_a_success(monkeypatch):
     assert litellm_client.complete([{"role": "user", "content": "q"}], "nvidia_nim", "model", "key") == "ok"
 
 
-def test_agent_middleware_retries_twice_then_raises(monkeypatch):
+def test_agent_middleware_retries_unavailable_three_times_then_raises(monkeypatch):
     attempts = []
     monkeypatch.setattr(rate_limit_retry.time, "sleep", lambda seconds: None)
 
@@ -76,4 +77,4 @@ def test_agent_middleware_retries_twice_then_raises(monkeypatch):
     with pytest.raises(openai.InternalServerError):
         rate_limit_retry.RateLimitRetryMiddleware().wrap_model_call("request", handler)
 
-    assert len(attempts) == RETRIES + 1
+    assert len(attempts) == UNAVAILABLE_RETRIES + 1
