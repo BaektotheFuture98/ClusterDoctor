@@ -1,11 +1,14 @@
 import logging
 import re
+import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from cluster_doctor.incident_analysis_agent.datasource.ssh import node_log
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
@@ -119,6 +122,7 @@ def test_warning_when_server_returned_but_window_empty(caplog):
     assert warnings and "NODE_LOG_TIMEZONE" in warnings[0].getMessage()
 
 
+@pytest.mark.skipif(shutil.which("grep") is None, reason="원격과 같은 grep -E로 패턴을 확인한다")
 def test_severity_pattern_passes_node_side_departure_and_gc_lines():
     for line in (
         "[2026-11-06T08:30:00,000][INFO ][o.e.c.s.ClusterApplierService] master node changed {previous [], current [{m}]}",
