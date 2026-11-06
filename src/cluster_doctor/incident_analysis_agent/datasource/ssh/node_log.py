@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, tzinfo
 
 import paramiko
 
@@ -24,7 +24,7 @@ from cluster_doctor.incident_analysis_agent.model.evidence import (
     EvidenceProvenance,
     EvidenceSource,
 )
-from cluster_doctor.incident_analysis_agent.model.kst import KST, parse_kst
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.model import (
     RawRecord,
 )
@@ -33,7 +33,6 @@ from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.spec import
 )
 
 _logger = logging.getLogger(__name__)
-_KST = timezone(timedelta(hours=9))
 
 # 이 경로가 한 번에 돌려주는 기본 줄 수.
 #
@@ -60,6 +59,9 @@ _SEVERITY_PATTERN = (
     r"|thread pool"
     r"|reject"
     r"|shard"
+    r"|master node changed|master not discovered|node-left|removed \{"
+    r"|disconnect|FollowerChecker|LeaderChecker"
+    r"|\[gc\]|overhead, spent"
 )
 
 # 원격에서 돌릴 수 있는 프로그램. **allowlist다.** 이 경로에 LLM이 만든
@@ -88,6 +90,7 @@ SPEC = AnalysisSpec(
         "- circuit breaker 발동.\n"
         "- shard failure, recovery 실패, corrupt.\n"
         "- 마스터와의 연결 끊김, transport 예외.\n"
+        "- 마스터 변경·마스터 미발견·클러스터에서 제거.\n"
         "- 스택 트레이스의 첫 줄과 예외 이름."
     ),
     what_is_noise=(
@@ -98,11 +101,38 @@ SPEC = AnalysisSpec(
 )
 
 
+def parse_log_time(text: str, tz: tzinfo) -> datetime:
+    """로그 줄의 시각 문자열을 KST-aware datetime으로.
+
+    오프셋이 붙어 있으면 그 값을 따르고, 없으면 노드가 로그를 남기는 시간대
+    ``tz``의 벽시계로 본다. 쉼표 밀리초(``,123``)와 점 밀리초를 모두 받는다.
+    """
+    parsed = datetime.fromisoformat(text.replace(",", "."))
+    if parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=tz)
+    return parsed.astimezone(KST)
+
+
+def _minute_prefixes(start_dt: datetime, end_dt: datetime, tz: tzinfo) -> list[str]:
+    """구간을 노드 시간대의 분 단위 줄 머리 정규식 목록으로.
+
+    시작이 속한 분부터 끝(배타)이 속한 분까지 한 분씩 센다.
+    """
+    cursor = start_dt.astimezone(tz).replace(second=0, microsecond=0)
+    last = end_dt.astimezone(tz)
+    prefixes: list[str] = []
+    while cursor < last:
+        prefixes.append("\\[" + cursor.strftime("%Y-%m-%dT%H:%M"))
+        cursor += timedelta(minutes=1)
+    return prefixes
+
+
 def to_records(
     text: str,
     *,
     fallback_time: datetime,
     provenance: EvidenceProvenance | None = None,
+    log_timezone: tzinfo = KST,
 ) -> list[RawRecord]:
     """SSH로 읽은 로그 원문을 선별 레코드로.
 
@@ -124,7 +154,7 @@ def to_records(
         if match:
             current_level = match.group(2).strip() or None
             try:
-                current_time = parse_kst(match.group(1).replace(",", "."))
+                current_time = parse_log_time(match.group(1), log_timezone)
                 has_timestamp = True
                 time_origin = "parsed"
             except ValueError:
@@ -216,6 +246,9 @@ def _assert_allowed(command: str) -> str:
 class NodeLogFetcher(ABC):
     """노드 호스트의 ES 로그 파일을 읽는다."""
 
+    # 오프셋 없는 로그 시각을 해석할 시간대. 구현이 다르게 읽으면 덮어쓴다.
+    log_timezone: tzinfo = KST
+
     @abstractmethod
     def fetch(
         self,
@@ -239,10 +272,17 @@ class NodeLogFetcher(ABC):
 class SshNodeLogFetcher(NodeLogFetcher):
     """SSH로 ES 노드에 접속해 메인 로그 파일을 읽는다."""
 
-    def __init__(self, ssh_user: str, ssh_password: str, ssh_port: int = 22) -> None:
+    def __init__(
+        self,
+        ssh_user: str,
+        ssh_password: str,
+        ssh_port: int = 22,
+        log_timezone: tzinfo = KST,
+    ) -> None:
         self._user = ssh_user
         self._password = ssh_password
         self._port = ssh_port
+        self.log_timezone = log_timezone
 
     def fetch(
         self,
@@ -266,21 +306,14 @@ class SshNodeLogFetcher(NodeLogFetcher):
             _assert_safe_path(cluster_name, "cluster_name"),
         )
 
-        # 로그 시각의 오프셋에 따라 UTC 기준 날짜가 어긋날 수 있어 앞뒤 하루씩 넓혀 거른다.
-        # 정확한 시간 창 판정은 로컬 파서가 한다.
-        first_day = (start_dt.astimezone(timezone.utc) - timedelta(days=1)).date()
-        last_day = (end_dt.astimezone(timezone.utc) + timedelta(days=1)).date()
-        dates = []
-        day = first_day
-        while day <= last_day:
-            dates.append(day.isoformat())
-            day += timedelta(days=1)
-        pattern = "|".join("\\[" + day for day in dates)
+        # 구간의 분 접두어로 먼저 거르고 심각도로 다시 거른다. 시간 필터가
+        # 먼저여야 긴 기간의 결과가 tail에 밀려 구간이 잘리지 않는다.
         # 예외 스택 같은 이어지는 줄은 -A 40으로 두 필터를 모두 통과시킨다.
         # 이어지는 줄의 시각은 직전 레코드에서 가져오며 임의로 만들지 않는다.
+        pattern = "|".join(_minute_prefixes(start_dt, end_dt, self.log_timezone))
         cmd = _assert_allowed(
-            f"grep -aE -A 40 '{_SEVERITY_PATTERN}' '{log_file}'"
-            f" | grep -aE -A 40 '{pattern}'"
+            f"grep -aE -A 40 '{pattern}' '{log_file}'"
+            f" | grep -aE -A 40 '{_SEVERITY_PATTERN}'"
             f" | tail -n 2000"
         )
 
@@ -305,24 +338,48 @@ class SshNodeLogFetcher(NodeLogFetcher):
         if err:
             raise RuntimeError(f"SSH 로그 조회 실패: {err}")
 
-        start_kst = start_dt.astimezone(_KST)
-        end_kst = end_dt.astimezone(_KST)
+        start_kst = start_dt.astimezone(KST)
+        end_kst = end_dt.astimezone(KST)
 
         lines = raw.split("\n")
         filtered: list[str] = []
         in_window = False
+        server_lines = 0
+        first_ts: datetime | None = None
+        last_ts: datetime | None = None
         for line in lines:
             if line == "--":
                 continue
+            if line.strip():
+                server_lines += 1
             m = ES_LOG_LINE_RE.match(line)
             if m:
                 try:
-                    ts = parse_kst(m.group(1).replace(",", "."))
+                    ts = parse_log_time(m.group(1), self.log_timezone)
                     in_window = start_kst <= ts < end_kst
+                    first_ts = ts if first_ts is None else min(first_ts, ts)
+                    last_ts = ts if last_ts is None else max(last_ts, ts)
                 except ValueError:
                     pass
             if in_window:
                 filtered.append(line)
+
+        in_window_count = sum(1 for ln in filtered if ln.strip())
+        _logger.info(
+            "[node-ssh] %s 결과: 서버 %d줄, 구간 안 %d줄, 서버 결과 시각 %s~%s (tz=%s)",
+            ip,
+            server_lines,
+            in_window_count,
+            first_ts.isoformat() if first_ts else "-",
+            last_ts.isoformat() if last_ts else "-",
+            getattr(self.log_timezone, "key", None) or str(self.log_timezone),
+        )
+        if server_lines and not in_window_count:
+            _logger.warning(
+                "[node-ssh] %s 서버는 줄을 돌려줬지만 구간 안은 0줄이다. "
+                "시간대 설정(NODE_LOG_TIMEZONE)을 확인하라",
+                ip,
+            )
 
         if keyword:
             safe = re.sub(r"[^\w\s.:-]", "", keyword)

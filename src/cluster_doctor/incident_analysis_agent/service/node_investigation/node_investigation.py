@@ -38,6 +38,7 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolv
 )
 from cluster_doctor.incident_analysis_agent.datasource.ssh import node_log
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
+    DEFAULT_HOST_LOG_LINES,
     NodeLogFetcher,
 )
 from cluster_doctor.incident_analysis_agent.model.evidence import (
@@ -238,14 +239,17 @@ def investigate_nodes(
                 end_dt=window.end,
             )
         except Exception as exc:
-            _logger.warning("[node] %s SSH 실패: %s", candidate.node_id, exc)
-            result.gaps.append(f"{candidate.node_id} 노드 로그 SSH 수집 실패: {exc}")
+            # 코드가 만든 예외(허용되지 않는 명령, SSH 조회 실패)만 문구를 남기고
+            # 그 밖의 예외는 응답 내용이 섞일 수 있어 타입 이름만 남긴다.
+            reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+            _logger.warning("[node] %s SSH 실패: %s", candidate.node_id, type(exc).__name__)
+            result.gaps.append(f"{candidate.node_id} 노드 로그 SSH 수집 실패: {reason}")
             result.source_statuses.append(SourceWindowStatus("node_log", window.start, window.end,
-                "failed", None, datetime.now(KST), str(exc), host=resolved.host))
+                "failed", None, datetime.now(KST), reason, host=resolved.host))
             continue
 
         result.source_statuses.append(SourceWindowStatus("node_log", window.start, window.end,
-            "limited" if text.strip() else "ok", len(text.splitlines()), datetime.now(KST), host=resolved.host))
+            "limited" if len(text.splitlines()) >= DEFAULT_HOST_LOG_LINES else "ok", len(text.splitlines()), datetime.now(KST), host=resolved.host))
         if not text.strip():
             result.gaps.append(
                 f"{candidate.node_id} 노드의 해당 구간 로그가 비어 있었다"
@@ -257,6 +261,7 @@ def investigate_nodes(
             text[:MAX_RAW_LOG_CHARS],
             fallback_time=window.start,
             provenance=provenance,
+            log_timezone=getattr(fetcher, "log_timezone", KST),
         )
         analysis = run_analysis(
             node_log.SPEC,

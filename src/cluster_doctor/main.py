@@ -5,6 +5,7 @@ from contextlib import ExitStack
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client
@@ -231,6 +232,7 @@ def compose_analysis_service(settings: Settings, resources: RuntimeResources) ->
             ssh_user=settings.ssh_user,
             ssh_password=settings.ssh_password,
             ssh_port=settings.ssh_port,
+            log_timezone=ZoneInfo(settings.node_log_timezone),
         ),
         call_llm=call_llm,
         report_writer=ReportWriter(call_llm=call_llm, metric_thresholds=thresholds),

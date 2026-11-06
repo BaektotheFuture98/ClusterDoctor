@@ -86,6 +86,8 @@ class Settings(LoggingSettings):
     ssh_user: str = ""
     ssh_password: str = ""
     ssh_port: int = 22
+    # 데이터 노드 JVM이 오프셋 없이 로그 시각을 남기는 시간대(IANA 이름).
+    node_log_timezone: str = "Asia/Seoul"
 
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_topic: str = "slowlog"
