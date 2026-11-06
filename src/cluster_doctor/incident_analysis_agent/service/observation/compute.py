@@ -154,6 +154,8 @@ def node_metric_summary(logs: list[LogEntry]) -> dict[str, NodeMetricRow]:
                 write_queue_max=log.write_queue,
                 write_rejected_max=log.write_rejected,
                 node_ip=log.node_ip,
+                first_seen=log.timestamp,
+                last_seen=log.timestamp,
             )
             continue
         rows[log.node_name] = replace(
@@ -167,6 +169,8 @@ def node_metric_summary(logs: list[LogEntry]) -> dict[str, NodeMetricRow]:
             write_queue_max=max(current.write_queue_max, log.write_queue),
             write_rejected_max=max(current.write_rejected_max, log.write_rejected),
             node_ip=current.node_ip or log.node_ip,
+            first_seen=min(current.first_seen or log.timestamp, log.timestamp),
+            last_seen=max(current.last_seen or log.timestamp, log.timestamp),
         )
     return rows
 

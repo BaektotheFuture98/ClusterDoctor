@@ -8,7 +8,7 @@ from cluster_doctor.incident_analysis_agent.service.observation.correlation impo
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, node_line, verdict_line
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, metric_gap_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.wiki_label import wiki_label
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.evidence_link import esc
@@ -84,6 +84,8 @@ def _verdict_block(links) -> str:
     if line := node_line(links):
         out += f'<p class="verdict">{esc(line)}</p>'
     if line := cluster_event_line(links):
+        out += f'<p class="hint">{esc(line)}</p>'
+    if line := metric_gap_line(links):
         out += f'<p class="hint">{esc(line)}</p>'
     return out
 
