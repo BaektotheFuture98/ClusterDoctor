@@ -24,15 +24,15 @@ def test_ssh_normal_empty_result_is_empty_log():
         assert SshNodeLogFetcher('user','secret').fetch('host','/actual/es','prod',T0,T0+timedelta(minutes=1))==''
 
 
-def test_remote_filter_keeps_offset_date_and_stack_context():
+def test_remote_filter_keeps_minute_match_and_stack_context():
     import re
     from cluster_doctor.incident_analysis_agent.model.kst import KST
     start=datetime(2026,10,2,tzinfo=KST)
-    line='[2026-10-01T15:00:30.123456Z][WARN ][JvmGcMonitorService] warning'
+    line='[2026-10-02T00:00:30.123456][WARN ][JvmGcMonitorService] warning'
     stack='    at example.QueryPhase.run(QueryPhase.java:42)'
     def execute(command,**kwargs):
-        dates=set(re.findall(r'2026-\d{2}-\d{2}',command))
-        kept=line if '2026-10-01' in dates else ''
+        minutes=set(re.findall(r'2026-\d{2}-\d{2}T\d{2}:\d{2}',command))
+        kept=line if '2026-10-02T00:00' in minutes else ''
         if kept and '-A' in command:kept+='\n'+stack
         return None,BytesIO(kept.encode()),BytesIO()
     client=ssh_result();client.exec_command=execute
