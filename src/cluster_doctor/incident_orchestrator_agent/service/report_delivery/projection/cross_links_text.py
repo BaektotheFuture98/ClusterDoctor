@@ -77,3 +77,11 @@ def cluster_event_line(links: CrossLinks) -> str:
         ('느린 분', events.slow_minutes, events.slow_minutes_with_events),
         ('느리지 않은 분', events.other_minutes, events.other_minutes_with_events)) if total]
     return f'{line} — {", ".join(spans)}에서 발생' if spans else line
+
+
+def metric_gap_line(links: CrossLinks) -> str:
+    gaps = links.metric_gaps
+    if not gaps:
+        return ''
+    names = ', '.join(g.node for g in gaps[:4])
+    return f'지표 공백: 노드 {len(gaps)}대({names})의 지표 수집이 구간 중간에 끊기거나 늦게 시작됐습니다. 이탈·재시작 가능성이 있으나 확정할 수 없습니다.'

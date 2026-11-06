@@ -33,6 +33,7 @@ _CROSS_LINK_RULES = """
 - cross_links는 코드가 계산한 시각·노드 대조와 판정이다. 시간 겹침, 노드 연결, 지연 범위는 이 값을 근거로 쓰고 직접 다시 계산하지 않는다.
 - verdict.scope가 지연 범위다. 같은 형태 안에서 기준 미만 요청을 느린 분과 그렇지 않은 분으로 나눠 비교한 결과다(compared_shapes개 비교, 그중 widened_shape_count개가 늘어났고 widened_shapes가 그 형태 목록). specific은 대부분의 형태가 느린 분에도 비슷했다는 뜻, cluster_wide는 늘어난 형태가 2개 이상이면서 비교한 형태의 과반이라 다른 요청도 함께 느려졌다는 뜻(한 형태만 늘었으면 specific), reference_median_seconds/slow_minute_median_seconds는 비교 형태를 합친 값이라 판정 근거가 아니라 참고값이다, undetermined는 비교할 수 있는 형태가 없다는 뜻이다. 이 판정은 쿼리 사이의 분포만 말한다. 쿼리 분포에 대한 서술은 이 판정과 모순되지 않게 쓴다.
 - cluster_events는 마스터 로그의 health 전환·샤드 실패·노드 이탈을 코드가 센 값이다. 느린 분에 몰려 있고 느리지 않은 분에는 거의 없으면 원인 후보로 검토하고, 느리지 않은 분에도 비슷하게 있으면 함께 일어난 배경으로만 적는다.
+- node_metric_gaps는 그 노드의 지표 수집이 구간 중간에 끊기거나 늦게 시작된 사실이다. 이탈·재시작의 가능성으로만 다루고 확정하지 않는다.
 - no_slow는 쿼리 로그를 수집했고 느린 요청이 없었다는 뜻이다. no_query_log는 쿼리 로그를 수집하지 못했거나 비어 있어 판정할 수 없다는 뜻이므로 느린 요청이 없었다고 쓰지 않는다.
 - master_wait_overlaps의 waiting_from~waiting_to가 마스터가 응답을 기다린 구간이다. 쿼리와의 동시성은 로그 시각이 아니라 이 구간으로 말한다.
 - overlap_under_both_assumptions는 쿼리 로그 시각 해석과 무관하게 겹친 실행이다. overlap_under_one_assumption은 해석에 따라 달라지므로 동시 실행이 확인됐다고 쓰지 않는다.

@@ -37,6 +37,8 @@ _TIER = re.compile(r"tier=([^,}\]]+)")
 _SPREAD_RATIO = Decimal("2")
 _MIN_SAMPLES = 20
 _CLUSTER_WIDE_MIN_SHAPES = 2
+# 노드의 지표 표본이 전체 노드의 시작·끝보다 이만큼 이르게 끊기거나 늦게 시작하면 공백으로 본다.
+_METRIC_GAP = timedelta(minutes=2)
 # 기준 중앙값이 0에 가까우면 아주 작은 변화도 배수로는 커진다. 바닥값을 둔다.
 _MEDIAN_FLOOR = Decimal("0.05")
 # 집중도 요약의 상한. 형태 3개 x (요청자 3, 호스트 3)로 컨텍스트가 일정한 크기를 넘지 않는다.
@@ -151,6 +153,15 @@ class WaitActionSummary:
 
 
 @dataclass(frozen=True)
+class MetricGap:
+    """지표 표본이 구간 중간에 끊기거나 늦게 시작한 노드. 원인은 판정하지 않는다."""
+
+    node: str
+    first_seen: datetime
+    last_seen: datetime
+
+
+@dataclass(frozen=True)
 class CrossLinks:
     slow_threshold: Decimal
     overlaps: tuple[WaitOverlap, ...]
@@ -163,6 +174,7 @@ class CrossLinks:
     concentration: tuple[ShapeConcentration, ...] = ()
     cluster_events: ClusterEvents = ClusterEvents()
     wait_actions: tuple[WaitActionSummary, ...] = ()
+    metric_gaps: tuple[MetricGap, ...] = ()
 
 
 def _host(value: str | None) -> str:
@@ -407,7 +419,18 @@ def build_cross_links(observations: Observations, *, slow_seconds: Decimal = SLO
         concentration=_concentration(observations, slow_seconds),
         cluster_events=parse_cluster_events(observations.master_events, minutes),
         wait_actions=_wait_actions(waits),
+        metric_gaps=_metric_gaps(observations),
     )
+
+
+def _metric_gaps(observations: Observations) -> tuple[MetricGap, ...]:
+    rows = [r for r in observations.nodes if r.first_seen and r.last_seen]
+    if len(rows) < 2:
+        return ()
+    earliest = min(r.first_seen for r in rows)
+    latest = max(r.last_seen for r in rows)
+    return tuple(MetricGap(r.node, r.first_seen, r.last_seen) for r in sorted(rows, key=lambda r: r.node)
+                 if latest - r.last_seen >= _METRIC_GAP or r.first_seen - earliest >= _METRIC_GAP)
 
 
 _PAYLOAD_LIST_LIMIT = 10
@@ -532,6 +555,10 @@ def cross_links_payload(links: CrossLinks, evidence_ids: dict[str, str],
             "not_slow_minutes": events.other_minutes,
             "not_slow_minutes_with_events": events.other_minutes_with_events,
         }
+    if links.metric_gaps:
+        payload["node_metric_gaps"] = [
+            {"node": g.node, "first_seen": _iso(g.first_seen), "last_seen": _iso(g.last_seen)}
+            for g in cut("node_metric_gaps", links.metric_gaps, _PAYLOAD_LIST_LIMIT)]
     if omitted:
         payload["omitted"] = omitted
     return payload

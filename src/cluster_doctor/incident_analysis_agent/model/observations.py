@@ -62,6 +62,9 @@ class NodeMetricRow:
     write_rejected_max: int = 0
     # 쿼리 로그의 target_host와 마스터 로그의 노드 주소를 이 노드에 연결하는 키.
     node_ip: str = ""
+    # 이 노드의 지표 표본이 구간 안에서 처음·마지막으로 보인 시각. 노드 이탈·재시작 신호의 재료다.
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +162,14 @@ class Observations:
     source_statuses: tuple[SourceWindowStatus, ...] = ()
 
 
+def _earliest(a: datetime | None, b: datetime | None) -> datetime | None:
+    return b if a is None else a if b is None else min(a, b)
+
+
+def _latest(a: datetime | None, b: datetime | None) -> datetime | None:
+    return b if a is None else a if b is None else max(a, b)
+
+
 def merge_node_row(current: NodeMetricRow, new: NodeMetricRow) -> NodeMetricRow:
     """같은 노드의 두 관측을 합친다. 지표마다 max의 max, 표본은 합.
 
@@ -178,6 +189,8 @@ def merge_node_row(current: NodeMetricRow, new: NodeMetricRow) -> NodeMetricRow:
         write_queue_max=max(current.write_queue_max, new.write_queue_max),
         write_rejected_max=max(current.write_rejected_max, new.write_rejected_max),
         node_ip=current.node_ip or new.node_ip,
+        first_seen=_earliest(current.first_seen, new.first_seen),
+        last_seen=_latest(current.last_seen, new.last_seen),
     )
 
 
