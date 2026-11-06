@@ -14,6 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 
 
+# 대조를 끝내지 못한 사유(UNVERIFIABLE) 문구의 앞머리. 표시 쪽이 불일치와 미완료를 가르는 기준이다.
+UNVERIFIABLE_PREFIX = "대조 못 함 — "
+
+
 class VerificationIssueType(StrEnum):
     # 구간 분석이 원문과 어긋난다. 같은 구간을 다시 분석한다.
     ANALYSIS_MISMATCH = "analysis_mismatch"

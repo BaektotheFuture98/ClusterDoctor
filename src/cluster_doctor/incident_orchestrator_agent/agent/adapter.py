@@ -34,6 +34,7 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.harness import (
     restrict_harness,
 )
 from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import pseudonym_scope
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import verification_gap
 from cluster_doctor.incident_orchestrator_agent.agent.tools import (
     make_finish_incident_tool,
     make_list_candidate_windows_tool,
@@ -199,7 +200,7 @@ class MainAgent:
                 "Agent가 종료를 선언하지 않고 끝나 분석을 마감했다",
             )
         verification_gaps = tuple(
-            f"리포트 검증 불일치: {issue}"
+            verification_gap(issue)
             for item in state["window_results"]
             for issue in item.report.verification_issues
         )

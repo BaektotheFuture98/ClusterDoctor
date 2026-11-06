@@ -12,7 +12,7 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.llm_call_log import ll
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport
 from cluster_doctor.incident_analysis_agent.model.observations import Observations, SlowCandidate
-from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssue, VerificationIssueType
+from cluster_doctor.incident_analysis_agent.model.validation import UNVERIFIABLE_PREFIX, VerificationIssue, VerificationIssueType
 from cluster_doctor.incident_analysis_agent.datasource.clickhouse.node_metric import DEFAULT_THRESHOLDS, NodeMetricThresholds
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
 
@@ -24,7 +24,7 @@ _FENCE = re.compile(r'^```(?:json)?\s*|\s*```$')
 
 
 def _unverifiable(description: str) -> VerificationIssue:
-    return VerificationIssue(issue_type=VerificationIssueType.UNVERIFIABLE, reason=description)
+    return VerificationIssue(issue_type=VerificationIssueType.UNVERIFIABLE, reason=f'{UNVERIFIABLE_PREFIX}{description}')
 
 
 class GroundingValidator:
@@ -35,10 +35,18 @@ class GroundingValidator:
 
     def validate(self, report: LogAnalysisReport, evidence: list[Evidence], *,
         observations: Observations | None = None, candidates: tuple[SlowCandidate, ...] = ()) -> list[VerificationIssue]:
+        return self.validate_with_coverage(report, evidence, observations=observations, candidates=candidates)[0]
+
+    def has_claims(self, report: LogAnalysisReport) -> bool:
+        return bool(self._extract_claims(report))
+
+    def validate_with_coverage(self, report: LogAnalysisReport, evidence: list[Evidence], *,
+        observations: Observations | None = None, candidates: tuple[SlowCandidate, ...] = ()) -> tuple[list[VerificationIssue], int]:
+        """이슈와, LLM 대조 응답을 실제로 받은 주장 수를 함께 반환한다."""
         obs = observations or Observations()
         claims = self._extract_claims(report)
         if not claims:
-            return [_unverifiable('검증할 분석 주장이 없다.')]
+            return [_unverifiable('검증할 분석 주장이 없다.')], 0
         known = {e.evidence_id: e for e in evidence}
         for claim in claims:
             if claim['claim_id'].startswith('suspect:'):
@@ -52,7 +60,9 @@ class GroundingValidator:
         context = build_analysis_context(obs, [], max_chars=_CONTEXT_MAX_CHARS, thresholds=self._thresholds)
         issues = []
         batch = []
+        covered = 0
         def check(items):
+            nonlocal covered
             if not items:
                 return
             refs = {ref for item in items for ref in item['evidence_refs'] + item.get('counter_evidence_refs', [])}
@@ -63,6 +73,7 @@ class GroundingValidator:
             except (LlmApiError, LlmResponseError) as exc:
                 issues.append(_unverifiable(f'원문 대조 호출 실패: {exc}'))
                 return
+            covered += len(items)
             issues.extend(self._parse_response(text, expected_claim_ids={c['claim_id'] for c in items}, known_evidence_refs=refs, claim_evidence_refs={c['claim_id']:set(c['evidence_refs'] + c.get('counter_evidence_refs', [])) for c in items}))
         for claim in claims:
             refs = set(claim['evidence_refs'] + claim.get('counter_evidence_refs', []))
@@ -78,7 +89,7 @@ class GroundingValidator:
                 batch = []
             batch.append(claim)
         check(batch)
-        return issues
+        return issues, covered
 
     @staticmethod
     def _extract_claims(report: LogAnalysisReport) -> list[dict]:

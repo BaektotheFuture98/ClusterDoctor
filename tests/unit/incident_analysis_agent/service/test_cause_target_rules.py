@@ -136,6 +136,12 @@ def _synthesize(monkeypatch, writer, grounding_issues=()):
         def validate(self, *args, **kwargs):
             return list(grounding_issues)
 
+        def validate_with_coverage(self, *args, **kwargs):
+            return list(grounding_issues), 1
+
+        def has_claims(self, report):
+            return True
+
     monkeypatch.setattr(incident_synthesis, "GroundingValidator", _Grounding)
     return incident_synthesis.synthesize_incident(
         seams=SimpleNamespace(report_writer=writer, call_llm=None, metric_thresholds=DEFAULT_THRESHOLDS, wiki_investigator=None), incident=SimpleNamespace(incident_id="i", cluster="c"),

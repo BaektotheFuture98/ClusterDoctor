@@ -46,8 +46,8 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
     for round_no in range(3):
         structural = validate_report(report, evidence,
             candidate_ids={c.candidate_id for c in observations.candidates}, targets=targets)
-        found = grounding.validate(report, evidence, observations=observations,
-                                   candidates=observations.candidates)
+        found, covered = grounding.validate_with_coverage(report, evidence, observations=observations,
+                                                          candidates=observations.candidates)
         conflicts = structural.issues + [i.reason for i in found
             if i.issue_type is not VerificationIssueType.UNVERIFIABLE]
         unavailable = [i.reason for i in found
@@ -66,7 +66,10 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
         revisions += 1
     # 재수정 응답은 위키 조사 결과를 보지 않고 wiki_ref를 다시 쓸 수 있어, 최종 리포트도 에이전트가 연 패턴 id로 한 번 더 제한한다.
     report = keep_known_wiki_refs(report, wiki.known_ids)
-    status = (VerificationStatus.MISMATCH if conflicts else
+    # 주장이 있는데 한 건도 대조하지 못했으면 해석을 믿을 근거가 없다.
+    unchecked = covered == 0 and grounding.has_claims(report)
+    status = (VerificationStatus.UNCHECKED if unchecked else
+              VerificationStatus.MISMATCH if conflicts else
               VerificationStatus.NOT_VERIFIED if unavailable else VerificationStatus.PASSED)
     return report.model_copy(update={
         'verification_status': status, 'verification_issues': tuple(conflicts + unavailable),
