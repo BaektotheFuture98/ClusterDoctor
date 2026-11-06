@@ -214,12 +214,21 @@ class ReportWriter:
         incident_final: bool = False,
         onset: datetime | None = None,
     ) -> LogAnalysisReport | None:
+        system = ([{"role": "system", "content": _INCIDENT_REVISION_INSTRUCTIONS}]
+                  if incident_final else [])
+        # context를 뺀 기본 길이를 먼저 재서, 남은 예산 안에서만 context를 채운다.
+        base = len(build_revision_prompt(report=report, issues=issues, evidence=evidence,
+            analysis_context="", incident_final=incident_final, onset=onset))
+        context_budget = min(40000, 60000 - base - sum(len(m['content']) for m in system) - 500)
+        if context_budget < 1000:
+            _logger.warning("수정 입력이 예산을 초과해 기존 보고서를 보존한다")
+            return None
         prompt = build_revision_prompt(report=report, issues=issues, evidence=evidence,
             analysis_context=build_analysis_context(
-                observations or Observations(), evidence, thresholds=self._thresholds, onset=onset),
+                observations or Observations(), evidence, max_chars=context_budget,
+                thresholds=self._thresholds, onset=onset),
             incident_final=incident_final, onset=onset)
-        messages = ([{"role": "system", "content": _INCIDENT_REVISION_INSTRUCTIONS}]
-                    if incident_final else []) + [{"role": "user", "content": prompt}]
+        messages = system + [{"role": "user", "content": prompt}]
         if sum(len(message['content']) for message in messages) > 60000:
             _logger.warning("수정 입력이 예산을 초과해 기존 보고서를 보존한다")
             return None
