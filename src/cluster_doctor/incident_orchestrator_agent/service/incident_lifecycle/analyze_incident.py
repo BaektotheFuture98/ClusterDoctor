@@ -28,6 +28,7 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrai
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.incident_analyzer import (
     IncidentAnalyzer,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import verification_gap
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
 )
@@ -159,7 +160,7 @@ class AnalyzeIncident:
         all_gaps = list(gaps)
         if report is not None:
             all_gaps.extend(
-                f"리포트 검증 불일치: {issue}" for issue in report.verification_issues
+                verification_gap(issue) for issue in report.verification_issues
             )
         if result.reason and result.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {result.reason}")

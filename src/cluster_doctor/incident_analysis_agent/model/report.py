@@ -32,6 +32,8 @@ class VerificationStatus(StrEnum):
     MISMATCH = "MISMATCH"
     # 검증을 돌리지 못했다. 통과와 구별해야 한다.
     NOT_VERIFIED = "NOT_VERIFIED"
+    # 주장을 하나도 원문과 대조하지 못했다. 사건 종합에서만 쓴다.
+    UNCHECKED = "UNCHECKED"
 
 
 @dataclass(frozen=True)

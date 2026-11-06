@@ -5,6 +5,7 @@ from collections.abc import Iterable
 import re
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence
 from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.validation import UNVERIFIABLE_PREFIX
 from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_timeline import project_timeline, TimelineCard, TimelineItem
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import master_note, slowlog_note
@@ -92,11 +93,13 @@ def timeline_sources(card, shown_evidence=()):
 def withheld_reason(report: IncidentAnalysisReport) -> str:
     """AI 해석을 표시하지 않는 이유. 표시한다면 빈 문자열.
 
-    해석이 없거나 원문과 어긋난다고 판정된(MISMATCH) 경우만 숨긴다. 근거 대조를 끝내지 못했거나
-    분석이 일부 실패한 실행의 해석은 숨기지 않고 ``result_caveats``의 안내와 함께 보인다.
+    해석이 없거나, 원문과 어긋난다고 판정됐거나(MISMATCH), 주장을 하나도 대조하지 못한(UNCHECKED)
+    경우만 숨긴다. 근거 대조를 일부만 끝냈거나 분석이 일부 실패한 실행의 해석은 숨기지 않고 ``result_caveats``의 안내와 함께 보인다.
     """
     if report.narrative is None:
         return 'AI 분석을 생성하지 못해 관측값만 표시합니다.'
+    if report.verification_status == 'UNCHECKED':
+        return 'AI 분석을 원문과 대조하지 못해 관측값만 표시합니다.'
     if report.verification_status not in ('PASSED', 'NOT_VERIFIED'):
         return 'AI 분석에 원문과 맞지 않는 부분이 남아 관측값만 표시합니다.'
     return ''
@@ -214,5 +217,11 @@ def source_log_notes(report):
     return notes
 
 
+def verification_gap(issue: str) -> str:
+    """검증 이슈를 운영 gap 문구로 만든다. 대조를 못 한 것과 원문과 어긋난 것을 접두어로 가른다."""
+    prefix = '리포트 검증 미완료:' if issue.startswith(UNVERIFIABLE_PREFIX) else '리포트 검증 불일치:'
+    return f'{prefix} {issue}'
+
+
 def is_validation_diagnostic(text):
-    return text.startswith(('리포트 검증 불일치:', '리포트 검증이 실패했다:'))
+    return text.startswith(('리포트 검증 불일치:', '리포트 검증 미완료:', '리포트 검증이 실패했다:'))
