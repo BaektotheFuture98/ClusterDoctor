@@ -18,6 +18,8 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_c
 
 _logger = logging.getLogger(__name__)
 _MAX_BATCH_CHARS = 60_000
+# 주장과 근거가 배치 상한 안에 들어갈 몫을 남긴다.
+_CONTEXT_MAX_CHARS = 24_000
 _FENCE = re.compile(r'^```(?:json)?\s*|\s*```$')
 
 
@@ -47,7 +49,7 @@ class GroundingValidator:
                         if candidate.query_record_key and e.record_key == candidate.query_record_key]
                     if candidate.source == 'slowlog':
                         claim['evidence_refs'] = [e.evidence_id for e in evidence if e.source == 'slowlog' and e.event_time == candidate.timestamp and (e.node_name or e.node_id or '') == candidate.node]
-        context = build_analysis_context(obs, [], thresholds=self._thresholds)
+        context = build_analysis_context(obs, [], max_chars=_CONTEXT_MAX_CHARS, thresholds=self._thresholds)
         issues = []
         batch = []
         def check(items):
