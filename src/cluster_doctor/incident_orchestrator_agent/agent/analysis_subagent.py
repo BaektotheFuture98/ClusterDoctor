@@ -28,6 +28,9 @@ from cluster_doctor.incident_orchestrator_agent.model.window_result import Windo
 from cluster_doctor.incident_orchestrator_agent.service.analysis_window.window_planner import (
     plan_new_windows,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import (
+    verification_gap,
+)
 
 
 def apply_analysis_result(parent: dict, result: WindowAnalysisResult) -> dict:
@@ -35,7 +38,7 @@ def apply_analysis_result(parent: dict, result: WindowAnalysisResult) -> dict:
     if result.report is not None:
         reports += (WindowResult(window=result.window, report=result.report),)
     verification_gaps = tuple(
-        f"리포트 검증 불일치: {issue}"
+        verification_gap(issue)
         for item in reports
         for issue in item.report.verification_issues
     )

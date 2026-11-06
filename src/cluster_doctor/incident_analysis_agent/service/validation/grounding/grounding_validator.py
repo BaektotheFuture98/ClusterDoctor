@@ -71,7 +71,7 @@ class GroundingValidator:
                 with llm_label('grounding_check'):
                     text = self._call_llm([{'role': 'user', 'content': prompt}])
             except (LlmApiError, LlmResponseError) as exc:
-                issues.append(_unverifiable(f'원문 대조 호출 실패: {exc}'))
+                issues.append(_unverifiable(f'원문 대조 호출 실패: {type(exc).__name__}'))
                 return
             covered += len(items)
             issues.extend(self._parse_response(text, expected_claim_ids={c['claim_id'] for c in items}, known_evidence_refs=refs, claim_evidence_refs={c['claim_id']:set(c['evidence_refs'] + c.get('counter_evidence_refs', [])) for c in items}))
