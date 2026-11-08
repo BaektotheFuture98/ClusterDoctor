@@ -110,9 +110,12 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 소스별 처리는 다음과 같습니다.
 
 - **slowlog·query log**: 위의 1분 단위 LLM 선별을 거칩니다.
-- **노드 지표**: LLM을 쓰지 않습니다. heap·queue·rejected가 임계값을 넘은 최고점을 코드가 근거로 만듭니다.
+- **노드 지표**: LLM을 쓰지 않습니다. heap·queue·rejected가 임계값을 넘은 최고점을 코드가 근거로 만듭니다. 노드가 둘 이상일 때, 다른 노드보다 지표가 2분 이상 일찍 끊기거나 늦게 시작된 노드는 `node_metric_gaps`(보고서의 "지표 공백")로 싣습니다. 이탈·재시작의 가능성으로만 다루고 확정하지 않습니다.
 - **master node 로그**: 매 구간 ClickHouse에서 읽습니다.
 - **data node 로그**: master 로그에 노드 ID가 나올 때만 `NodeResolver`로 주소를 찾아 SSH로 읽습니다.
+  - 서버에서 먼저 구간의 분 접두어(`[YYYY-MM-DDTHH:MM`, `NODE_LOG_TIMEZONE` 기준)로 거른 뒤 심각도 패턴으로 거릅니다.
+  - 심각도 패턴은 WARN·ERROR와 함께 노드 쪽에서 본 이탈(`master node changed`, `master not discovered`, `removed {`, `FollowerChecker`, `LeaderChecker` 등)과 GC 정지(`[gc]`, `overhead, spent`) 줄도 통과시킵니다.
+  - 수집마다 `[node-ssh] … 서버 N줄, 구간 안 M줄, 서버 결과 시각 …` 로그를 INFO로 남깁니다. 줄 내용은 남기지 않습니다. 서버 결과가 있는데 구간 안이 0줄이면 `NODE_LOG_TIMEZONE`을 확인하라는 WARNING을 남깁니다.
 
 ### 사건 종합과 장애 패턴 위키
 
@@ -412,6 +415,8 @@ src/cluster_doctor/
 - 대기 큐는 메모리 기반입니다. 프로세스가 끝나면 대기 중인 신호를 복구하지 않고, 실패한 사건을 자동으로 다시 실행하지 않습니다. 큐가 가득 차면 새 신호를 버립니다.
 - 마스터 로그 0건과 아직 적재되지 않음을 구별하지 못합니다. 마스터 로그는 ClickHouse에서만 읽고, SSH로 대신 읽지 않습니다.
 - data node 로그는 SSH 계정과 네트워크 도달성에 의존합니다. Elasticsearch가 내부 주소를 돌려주면 외부 실행 host의 SSH는 timeout 뒤 수집 누락으로 남습니다.
+- data node 로그는 현재 파일(`<cluster.name>.log`)만 읽습니다. 구간이 회전된 `.log.gz`로 넘어갔으면 "해당 구간 로그 없음"으로 남습니다.
+- `loki_logs`에 master의 node-left 줄이 적재되지 않으면 노드 이탈을 직접 보지 못합니다. 이때는 노드 지표 공백과 data node 쪽 로그로만 간접 확인합니다.
 
 ## 테스트
 
