@@ -357,9 +357,11 @@ src/cluster_doctor/
 ├── bootstrap/                     # 설정(settings.py), 공유 client 수명(resources.py)
 ├── kafka_consumer/                # Kafka 수신, 유입 정착 대기
 ├── incident_orchestrator_agent/   # Main Agent: 분석 범위·수명 관리, 보고서 발행
-└── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증·사건 종합
+├── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증·사건 종합
+└── wiki_investigation_agent/      # 사건 종합 전에 장애 패턴 위키(MCP)를 조사하는 에이전트
 ```
 
+- 개발 규칙과 패키지별 불변식은 루트와 각 패키지의 `CLAUDE.md`에 있습니다.
 - Orchestrator가 Analysis를 호출하고, Analysis는 Orchestrator에 의존하지 않습니다.
 - 실행 State는 각 에이전트의 `agent/state.py`, 공유 데이터 계약은 소유자의 `model/`에 둡니다.
 - `aiokafka` 의존성은 `kafka_consumer/consumer/kafka`에만 있습니다.

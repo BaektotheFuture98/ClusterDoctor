@@ -31,7 +31,7 @@ project_result → WindowAnalysisResult
 - 데이터 노드 SSH 로그는 마스터 로그에 언급된 노드 ID에 대해서만 `NodeResolver`로 찾아 수집한다. 시간대(`NODE_LOG_TIMEZONE`) 분 접두와 심각도·이탈·GC 패턴으로 먼저 거른다.
 - ES 클러스터 health는 구간마다 현재 값을 조회한다(사건 시점의 상태가 아니다). yellow/red일 때만 근거로 남긴다.
 - 소스 하나가 실패해도 나머지는 유지하고 gap으로 남긴다.
-- 상한 값은 README 고정 한도 표를 본다. 쓰임이 이름과 다르니 주의한다. `MAX_EVIDENCE_PER_SOURCE`는 Map-Reduce 선별이 소스당 남기는 Evidence 수다(`minute_analysis/spec.py`). `MAX_EVIDENCE_TOTAL`과 `MAX_RAW_LOG_CHARS`는 수집 상한이 아니라 `build_analysis_context`가 LLM에 싣는 분석 컨텍스트의 상한이다. 이 컨텍스트는 구간 리포트 작성·수정(`report_writer.py`), 근거 대조(`grounding_validator.py`), 사건 종합과 위키 조사에 쓰인다. `MAX_RAW_LOG_CHARS`는 노드 조사 원문에도 쓴다.
+- 상한 값은 README 고정 한도 표를 본다. `MAX_EVIDENCE_PER_SOURCE`·`MAX_EVIDENCE_TOTAL`은 구간마다 수집이 끝날 때 `preserve_required_evidence`(`analysis_context.py`)가 근거를 자르는 상한이다. 상위 쿼리 실행 근거(`required_query_evidence`)를 먼저 확보한 뒤 나머지를 채운다. `MAX_EVIDENCE_PER_SOURCE`는 Map-Reduce 선별의 소스당 상한(`minute_analysis/spec.py`)으로도 쓴다. `MAX_RAW_LOG_CHARS`는 `build_analysis_context`가 LLM에 싣는 분석 컨텍스트(리포트 작성·수정, 근거 대조, 사건 종합, 위키 조사)의 기본 상한이고 노드 조사 원문에도 쓴다.
 - 수집 출처는 코드가 채운다(`EvidenceProvenance`). Evidence ID는 호출 local allocator가 발급한다.
 
 ## 사건 종합 (`service/report_generation/incident_synthesis.py`)
