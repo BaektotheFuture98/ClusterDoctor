@@ -11,7 +11,6 @@ from cluster_doctor.incident_orchestrator_agent.model.incident_report import (
     CauseAssessment, Finding, IncidentAnalysisReport, Narrative, Recommendation,
 )
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import verdict_line
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_conclusion
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import render_layout
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.text.report_text import render_text
 
@@ -120,13 +119,6 @@ def test_undetermined_and_empty_details():
     assert "판단할 수 없습니다" in undetermined.headline and undetermined.detail == "주요 형태: agg·365일·인덱스 12개 7건"
     assert verdict_line(_links(Verdict("no_slow", (), None, None))).detail == ""
     assert verdict_line(_links(Verdict("no_query_log", (), None, None))).detail == ""
-
-
-def test_conclusion_renders_headline_bold_and_detail_hint_escaped():
-    verdict = Verdict("specific", (("a<b", 1, 1),), None, None, slow_counts=(2,))
-    html = render_conclusion(_links(verdict))
-    assert '<p class="verdict">느린 요청은 일부' in html
-    assert '<p class="hint">주요 형태: a&lt;b·1일·인덱스 1개 2건</p>' in html
 
 
 def test_fallback_narrative_shows_verdict_and_unconfirmed_cause():

@@ -19,7 +19,6 @@ class IncidentStatus(StrEnum):
     구간 분석 결과와 별개이며 종료 상태는 완료·실패·취소 세 가지다.
     """
 
-    OPEN = "OPEN"
     ANALYZING = "ANALYZING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
