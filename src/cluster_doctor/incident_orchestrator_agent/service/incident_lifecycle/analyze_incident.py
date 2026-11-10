@@ -151,9 +151,8 @@ class AnalyzeIncident:
         cluster: str = "",
         onset: datetime | None = None,
     ) -> IncidentAnalysisDetails:
-        # window마다 검증된 리포트가 따로 있다. 합치지 않고 마지막 window의
-        # 것을 대표로 전달하되, 어느 window의 검증 불일치든 운영자가 볼 수
-        # 있게 gap에는 전부 싣는다.
+        # report는 사건 종합 리포트다. 그 검증 이슈도 운영자가 볼 수 있게
+        # 발행 gap에 싣는다. 구간별 검증 이슈는 adapter가 이미 gaps에 넣었다.
         report = result.report
         observations = result.observations
         evidence = result.evidence
