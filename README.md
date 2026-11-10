@@ -19,11 +19,10 @@ HTTP 서비스가 아니라 계속 실행되는 Kafka consumer입니다. 분석�
 6. [고정 한도](#고정-한도)
 7. [LLM 호출과 개인정보 보호](#llm-호출과-개인정보-보호)
 8. [보조 스크립트](#보조-스크립트)
-9. [로컬 통합 실행 (Docker Compose)](#로컬-통합-실행-docker-compose)
-10. [코드 구조](#코드-구조)
-11. [배포 메모](#배포-메모)
-12. [알려진 한계](#알려진-한계)
-13. [테스트](#테스트)
+9. [코드 구조](#코드-구조)
+10. [배포 메모](#배포-메모)
+11. [알려진 한계](#알려진-한계)
+12. [테스트](#테스트)
 
 ## 빠른 시작
 
@@ -284,7 +283,6 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 | `scripts/preview_report.py` | 합성 데이터로 실제 보고서 렌더링·발행 경로 확인 | 없음 |
 | `scripts/evaluate_report_prompts.py` | 보고서 프롬프트 평가. `offline`은 고정 응답으로 계약만 확인, `live`는 실제 모델 호출 | `live`만 LLM |
 | `scripts/upload_report_sftp.py` | SFTP 접속·인증·쓰기 권한 확인 | SFTP 서버 |
-| `scripts/generate_docker_mock.py` | 최근 시각의 격리된 ClickHouse fixture 파일 생성 | 없음 |
 
 ```bash
 # 시각·범위만 계산하고 실행하지 않는다
@@ -307,45 +305,6 @@ uv run python scripts/evaluate_report_prompts.py --mode offline --output reports
 - `run_analysis.py --dump-context`는 Main Agent가 받은 메시지를 JSON으로 남깁니다. 시스템 프롬프트와 도구 정의 원문이 들어가므로 저장소에 올리지 않습니다.
 - `preview_report.py`는 HTML과 같은 이름의 평문도 함께 저장합니다.
 - `evaluate_report_prompts.py --mode live`는 기본 120초 실행 예산이 있고 `--budget-seconds`로 바꿀 수 있습니다(Unix). offline 결과는 모델의 진단 정확도를 증명하지 않습니다.
-
-## 로컬 통합 실행 (Docker Compose)
-
-Kafka·ClickHouse·Elasticsearch는 Docker로 띄우고, ClusterDoctor는 로컬에서 실행합니다. **실제 LLM API를 호출합니다.**
-
-1. `.env`에 LLM key와 다음 연결 설정을 넣습니다. 기존 `.env`가 운영 시스템을 가리키고 있다면 아래 값으로 모두 덮어써야 운영 데이터를 건드리지 않습니다.
-
-   ```dotenv
-   CLICKHOUSE_URL=jdbc:clickhouse://localhost:8123/packetbeat?compress=0
-   CLICKHOUSE_USER=clusterdoctor
-   CLICKHOUSE_PASSWORD=clusterdoctor
-   ES_HOST=localhost
-   ES_PORT=9200
-   ES_USER=
-   ES_PASSWORD=
-   KAFKA_BOOTSTRAP_SERVERS=localhost:29092
-   KAFKA_TOPIC=slowlog
-   KAFKA_GROUP_ID=clusterdoctor
-   ```
-
-2. 인프라를 띄우고 ClusterDoctor를 실행합니다.
-
-   ```bash
-   docker compose up -d
-   uv run python -m cluster_doctor.main
-   ```
-
-3. `Kafka consumer started`가 보이면 다른 터미널에서 신호를 보냅니다.
-
-   ```bash
-   uv run python scripts/produce_test_message.py --at "2026-01-15T10:00:00+09:00"
-   ```
-
-4. 정착 대기와 LLM 호출이 끝나면 `reports/report-*.html`이 생깁니다. 끝나면 `docker compose down`으로 내립니다.
-
-참고:
-
-- ClickHouse fixture는 [docker/clickhouse/init.sql](docker/clickhouse/init.sql)이 빈 볼륨을 처음 만들 때만 적재합니다. 처음 상태로 되돌리려면 `docker compose down -v`로 볼륨을 지우고 다시 띄웁니다.
-- 신호 시각이 수신 시각보다 30분 넘게 오래되면 수신 시각으로 대체되어 fixture 데이터와 구간이 어긋날 수 있습니다. 근거 수집까지 확인하려면 fixture 데이터와 신호 시각을 최근의 같은 구간으로 맞춥니다.
 
 ## 코드 구조
 
@@ -403,9 +362,8 @@ src/cluster_doctor/
 
 ## 배포 메모
 
-- **컨테이너 이미지**: [Dockerfile](Dockerfile)이 `python:3.13-slim`에 uv로 의존성을 설치하고 `python -m cluster_doctor.main`을 실행합니다.
-- **tiktoken 캐시**: 처음 `import litellm`할 때 tiktoken encoding을 인터넷에서 받습니다. 네트워크가 막힌 환경에서는 기동이 실패할 수 있으니, 이미지 빌드 중에 `python -c "import litellm"`으로 캐시를 데웁니다(Dockerfile에 포함). `LITELLM_LOCAL_MODEL_COST_MAP`은 이 다운로드를 막지 못합니다.
-- **litellm 경량화**: 이미지 크기를 줄일 때 `litellm/proxy/` 전체를 지우지 않습니다. 실제 `completion()` 경로가 씁니다.
+- **tiktoken 캐시**: 처음 `import litellm`할 때 tiktoken encoding을 인터넷에서 받습니다. 네트워크가 막힌 환경에서는 기동이 실패할 수 있으니, 배포할 때 `python -c "import litellm"`으로 캐시를 미리 데웁니다. `LITELLM_LOCAL_MODEL_COST_MAP`은 이 다운로드를 막지 못합니다.
+- **litellm 경량화**: 설치 크기를 줄일 때 `litellm/proxy/` 전체를 지우지 않습니다. 실제 `completion()` 경로가 씁니다.
 - **위키 연동**: 서버 환경에 `mcp>=2.3.0`이 설치돼 있어야 합니다. 없으면 위키 조회가 실패하고, 경고를 남긴 뒤 위키 없이 종합합니다.
 - **로그 위치**: 셸에 Kafka용 `LOG_DIR`이 있어도 앱은 `CLUSTER_DOCTOR_LOG_DIR`만 읽습니다.
 - **Windows**: 편집기가 `app.log`를 열어 두면 로테이션 시 이름 변경이 실패할 수 있습니다. 로그 기록 오류는 콘솔에만 남고 분석은 계속됩니다.
@@ -430,4 +388,4 @@ uv run python scripts/run_analysis.py --at 2026-09-16T04:22:00 --span 6m --dry-r
 
 - `tests/unit`: 각 에이전트의 model·datasource·service·agent를 외부 의존 없이 검사합니다.
 - `tests/integration/test_html_publication.py`: 리포트 projection부터 HTML 렌더링·파일 저장까지 이어서 검사합니다.
-- 실제 외부 시스템과 보고서 생성은 [로컬 통합 실행](#로컬-통합-실행-docker-compose)으로 확인합니다.
+- 실제 외부 시스템 연동과 보고서 생성은 운영 서버에서 확인합니다.
