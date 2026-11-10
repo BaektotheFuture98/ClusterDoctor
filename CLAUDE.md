@@ -57,4 +57,3 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 ## 문서 작성 규칙
 
 - 고정 한도의 값은 README의 고정 한도 표가 기준이다. 패키지 문서에는 상한이 왜 그런지를 적고, 규칙 설명에 꼭 필요한 숫자만 둔다.
-- 작업 계획 문서는 `docs/superpowers/plans/`(gitignored, 로컬 전용)에 있다.

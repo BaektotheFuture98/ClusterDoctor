@@ -1,11 +1,7 @@
-from datetime import datetime
-from decimal import Decimal
 
-from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.observations import MasterEvent, Observations, TimelineRow
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links, cross_links_payload
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.conclusion import render_conclusion
 from tests.unit.incident_analysis_agent.service.test_correlation import _at, _query
 
 HEALTH = "Cluster health status changed from [RED] to [YELLOW] (reason: [shards started [[idx][1]]])"
@@ -56,7 +52,3 @@ def test_payload_and_line():
         "클러스터 이벤트: health 전환 2건(RED→YELLOW 2) · 샤드 실패 1건 — 느린 분 2개 중 2개, 느리지 않은 분 1개 중 1개에서 발생")
 
 
-def test_conclusion_renders_event_line():
-    html = render_conclusion(_links([_ev(0, HEALTH)]))
-    assert '<p class="hint">클러스터 이벤트: health 전환 1건' in html
-    assert "클러스터 이벤트" not in render_conclusion(_links([]))

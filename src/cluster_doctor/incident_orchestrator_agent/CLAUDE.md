@@ -42,7 +42,7 @@ Kafka 신호 → 정착 대기 → StartIncident
 
 - 건수·최대값은 analysis의 `service/observation/`이 센 `observations`를 그대로 옮긴다. projection에서 새로 세거나 모델 문장에서 읽지 않는다. 문장 생성은 `cross_links_text.py`처럼 HTML과 평문 renderer가 공유하는 함수에 둔다.
 - 평문 폴백(`rendering/text/report_text.py`)은 HTML과 섹션 구성을 따로 구현하므로 섹션을 바꾸면 둘 다 고친다.
-- 리포트 UI 후속 점검: 쿼리 로그 근거를 `Evidence.record_key`로 찾은 `QueryLogEntry` DTO로 인용하는 작업은 `report_content.py`에 일부 들어가 있다. HTML과 평문 폴백이 같은 인용 함수(`projection/evidence_citation.py`의 `cite`·`citations`)를 쓰는지 확인한다. `incident_timeline.py`·`output_mapping.py`에 옛 뷰 전용 코드가 남았는지 점검. 마스터 로그 실패가 요약 배너와 gap 줄에 중복 표시된다. 코드로 다시 확인한 뒤 착수한다.
+- 리포트 UI 후속 점검: 쿼리 로그 근거를 `Evidence.record_key`로 찾은 `QueryLogEntry` DTO로 인용하는 작업은 `report_content.py`에 일부 들어가 있다. HTML과 평문 폴백이 같은 인용 함수(`projection/evidence_citation.py`의 `cite`·`citations`)를 쓰는지 확인한다. 평문 폴백에는 HTML에 있는 클러스터 이벤트 줄(`cluster_event_line`)과 지표 공백 줄(`metric_gap_line`)이 없다. 마스터 로그 실패가 요약 배너와 gap 줄에 중복 표시된다. 코드로 다시 확인한 뒤 착수한다.
 - 미룬 과제: 발생 이후 구간(밀려서 생긴 증상)을 Main Agent가 덜 고르게 억제하는 것.
 
 ## 핵심 파일
