@@ -42,7 +42,8 @@ MASTER_EVENT_LOGGERS = (
     "o.e.i.b.HierarchyCircuitBreakerService",  # 서킷 브레이커
     "o.e.c.InternalClusterInfoService",
 )
-# 로거를 좁혔으므로 300은 과하다. 사고 중 비용 천장을 낮게 유지한다.
+# 로거를 좁혀 볼륨이 작으므로 상한을 낮게 잡아 사고 중 비용 천장을 낮게 유지한다.
+# 시간 오름차순으로 자르므로 넘치면 구간 뒤쪽 줄이 빠진다.
 MASTER_LOG_MAX_LINES = 300
 
 SPEC = AnalysisSpec(
