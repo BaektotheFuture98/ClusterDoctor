@@ -380,8 +380,8 @@ src/cluster_doctor/
 | 근거 수집 | [incident_analysis_agent/service/evidence_collection/collector.py](src/cluster_doctor/incident_analysis_agent/service/evidence_collection/collector.py) |
 | 검증 루프 | [incident_analysis_agent/agent/subagent.py](src/cluster_doctor/incident_analysis_agent/agent/subagent.py) |
 | 구조 검사 / 원문 대조 | [service/validation/consistency/](src/cluster_doctor/incident_analysis_agent/service/validation/consistency/) / [service/validation/grounding/](src/cluster_doctor/incident_analysis_agent/service/validation/grounding/) |
-| 사건 종합·위키 조사 | [incident_analysis_agent/service/report_generation/incident_synthesis.py](src/cluster_doctor/incident_analysis_agent/service/report_generation/incident_synthesis.py), [incident_analysis_agent/agent/wiki_investigation/](src/cluster_doctor/incident_analysis_agent/agent/wiki_investigation/) |
-| 위키 MCP client | [incident_analysis_agent/datasource/mcp/wiki_client.py](src/cluster_doctor/incident_analysis_agent/datasource/mcp/wiki_client.py) |
+| 사건 종합·위키 조사 | [incident_analysis_agent/service/report_generation/incident_synthesis.py](src/cluster_doctor/incident_analysis_agent/service/report_generation/incident_synthesis.py), [wiki_investigation_agent/agent/](src/cluster_doctor/wiki_investigation_agent/agent/) |
+| 위키 MCP client | [wiki_investigation_agent/datasource/wiki_client.py](src/cluster_doctor/wiki_investigation_agent/datasource/wiki_client.py) |
 | HTML 렌더링 | [incident_orchestrator_agent/service/report_delivery/rendering/html/](src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/rendering/html/) |
 | 파일·SFTP 발행 | [incident_orchestrator_agent/service/report_delivery/publication/](src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/publication/) |
 

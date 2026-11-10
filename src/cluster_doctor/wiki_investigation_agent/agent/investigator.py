@@ -19,15 +19,15 @@ from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import Pseud
 from cluster_doctor.incident_analysis_agent.agent.runtime.rate_limit_retry import (
     RateLimitRetryMiddleware,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import (
+from cluster_doctor.wiki_investigation_agent.agent.findings import (
     WikiFindings,
     WikiPattern,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.prompt import (
+from cluster_doctor.wiki_investigation_agent.agent.prompt import (
     USER_TEMPLATE,
     WIKI_SYSTEM_PROMPT,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.tools import (
+from cluster_doctor.wiki_investigation_agent.agent.tools import (
     MAX_PATTERNS,
     WikiToolbox,
 )

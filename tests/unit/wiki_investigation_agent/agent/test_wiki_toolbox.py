@@ -1,5 +1,5 @@
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.index import index_pattern_ids
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.tools import (
+from cluster_doctor.wiki_investigation_agent.agent.index import index_pattern_ids
+from cluster_doctor.wiki_investigation_agent.agent.tools import (
     WIKI_PAGE_SECTIONS,
     WikiToolbox,
 )

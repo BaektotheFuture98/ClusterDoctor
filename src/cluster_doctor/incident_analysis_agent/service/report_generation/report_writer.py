@@ -41,7 +41,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.schema imp
 from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import (
     keep_known_wiki_refs,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import WikiFindings
+from cluster_doctor.wiki_investigation_agent.agent.findings import WikiFindings
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import complete
 
 _logger = logging.getLogger(__name__)

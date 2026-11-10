@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from types import SimpleNamespace
 
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import (
+from cluster_doctor.wiki_investigation_agent.agent.findings import (
     WikiFindings,
     WikiPattern,
 )

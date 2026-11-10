@@ -8,7 +8,7 @@ from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_c
 from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import keep_known_wiki_refs
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import GroundingValidator
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import WikiFindings
+from cluster_doctor.wiki_investigation_agent.agent.findings import WikiFindings
 
 _logger = logging.getLogger(__name__)
 

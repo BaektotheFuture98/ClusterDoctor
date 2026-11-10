@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import WikiPattern
+from cluster_doctor.wiki_investigation_agent.agent.findings import WikiPattern
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.report_generation.schema import (

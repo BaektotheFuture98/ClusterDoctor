@@ -20,7 +20,7 @@ from cluster_doctor.incident_analysis_agent.model.report import (
 from cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis import (
     synthesize_incident,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.findings import (
+from cluster_doctor.wiki_investigation_agent.agent.findings import (
     WikiFindings,
     WikiPattern,
 )
