@@ -32,7 +32,7 @@ from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.incident_analysis_agent.service.report_generation.report_writer import (
     ReportWriter,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.investigator import (
+from cluster_doctor.wiki_investigation_agent.agent.investigator import (
     WikiInvestigator,
 )
 from cluster_doctor.incident_analysis_agent.workflow.minute_analysis.graph import (

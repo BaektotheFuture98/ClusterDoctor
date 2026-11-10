@@ -31,7 +31,7 @@ from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.cluster_hea
 from cluster_doctor.incident_analysis_agent.datasource.elasticsearch.node_resolver import (
     ElasticsearchNodeResolver,
 )
-from cluster_doctor.incident_analysis_agent.datasource.mcp.wiki_client import (
+from cluster_doctor.wiki_investigation_agent.datasource.wiki_client import (
     MonitoringWikiClient,
 )
 from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
@@ -40,7 +40,7 @@ from cluster_doctor.incident_analysis_agent.datasource.ssh.node_log import (
 from cluster_doctor.incident_analysis_agent.agent.runtime.litellm_client import (
     require_supported_provider,
 )
-from cluster_doctor.incident_analysis_agent.agent.wiki_investigation.investigator import (
+from cluster_doctor.wiki_investigation_agent.agent.investigator import (
     WikiInvestigator,
     make_agent_runner,
 )

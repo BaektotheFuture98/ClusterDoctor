@@ -14,8 +14,8 @@ import uvicorn
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from cluster_doctor.incident_analysis_agent.datasource.mcp import wiki_client
-from cluster_doctor.incident_analysis_agent.datasource.mcp.wiki_client import (
+from cluster_doctor.wiki_investigation_agent.datasource import wiki_client
+from cluster_doctor.wiki_investigation_agent.datasource.wiki_client import (
     MonitoringWikiClient,
 )
 
