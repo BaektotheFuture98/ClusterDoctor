@@ -25,6 +25,7 @@ from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisRepor
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
 from cluster_doctor.incident_analysis_agent.service.observation.builder import ObservationBuilder
+from cluster_doctor.incident_analysis_agent.service.report_generation.previous_incident import previous_incident_digest
 from cluster_doctor.incident_analysis_agent.service.report_generation.prompts import (
     build_analysis_prompt,
     build_incident_synthesis_messages,
@@ -103,7 +104,7 @@ class ReportWriter:
             evidence=evidence,
             observation_summary=state.summary_for_prompt(),
             candidates_for_prompt=state.candidates_for_prompt(),
-            prior_summary=self._prior_summary(request.prior_report),
+            prior_summary=self._prior_summary(request.prior_report, request.previous_incident_report),
             gaps=tuple(state.gaps),
             analysis_context=build_analysis_context(state.to_observations(), evidence, thresholds=self._thresholds),
         )
@@ -124,6 +125,7 @@ class ReportWriter:
                        observations: Observations, evidence: list[Evidence],
                        onset: datetime | None = None,
                        wiki: WikiFindings | None = None,
+                       previous_incident: LogAnalysisReport | None = None,
                        ) -> LogAnalysisReport:
         """이 호출 안에서는 추가 fetch나 agent loop 없이, 보존된 incident 사실을 요약한다.
 
@@ -152,6 +154,7 @@ class ReportWriter:
                 observations, evidence, max_chars=40000 - len(wiki_block),
                 thresholds=self._thresholds, onset=onset),
             wiki_findings=wiki_block, onset=onset,
+            previous_incident=previous_incident_digest(previous_incident) if previous_incident else "",
         )
         if sum(len(message['content']) for message in messages) > 60000:
             raise ValueError("사건 종합 입력이 예산을 초과했다")
@@ -189,21 +192,27 @@ class ReportWriter:
         return keep_known_wiki_refs(report, wiki.known_ids)
 
     @staticmethod
-    def _prior_summary(prior_report: LogAnalysisReport | None) -> str:
-        """같은 Incident의 앞선 리포트 요약.
+    def _prior_summary(
+        prior_report: LogAnalysisReport | None,
+        previous_incident: LogAnalysisReport | None = None,
+    ) -> str:
+        """같은 Incident의 앞선 리포트 요약과 세션의 이전 incident 요약.
 
         **전문을 싣지 않는다.** 앞선 분석의 결론 한 문단이면 이번 구간을 어떤
         물음으로 볼지 정하는 데 충분하고, 전문을 실으면 호출마다 리포트가 하나씩
         더 붙어 Context가 분석 횟수만큼 불어난다.
         """
-        if prior_report is None:
-            return ""
-        questions = "; ".join(prior_report.unresolved_questions[:3])
-        return (
-            f"[{prior_report.analyzed_from:%H:%M}~{prior_report.analyzed_to:%H:%M}] "
-            f"{prior_report.summary}"
-            + (f" 미해결: {questions}" if questions else "")
-        )
+        parts: list[str] = []
+        if previous_incident is not None:
+            parts.append("이전 incident: " + previous_incident_digest(previous_incident))
+        if prior_report is not None:
+            questions = "; ".join(prior_report.unresolved_questions[:3])
+            parts.append(
+                f"[{prior_report.analyzed_from:%H:%M}~{prior_report.analyzed_to:%H:%M}] "
+                f"{prior_report.summary}"
+                + (f" 미해결: {questions}" if questions else "")
+            )
+        return "\n".join(parts)
 
     def revise_report(
         self,

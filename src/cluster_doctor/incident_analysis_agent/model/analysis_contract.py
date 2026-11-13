@@ -56,6 +56,9 @@ class LogAnalysisRequest(BaseModel):
     analysis_goal: str = ""
     evidence_sequence_start: int = 0
     prior_candidate_ids: tuple[str, ...] = ()
+    # 세션의 이전 incident 사건 종합 리포트. 같은 incident의 앞선 구간 리포트
+    # (``prior_report``)와 달리 다른 incident의 결론이라 참고로만 싣는다.
+    previous_incident_report: LogAnalysisReport | None = None
 
 
 class AnalysisStatus(StrEnum):

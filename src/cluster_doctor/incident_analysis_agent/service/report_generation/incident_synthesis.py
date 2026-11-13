@@ -32,13 +32,17 @@ def _investigate_wiki(seams, observations, evidence, onset) -> WikiFindings:
         return WikiFindings()
 
 
-def synthesize_incident(*, seams, incident, window_reports, observations, evidence, onset=None):
-    """``onset``은 최초 관측 시각이다. 주어지면 초안·교정·재수정 입력에 함께 싣는다."""
+def synthesize_incident(*, seams, incident, window_reports, observations, evidence, onset=None,
+                        previous_incident_report=None):
+    """``onset``은 최초 관측 시각이다. 주어지면 초안·교정·재수정 입력에 함께 싣는다.
+
+    ``previous_incident_report``는 세션의 이전 incident 리포트다. 초안 입력에만 참고로 싣고 근거 대조에는 넣지 않는다.
+    """
     wiki = _investigate_wiki(seams, observations, evidence, onset)
     report = seams.report_writer.draft_incident(
         incident_id=incident.incident_id, cluster=incident.cluster,
         window_reports=window_reports, observations=observations, evidence=evidence,
-        onset=onset, wiki=wiki,
+        onset=onset, wiki=wiki, previous_incident=previous_incident_report,
     )
     grounding = GroundingValidator(call_llm=seams.call_llm, metric_thresholds=seams.metric_thresholds)
     targets = concrete_targets(observations)
