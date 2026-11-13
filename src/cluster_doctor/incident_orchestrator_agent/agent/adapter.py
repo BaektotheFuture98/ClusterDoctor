@@ -27,6 +27,11 @@ from cluster_doctor.incident_analysis_agent.model.report import (
     VerificationStatus,
 )
 from cluster_doctor.incident_orchestrator_agent.agent.graph import build_main_agent
+from cluster_doctor.incident_orchestrator_agent.agent.incident_scope import (
+    first_windows,
+    scope_lines,
+    with_incident_health,
+)
 from cluster_doctor.incident_orchestrator_agent.agent.middleware import (
     DelegationGuardrailMiddleware,
 )
@@ -49,9 +54,6 @@ from cluster_doctor.incident_orchestrator_agent.agent.state import (
 )
 from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrails import (
     MAX_SUPERVISOR_CYCLES,
-)
-from cluster_doctor.incident_orchestrator_agent.service.analysis_window.window_planner import (
-    initial_windows,
 )
 from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
     IncidentAnalysisRequest,
@@ -94,36 +96,49 @@ class MainAgent:
         self._analysis_subagent = analysis_subagent
         self._recursion_limit = recursion_limit
 
-    @pseudonym_scope(fresh=True)
     def analyze(self, request: IncidentAnalysisRequest) -> IncidentAnalysisResult:
         """Incident를 분석하며 그래프·최종 종합 실행 오류는 실패 결과로 반환한다.
 
         호출부와 mutable State를 공유하지 않는다. 예외가 나도 마지막
         커밋된 snapshot의 근거를 보존한다. 최종 리포트는 누적 근거로
         종합하며, 종합 실패 시 구간 리포트를 대신 반환하지 않는다.
-        """
-        incident = request.incident
 
+        세션의 incident는 세션 대응표로 가명화한다. 이전 보고서의 이름이 이번
+        프롬프트에도 실리기 때문이다.
+        """
+        session = request.session
+        with pseudonym_scope(
+            fresh=True, mapping=session.pseudonyms if session is not None else None
+        ):
+            return self._analyze(request)
+
+    def _analyze(self, request: IncidentAnalysisRequest) -> IncidentAnalysisResult:
+        incident = request.incident
+        kickoff = _KICKOFF.format(
+            cluster=incident.cluster,
+            trigger=format_kst(incident.trigger_time),
+            # 세션의 두 번째 incident부터는 이번 범위의 시작이 아니라 장애의 최초 관측이다.
+            # 이번 범위는 scope_lines가 따로 알린다.
+            observed_start=format_kst(request.onset),
+            observed_end=format_kst(request.observed_end),
+        )
+        extra = scope_lines(request)
+        session = request.session
         final_state = {
-            "messages": [
-                HumanMessage(
-                    content=_KICKOFF.format(
-                        cluster=incident.cluster,
-                        trigger=format_kst(incident.trigger_time),
-                        observed_start=format_kst(request.observed_start),
-                        observed_end=format_kst(request.observed_end),
-                    )
-                )
-            ],
+            "messages": [HumanMessage(content="\n".join([kickoff, *extra]))],
             **initial_main_agent_state(
                 incident_id=incident.incident_id,
                 observed_end=request.observed_end,
-                pending_windows=tuple(initial_windows(request.observed_start)),
+                pending_windows=first_windows(request),
                 total_wait_seconds=request.settling_wait_seconds,
+                prior_windows=session.previous_windows if session is not None else (),
+                incident_end=request.incident_end,
+                incident_close=request.close.value if request.incident_end else "",
             ),
         }
+        previous_report = session.previous_report if session is not None else None
         try:
-            graph = self._compile(incident)
+            graph = self._compile(incident, previous_report)
             for snapshot in graph.stream(
                 final_state,
                 {"recursion_limit": self._recursion_limit},
@@ -139,6 +154,7 @@ class MainAgent:
             }
 
         result = self._result_from(final_state)
+        result = replace(result, observations=with_incident_health(result.observations, request))
         windows = final_state.get("window_results", ())
         if not windows or result.status is IncidentStatus.CANCELLED:
             return result
@@ -148,7 +164,8 @@ class MainAgent:
                 seams=self._seams, incident=incident,
                 window_reports=[w.report for w in windows],
                 observations=result.observations, evidence=list(result.evidence),
-                onset=request.observed_start,
+                onset=request.onset,
+                previous_incident_report=previous_report,
             )
         except Exception:
             _logger.exception("사건 종합 분석 실패")
@@ -165,7 +182,7 @@ class MainAgent:
         # 최종 검증 내용은 리포트에 남기고 수집 gap에는 싣지 않는다.
         return replace(result, report=report, failed=failed)
 
-    def _compile(self, incident: Incident):
+    def _compile(self, incident: Incident, previous_report=None):
         """Incident 입력과 고정 의존성으로 그래프를 조립한다."""
         tools = [
             make_list_candidate_windows_tool(),
@@ -173,7 +190,7 @@ class MainAgent:
             make_finish_incident_tool(),
         ]
         middleware = [DelegationGuardrailMiddleware()]
-        analysis_subagent = self._analysis_subagent.bind(incident)
+        analysis_subagent = self._analysis_subagent.bind(incident, previous_report)
         return build_main_agent(
             model=self._model,
             tools=tools,

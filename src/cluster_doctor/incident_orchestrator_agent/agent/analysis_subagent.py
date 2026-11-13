@@ -18,7 +18,7 @@ from cluster_doctor.incident_analysis_agent.model.observations import (
     merge_observations,
 )
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisStatus
+from cluster_doctor.incident_analysis_agent.model.report import LogAnalysisReport, LogAnalysisStatus
 from cluster_doctor.incident_orchestrator_agent.agent.state import (
     ADMITTED_GOAL,
     ADMITTED_WINDOW,
@@ -89,7 +89,9 @@ class AnalysisSubagentAdapter:
     def __init__(self, *, analysis_agent: AnalysisAgent) -> None:
         self._analysis_agent = analysis_agent
 
-    def bind(self, incident: Incident) -> CompiledSubAgent:
+    def bind(
+        self, incident: Incident, previous_incident_report: LogAnalysisReport | None = None
+    ) -> CompiledSubAgent:
         def run(parent: dict) -> dict:
             admitted = parent.get(ADMITTED_WINDOW)
             if not admitted:
@@ -110,6 +112,7 @@ class AnalysisSubagentAdapter:
                     c.candidate_id
                     for c in parent.get("observations", Observations()).candidates
                 ),
+                previous_incident_report=previous_incident_report,
             )
             result = self._analysis_agent.analyze(request)
             return apply_analysis_result(parent, result)

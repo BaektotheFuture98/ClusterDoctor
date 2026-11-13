@@ -205,6 +205,12 @@ def make_list_candidate_windows_tool() -> BaseTool:
         ]
         if state.get("observed_end") is not None:
             lines.insert(0, f"유입이 멎은 시각: {format_kst(state['observed_end'])}")
+        if state.get("incident_end") is not None:
+            lines.insert(
+                0,
+                f"incident 범위 끝: {format_kst(state['incident_end'])} "
+                f"(마감: {state.get('incident_close', '')})",
+            )
         return "\n".join(lines)
 
     return list_candidate_windows
