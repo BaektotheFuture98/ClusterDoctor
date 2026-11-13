@@ -56,3 +56,27 @@ def test_missing_runtime_breaks_line_and_empty_count_stays_zero():
     assert len(runtime.findall('circle')) == 2
     assert not runtime.findall('polyline')  # Do not join observations across missing minutes.
     assert '실패' in ''.join(counts.itertext())
+
+
+def test_counts_over_threshold_are_highlighted_and_partial_stays_lighter():
+    from xml.etree import ElementTree as ET
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import QueryTrendPoint
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
+    values = ((600, 'ok'), (601, 'ok'), (700, 'limited'), (10, 'limited'))
+    points = tuple(QueryTrendPoint(T0+timedelta(minutes=i), count, Decimal('1'), status,
+        T0+timedelta(minutes=i), T0+timedelta(minutes=i+1))
+        for i, (count, status) in enumerate(values))
+    root = ET.fromstring(render_query_trend(points))
+    counts = root.findall('figure')[0].find('svg')
+    assert [b.attrib['fill'] for b in counts.findall('rect')] == ['#2f6c87', '#c8553d', '#e3a899', '#b6cbd4']
+    assert '붉은 막대: 요청 기록 600건 초과' in ''.join(root.itertext())
+
+
+def test_no_highlight_hint_when_all_counts_within_threshold():
+    from xml.etree import ElementTree as ET
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import QueryTrendPoint
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.query_trend import render_query_trend
+    points = (QueryTrendPoint(T0, 600, Decimal('1'), 'ok', T0, T0+timedelta(minutes=1)),)
+    root = ET.fromstring(render_query_trend(points))
+    assert '붉은 막대' not in ''.join(root.itertext())
+    assert root.findall('figure')[0].find('svg').find('rect').attrib['fill'] == '#2f6c87'
