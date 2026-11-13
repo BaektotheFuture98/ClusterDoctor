@@ -21,6 +21,9 @@ from cluster_doctor.incident_analysis_agent.model.time_range import (
     split_span,
     subtract_spans,
 )
+from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrails import (
+    covered_windows,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ def plan_new_windows(
 
     fresh: list[TimeRange] = []
     for candidate in candidates:
-        for piece in subtract_spans(candidate, tuple(state.get("analyzed_windows", ()))):
+        for piece in subtract_spans(candidate, covered_windows(state)):
             if piece.end - piece.start >= MIN_USEFUL_WINDOW:
                 fresh.append(piece)
 
@@ -86,3 +89,12 @@ def initial_windows(first_seen) -> list[TimeRange]:
     """
     anchor = first_seen.replace(second=0, microsecond=0)
     return [TimeRange(start=anchor - FIRST_WINDOW_LEAD, end=anchor + timedelta(minutes=1))]
+
+
+def continuation_windows(start, end) -> list[TimeRange]:
+    """세션의 두 번째 incident부터 쓰는 첫 후보. incident 시작 분부터 구간 길이 상한까지다.
+
+    ``initial_windows``처럼 앞당기지 않는다. 그 앞은 이전 incident가 이미 봤다.
+    """
+    pieces = split_span(start.replace(second=0, microsecond=0), end)
+    return pieces[:1]
