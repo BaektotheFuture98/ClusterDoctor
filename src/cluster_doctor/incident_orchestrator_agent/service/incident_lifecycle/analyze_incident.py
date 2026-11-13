@@ -27,6 +27,9 @@ from cluster_doctor.incident_orchestrator_agent.service.analysis_window.guardrai
 from cluster_doctor.incident_orchestrator_agent.service.incident_lifecycle.incident_analyzer import (
     IncidentAnalyzer,
 )
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.incident_scope_rows import (
+    scope_rows,
+)
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import verification_gap
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import (
     to_incident_analysis_report,
@@ -86,6 +89,12 @@ class AnalyzeIncident:
         diagnostics = await self._deliver(
             result, analysis_failed or result.failed, gaps, cluster=incident.cluster,
             onset=command.observed_start,
+            scope=scope_rows(
+                observed_start=command.observed_start,
+                incident_end=command.incident_end,
+                close=command.close,
+                session=command.session,
+            ),
         )
         return IncidentOutcome(
             incident_id=incident.incident_id,
@@ -139,6 +148,7 @@ class AnalyzeIncident:
         *,
         cluster: str = "",
         onset: datetime | None = None,
+        scope: tuple[tuple[str, str], ...] = (),
     ) -> IncidentAnalysisDetails:
         # report는 사건 종합 리포트다. 그 검증 이슈도 운영자가 볼 수 있게
         # 발행 gap에 싣는다. 구간별 검증 이슈는 adapter가 이미 gaps에 넣었다.
@@ -153,7 +163,8 @@ class AnalyzeIncident:
         if result.reason and result.status is not IncidentStatus.COMPLETED:
             all_gaps.append(f"Incident 종료 사유: {result.reason}")
         rendered_report = to_incident_analysis_report(
-            report, observations, evidence, cluster=cluster, onset=onset
+            report, observations, evidence, cluster=cluster, onset=onset,
+            scope_rows=scope,
         )
         publication = ReportPublication()
         try:

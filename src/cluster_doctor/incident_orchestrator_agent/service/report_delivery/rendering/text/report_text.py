@@ -42,7 +42,7 @@ def render_text(report: IncidentAnalysisReport, *, analysis_failed: bool = False
     narrative=display_narrative(report)
     links=build_cross_links(obs)
     verdict=verdict_line(links)
-    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, '결론', verdict.headline]
+    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, *(f'{label}: {value}' for label, value in report.scope_rows), '결론', verdict.headline]
     if verdict.detail:out.append(verdict.detail)
     if line:=node_line(links):out.append(line)
     withheld=withheld_reason(report)

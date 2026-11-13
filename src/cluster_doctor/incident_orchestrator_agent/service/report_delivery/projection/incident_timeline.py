@@ -789,10 +789,15 @@ def _master_signals(
 def _health_signals(
     observations: Observations, evidence: tuple[Evidence, ...]
 ) -> list[_Signal]:
-    if not observations.requested:
+    # incident 구성 중의 이력이 있으면 incident 범위만 본다. 분석 구간마다 조회한
+    # 분석 시점 값은 마감 뒤라 여기서 빠진다. 수동 분석은 분석 구간 기준이다.
+    if observations.incident_span is not None:
+        window_start, window_end = observations.incident_span
+    elif observations.requested:
+        window_start = min(start for start, _end in observations.requested)
+        window_end = max(end for _start, end in observations.requested)
+    else:
         return []
-    window_start = min(start for start, _end in observations.requested)
-    window_end = max(end for _start, end in observations.requested)
     points = tuple(sorted(observations.health, key=lambda point: point.at))
     signals: list[_Signal] = []
     for index, point in enumerate(points):

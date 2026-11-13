@@ -101,3 +101,5 @@ class IncidentAnalysisReport:
     title: str = ""
     summary: str = ""
     wiki_patterns: tuple[WikiPatternRef, ...] = ()
+    # 개요의 incident 범위·마감 사유·세션 줄 (label, value). 수동 분석은 비어 있다.
+    scope_rows: tuple[tuple[str, str], ...] = ()
