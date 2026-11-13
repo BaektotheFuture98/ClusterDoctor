@@ -78,3 +78,11 @@ def test_with_incident_health_prepends_history_and_sets_span():
 def test_with_incident_health_keeps_manual_observations():
     observations = Observations()
     assert with_incident_health(observations, _request(incident_end=None)) is observations
+
+
+def test_scope_lines_without_previous_report_say_failed_or_unverified():
+    session = SessionContext(
+        session_id="s1", sequence=2, last_allowed=False, previous_incident_id="i1"
+    )
+    text = "\n".join(scope_lines(_request(session)))
+    assert "이전 incident 보고서: 없음(분석 실패 또는 검증 미통과)" in text

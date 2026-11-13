@@ -1,10 +1,16 @@
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
+import cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis as module
 from cluster_doctor.incident_analysis_agent.model.kst import KST
+from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.report import (
     LogAnalysisReport,
     ReportRecommendation,
     RootCause,
+)
+from cluster_doctor.incident_analysis_agent.model.validation import (
+    VerificationIssueType,
 )
 from cluster_doctor.incident_analysis_agent.service.report_generation.previous_incident import (
     previous_incident_digest,
@@ -56,3 +62,46 @@ def test_synthesis_without_previous_incident_has_no_section():
         previous_windows_json="{}", analysis_context="{}",
     )
     assert "이전 incident" not in messages[1]["content"]
+
+
+def test_previous_incident_reaches_only_the_synthesis_draft(monkeypatch):
+    calls = {"revise": [], "grounding": []}
+
+    class _Writer:
+        def draft_incident(self, **kwargs):
+            calls["draft"] = kwargs
+            return _REPORT
+
+        def revise_report(self, *args, **kwargs):
+            calls["revise"].append((args, kwargs))
+            return _REPORT
+
+    class _Validator:
+        def __init__(self, **kwargs):
+            pass
+
+        def validate_with_coverage(self, report, evidence, **kwargs):
+            calls["grounding"].append((report, evidence, kwargs))
+            issue = SimpleNamespace(issue_type=VerificationIssueType.REPORT_MISMATCH, reason="표현")
+            return ([issue] if len(calls["grounding"]) == 1 else []), 1
+
+        def has_claims(self, report):
+            return True
+
+    monkeypatch.setattr(module, "GroundingValidator", _Validator)
+    seams = SimpleNamespace(
+        wiki_investigator=None, report_writer=_Writer(), call_llm=None, metric_thresholds=None
+    )
+    module.synthesize_incident(
+        seams=seams, incident=SimpleNamespace(incident_id="i1", cluster="c"),
+        window_reports=[_REPORT], observations=Observations(), evidence=[],
+        previous_incident_report=_REPORT,
+    )
+    assert calls["draft"]["previous_incident"] is _REPORT
+    assert len(calls["revise"]) == 1
+    _, revise_kwargs = calls["revise"][0]
+    assert "previous_incident" not in revise_kwargs
+    assert "previous_incident_report" not in revise_kwargs
+    assert len(calls["grounding"]) == 2
+    for _, _, kwargs in calls["grounding"]:
+        assert "previous_incident" not in kwargs

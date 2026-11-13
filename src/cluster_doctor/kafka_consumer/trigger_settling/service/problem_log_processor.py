@@ -15,6 +15,10 @@ from cluster_doctor.incident_analysis_agent.model.health_point import (
     fold_health,
     is_green,
 )
+from cluster_doctor.incident_analysis_agent.model.report import (
+    LogAnalysisReport,
+    VerificationStatus,
+)
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
 from cluster_doctor.kafka_consumer.trigger_settling.service.incident_session import (
     INCIDENT_SPAN_LIMIT,
@@ -165,13 +169,13 @@ class ProblemLogProcessor:
                     session_id=uuid.uuid4().hex[:12],
                     sequence=1,
                     last_allowed=last_allowed,
-                    onset=tracker.first_seen,
+                    onset=start,
                 )
             else:
                 previous_id, previous_outcome = previous
                 session = session.following(
                     incident_id=previous_id,
-                    report=previous_outcome.report if previous_outcome else None,
+                    report=_forwardable_report(previous_outcome),
                     windows=_analyzed_windows(previous_outcome),
                     last_allowed=last_allowed,
                 )
@@ -193,6 +197,8 @@ class ProblemLogProcessor:
             )
             if self._closed:
                 return
+            if sequence >= MAX_INCIDENTS_PER_SESSION:
+                return
             queued = not self._pending.empty()
             green = None if queued else await self._probe_green()
             if not continue_session(sequence=sequence, queued=queued, green=green):
@@ -205,11 +211,16 @@ class ProblemLogProcessor:
             sequence += 1
 
     async def _build_incident(self, tracker: InflowTracker, start: datetime) -> _Built:
-        """큐가 비었고 green이면, 아니면 범위 상한에서 마감한다."""
+        """큐가 비었고 green이면, 아니면 범위 상한에서 마감한다.
+
+        상한에 이른 뒤에는 큐를 비우지 않는다. 비우면 신호가 이 incident의
+        마감에 소비돼 다음 incident나 세션이 만들어지지 않는다.
+        """
         history: tuple[HealthPoint, ...] = ()
         while True:
             now = datetime.now(UTC)
-            arrivals = self._drain_pending()
+            at_cap = now >= start + self._incident_span_limit
+            arrivals = [] if at_cap else self._drain_pending()
             if arrivals:
                 tracker.observe([arrival.trigger for arrival in arrivals], now=now)
             green: bool | None = False
@@ -302,6 +313,18 @@ class ProblemLogProcessor:
                 entries.append(self._pending.get_nowait())
             except queue.Empty:
                 return entries
+
+
+def _forwardable_report(outcome: IncidentOutcome | None) -> LogAnalysisReport | None:
+    """다음 incident에 넘길 이전 보고서. 보고서가 해석을 내보이지 않는 판정이면 넘기지 않는다."""
+    if outcome is None or outcome.report is None:
+        return None
+    if outcome.report.verification_status in (
+        VerificationStatus.MISMATCH,
+        VerificationStatus.UNCHECKED,
+    ):
+        return None
+    return outcome.report
 
 
 def _analyzed_windows(outcome: IncidentOutcome | None) -> tuple[TimeRange, ...]:

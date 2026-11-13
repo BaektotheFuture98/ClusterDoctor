@@ -142,7 +142,7 @@ _current: ContextVar[Pseudonymizer | None] = ContextVar("pseudonymizer", default
 def pseudonym_scope(
     *, fresh: bool = False, mapping: Pseudonymizer | None = None
 ) -> Iterator[Pseudonymizer]:
-    """incident 하나 안에서 mapping을 공유하고, 성공·실패와 무관하게 해제한다.
+    """scope 안에서 mapping을 공유하고, 성공·실패와 무관하게 해제한다.
 
     Main이 새 scope를 시작한다. 중첩된 분석과 단독 LLM 호출은 활성 scope를
     재사용하며, 독립적으로 호출되면 임시 scope를 만든다.
