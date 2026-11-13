@@ -59,6 +59,9 @@ class MainAgentState(DeepAgentState):
     status: NotRequired[Annotated[IncidentStatus, last_write_wins]]
     closing_reason: NotRequired[Annotated[str, last_write_wins]]
     admitted_task_call_id: NotRequired[Annotated[str | None, last_write_wins]]
+    prior_windows: NotRequired[Annotated[tuple[TimeRange, ...], last_write_wins]]
+    incident_end: NotRequired[Annotated[datetime | None, last_write_wins]]
+    incident_close: NotRequired[Annotated[str, last_write_wins]]
 
 
 def initial_main_agent_state(
@@ -67,6 +70,9 @@ def initial_main_agent_state(
     observed_end: datetime,
     pending_windows: tuple[TimeRange, ...],
     total_wait_seconds: float,
+    prior_windows: tuple[TimeRange, ...] = (),
+    incident_end: datetime | None = None,
+    incident_close: str = "",
 ) -> dict[str, Any]:
     """Main Agent 호출 한 번의 완전한 초기값을 만든다."""
     return {
@@ -91,4 +97,7 @@ def initial_main_agent_state(
         "status": IncidentStatus.ANALYZING,
         "closing_reason": "",
         "admitted_task_call_id": None,
+        "prior_windows": prior_windows,
+        "incident_end": incident_end,
+        "incident_close": incident_close,
     }

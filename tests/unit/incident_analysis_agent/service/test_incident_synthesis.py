@@ -62,7 +62,7 @@ def test_final_validation_reasons_remain_internal_across_delivery(monkeypatch, s
         yield {**state, 'window_results': (WindowResult(window=TimeRange(START, first.analyzed_to), report=first),),
                'status': IncidentStatus.COMPLETED, 'closing_reason': '완료',
                'accumulated_gaps': ('SSH 수집 실패',), 'latest_verification_status': VerificationStatus.PASSED}
-    analyzer._compile = lambda _: SimpleNamespace(stream=stream)
+    analyzer._compile = lambda _, __=None: SimpleNamespace(stream=stream)
     monkeypatch.setattr('cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis.synthesize_incident', lambda **k: final)
     incident = Incident(incident_id='I', cluster='C', trigger_time=START, kafka_receive_time=START)
     result = analyzer.analyze(IncidentAnalysisRequest(incident, START, first.analyzed_to, 0))
@@ -181,7 +181,7 @@ def test_analyzer_delivers_synthesis_instead_of_last_window(monkeypatch):
     def stream(state,*a,**k):
         yield {**state,'window_results':windows,'status':IncidentStatus.COMPLETED,'closing_reason':'완료',
                'latest_verification_status':VerificationStatus.MISMATCH}
-    analyzer._compile=lambda _:SimpleNamespace(stream=stream)
+    analyzer._compile=lambda _, __=None:SimpleNamespace(stream=stream)
     def synthesis(**kwargs):
         assert [r.summary for r in kwargs['window_reports']]==['초기 지연','마지막 정상']
         return whole
@@ -362,7 +362,7 @@ def test_analyzer_passes_first_observed_time_as_onset(monkeypatch):
     def stream(state,*a,**k):
         yield {**state,'window_results':(WindowResult(window=TimeRange(START,first.analyzed_to),report=first),),
                'status':IncidentStatus.COMPLETED,'closing_reason':'완료'}
-    analyzer._compile=lambda _:SimpleNamespace(stream=stream)
+    analyzer._compile=lambda _, __=None:SimpleNamespace(stream=stream)
     seen={}
     def synthesis(**kwargs):
         seen.update(kwargs)

@@ -20,7 +20,7 @@ def test_next_incident_does_not_restore_previous_incident_identifiers(fail_graph
     restored = []
     alias_from_first = []
 
-    def compile_graph(incident):
+    def compile_graph(incident, previous_report=None):
         if incident.incident_id == "first":
             PSEUDONYMS.register("req", "request-only-in-first-incident")
             alias_from_first.append(PSEUDONYMS.mask("request-only-in-first-incident"))

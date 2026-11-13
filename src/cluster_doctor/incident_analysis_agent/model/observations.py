@@ -160,6 +160,9 @@ class Observations:
     candidates: tuple[SlowCandidate, ...] = ()
     query_requests: tuple[QueryLogEntry, ...] = ()
     source_statuses: tuple[SourceWindowStatus, ...] = ()
+    # incident 범위(시작 ~ 마감). 타임라인의 health 신호가 이 범위 안의 점만 쓴다.
+    # 수동 분석에는 없다.
+    incident_span: tuple[datetime, datetime] | None = None
 
 
 def _earliest(a: datetime | None, b: datetime | None) -> datetime | None:
@@ -208,6 +211,7 @@ def merge_observations(current: Observations, new: Observations) -> Observations
                       않으므로 그 자체가 키다.
       health          시간순 이력이라 이어 붙인다.
       first/last_seen 바깥쪽으로 넓힌다.
+      incident_span   먼저 정해진 값을 유지한다.
     """
     timeline = {row.minute: row for row in current.timeline}
     timeline.update({row.minute: row for row in new.timeline})
@@ -239,6 +243,7 @@ def merge_observations(current: Observations, new: Observations) -> Observations
         health=current.health + new.health,
         query_requests=merge_query_requests(current.query_requests, new.query_requests),
         source_statuses=tuple(dict.fromkeys(current.source_statuses + new.source_statuses)),
+        incident_span=current.incident_span or new.incident_span,
         candidates=tuple(
             sorted(
                 candidates.values(), key=lambda c: (len(c.candidate_id), c.candidate_id)
