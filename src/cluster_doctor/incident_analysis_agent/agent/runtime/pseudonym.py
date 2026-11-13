@@ -7,7 +7,8 @@
 호출 경로가 둘이라 가명 규칙은 하나로 모은다. 같은 값은 어느 호출에서나 같은
 가명(``ip-0001``, ``user-0001`` 등)을 받는다 — 모델이 "같은 노드·같은 사용자"를 구분할 수 있어야 하고,
 tool loop에서 이전 대화가 다시 전송될 때도 가명이 어긋나면 안 되기 때문이다.
-대응표는 Incident마다 새로 만들고 종료 시 해제한다. Main/SubAgent와 병렬
+대응표는 incident 세션마다 새로 만든다. 같은 세션의 incident들은 이전 보고서의
+이름을 같은 가명으로 가려야 하므로 대응표를 이어 쓴다(``mapping`` 인자). Main/SubAgent와 병렬
 조회·분 단위 분석은 contextvars로 같은 대응표를 공유한다.
 
 - ``litellm_client.complete()``: 메시지를 직접 마스킹하고 응답 텍스트를 복원한다.
@@ -138,18 +139,25 @@ _current: ContextVar[Pseudonymizer | None] = ContextVar("pseudonymizer", default
 
 
 @contextmanager
-def pseudonym_scope(*, fresh: bool = False) -> Iterator[Pseudonymizer]:
+def pseudonym_scope(
+    *, fresh: bool = False, mapping: Pseudonymizer | None = None
+) -> Iterator[Pseudonymizer]:
     """incident 하나 안에서 mapping을 공유하고, 성공·실패와 무관하게 해제한다.
 
     Main이 새 scope를 시작한다. 중첩된 분석과 단독 LLM 호출은 활성 scope를
     재사용하며, 독립적으로 호출되면 임시 scope를 만든다.
     context 복사본은 별도 카운터가 아니라 같은 thread-safe mapping을 공유한다.
+
+    ``mapping``을 주면 그 대응표로 scope를 연다. 세션의 다음 incident는 이전
+    보고서(실명으로 복원된 문장)를 프롬프트에 싣는데, 새 대응표에는 그 이름이
+    등록돼 있지 않아 가려지지 않는다.
     """
     current = _current.get()
-    if current is not None and not fresh:
+    if mapping is None and current is not None and not fresh:
         yield current
         return
-    mapping = Pseudonymizer()
+    if mapping is None:
+        mapping = Pseudonymizer()
     token = _current.set(mapping)
     try:
         yield mapping
