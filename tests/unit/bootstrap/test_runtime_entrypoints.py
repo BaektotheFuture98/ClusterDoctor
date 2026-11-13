@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 import importlib
+import inspect
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,6 +49,8 @@ async def test_main_closes_processor_before_clients_even_on_failure(app, runtime
         return resources
 
     def build_problem_log_processor(**kwargs):
+        cluster_health = kwargs.pop("cluster_health")
+        assert inspect.iscoroutinefunction(cluster_health)
         assert kwargs == dict(analyze_incident=analysis, cluster="explicit", max_pending=10_000)
         if failure == "problem_log_processor-build":
             raise RuntimeError(failure)

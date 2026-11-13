@@ -175,14 +175,14 @@ def test_composed_main_compiles_with_its_bound_delegate(settings, clients, monke
         bound = []
         real_bind = delegate.bind
 
-        def capture_bound(actual):
-            result = real_bind(actual)
+        def capture_bound(actual, previous_incident_report=None):
+            result = real_bind(actual, previous_incident_report)
             bound.append(result)
             return result
 
         with patch.object(delegate, "bind", side_effect=capture_bound) as bind:
             graph = analyzer._compile(incident)
-        bind.assert_called_once_with(incident)
+        bind.assert_called_once_with(incident, None)
         assert graph["analysis_subagent"] is bound[0]
         assert graph["model"] is analyzer._model
         assert graph["analysis_subagent"]["name"] == "analysis"
