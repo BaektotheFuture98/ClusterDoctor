@@ -38,14 +38,19 @@ SPEC = AnalysisSpec(
     label="es_query_log (쿼리 실행 기록)",
     what_matters=(
         "- success=False인 요청. 사용자가 실제로 오류를 받은 것이다.\n"
-        "- run_time이 같은 구간의 다른 요청보다 뚜렷하게 큰 것.\n"
-        "- 특정 company/user/project에 몰린 요청.\n"
-        "- 평소에 없던 형태의 cmd."
+        "- 함께 있는 요청보다 run_time이 뚜렷하게 큰 것."
     ),
     what_is_noise=(
         "- success=True이고 run_time이 평범한 요청.\n"
-        "- 헬스체크·모니터링 성격의 짧은 조회."
+        "건수와 최대 run_time은 코드가 query log 전체에서 따로 센다.\n"
+        "키워드는 앞 5개만 보존되므로 키워드나 cmd가 같다는 것만으로 같은 실행으로\n"
+        "보고 합치지 않는다."
     ),
+    what_stands_out_in_window=(
+        "- 특정 company/user/project에 몰린 요청.\n"
+        "- 구간 안에서 드문 형태의 cmd."
+    ),
+    event_type_examples="query_failed, slow_request",
 )
 
 
