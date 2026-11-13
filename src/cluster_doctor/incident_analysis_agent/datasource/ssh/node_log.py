@@ -98,6 +98,10 @@ SPEC = AnalysisSpec(
         "- 같은 예외가 연속으로 수십 줄 반복되는 경우 (대표 한 줄만 남긴다).\n"
         "- 스택 트레이스의 중간 프레임."
     ),
+    event_type_examples=(
+        "oom, gc_pause, rejection, circuit_breaker, shard_failed, "
+        "transport_error, master_not_discovered, removed_from_cluster"
+    ),
 )
 
 

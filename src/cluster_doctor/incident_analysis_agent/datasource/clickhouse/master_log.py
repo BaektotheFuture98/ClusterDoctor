@@ -63,6 +63,10 @@ SPEC = AnalysisSpec(
         "- 같은 사건이 대상 노드만 다르게 여러 줄 남은 경우 (대표 한 줄만 남긴다).\n"
         "  대상 노드 수와 건수는 코드가 마스터 로그 전체에서 따로 센다."
     ),
+    event_type_examples=(
+        "node_left, node_join, follower_check_failed, master_elected, "
+        "shard_failed, unassigned_shards, disk_watermark, gc_overhead, circuit_breaker"
+    ),
 )
 
 

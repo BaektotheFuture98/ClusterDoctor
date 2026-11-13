@@ -27,13 +27,22 @@ class AnalysisSpec:
     고르라"만 주면 전부 중요해진다. 실측에서 마스터 로그 INFO 10건 중 진단에
     필요한 것은 1건이었고 나머지 9건은 ML 유지보수·만료 데이터 삭제였다.
     무엇을 버릴지 명시해야 볼륨이 내려간다.
+
+    ``what_matters``·``what_is_noise``에는 줄 하나나 같은 분 안에서 판단할 수
+    있는 기준만 둔다. Map은 1분만 보므로 "갑자기", "몰린" 같은 구간 비교 기준을
+    주면 근거 없이 해석해 줄을 버리고, 버린 줄은 Reduce가 다시 볼 수 없다.
+    구간 비교 기준은 ``what_stands_out_in_window``에 두어 Reduce에만 싣는다.
     """
 
     source: EvidenceSource
     # 프롬프트와 로그에 쓰는 사람이 읽을 이름.
     label: str
-    # 이 소스에서 후속 장애 분석에 의미 있는 것.
+    # 이 소스에서 후속 장애 분석에 의미 있는 것. Map·Reduce 공통.
     what_matters: str
-    # 이 소스에서 정상이거나 반복이라 버려야 하는 것.
+    # 이 소스에서 정상이거나 반복이라 버려야 하는 것. Map·Reduce 공통.
     what_is_noise: str
+    # 구간 전체를 비교해야 판단되는 기준. Reduce에만 싣는다.
+    what_stands_out_in_window: str = ""
+    # event_type 예시. Map에만 싣는다. node_log는 이 값으로 타임라인을 묶는다.
+    event_type_examples: str = ""
     max_evidence: int = MAX_EVIDENCE_PER_SOURCE
