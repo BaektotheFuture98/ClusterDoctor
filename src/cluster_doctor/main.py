@@ -255,9 +255,16 @@ async def main() -> None:
     configure_logging()
     settings = get_settings()
     with build_runtime_resources(settings) as runtime_resources:
+        es_cluster = ElasticsearchClusterAdapter(runtime_resources.es_client)
+
+        async def cluster_health() -> dict:
+            # ES client는 동기다. 이벤트 루프를 막지 않게 스레드에서 부른다.
+            return await asyncio.to_thread(es_cluster.health)
+
         problem_log_processor = ProblemLogProcessor(
             analyze_incident=compose_analysis_service(settings, runtime_resources),
             cluster=settings.cluster_name,
+            cluster_health=cluster_health,
             max_pending=10_000,
         )
         try:
