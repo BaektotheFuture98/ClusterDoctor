@@ -52,7 +52,7 @@ def scope_lines(request: IncidentAnalysisRequest) -> list[str]:
             previous_incident_digest(session.previous_report),
         ]
     else:
-        lines.append("이전 incident 보고서: 없음(분석 실패)")
+        lines.append("이전 incident 보고서: 없음(분석 실패 또는 검증 미통과)")
     return lines
 
 
