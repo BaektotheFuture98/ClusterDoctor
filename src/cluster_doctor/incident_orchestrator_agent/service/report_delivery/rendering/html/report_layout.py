@@ -61,6 +61,9 @@ def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) ->
         if span_from and not (report.analyzed_from and report.analyzed_to) else ''
     )
     generated = f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
+    scope = ''.join(
+        f'<tr><th>{esc(label)}</th><td>{esc(value)}</td></tr>' for label, value in report.scope_rows
+    )
     return (
         f'<section id="overview">'
         f'<h1>{esc(title)}</h1>'
@@ -68,6 +71,7 @@ def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) ->
         f'<tr><th>발생 및 인지 일시</th><td>{esc(start)}</td></tr>'
         f'<tr><th>분석 종료 일시</th><td>{esc(end)}</td></tr>'
         f'<tr><th>분석 대상 시간</th><td>{esc(duration or "미확인")}</td></tr>'
+        + scope
         + generated +
         f'</tbody></table>'
         + fallback_hint +

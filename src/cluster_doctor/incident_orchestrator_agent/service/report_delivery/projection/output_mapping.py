@@ -32,12 +32,13 @@ def to_incident_analysis_report(
     *,
     cluster: str = "",
     onset: datetime | None = None,
+    scope_rows: tuple[tuple[str, str], ...] = (),
 ) -> IncidentAnalysisReport:
     """분석 리포트가 없어도 관측값과 수집 근거를 전달한다."""
     if report is None:
         return IncidentAnalysisReport(
             observations=observations, evidence=tuple(evidence), cluster=cluster,
-            onset=onset,
+            onset=onset, scope_rows=scope_rows,
         )
 
     return IncidentAnalysisReport(
@@ -58,6 +59,7 @@ def to_incident_analysis_report(
         verification_issues=report.verification_issues,
         cluster=cluster,
         onset=onset,
+        scope_rows=scope_rows,
         analyzed_from=report.analyzed_from,
         analyzed_to=report.analyzed_to,
         narrative=Narrative(
