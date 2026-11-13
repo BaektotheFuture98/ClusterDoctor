@@ -237,6 +237,9 @@ _INCIDENT_REVISION_INSTRUCTIONS = _REVIEW_TEMPLATE.replace(_WIKI_RULE_TOKEN, _WI
 
 
 _WIKI_FINDINGS_SECTION_TITLE = "--- 장애 패턴 위키 조사 결과 (지식 근거, 이번 사건의 관측이 아니다) ---"
+_PREVIOUS_INCIDENT_SECTION_TITLE = (
+    "--- 이전 incident 보고서 요약 (참고용, 이번 사건의 관측이 아니다) ---"
+)
 
 
 def _onset_lines(onset: datetime | None) -> list[str]:
@@ -264,7 +267,7 @@ def build_incident_review_messages(
 def build_incident_synthesis_messages(
     *, cluster: str, analyzed_from: datetime, analyzed_to: datetime,
     previous_windows_json: str, analysis_context: str, wiki_findings: str = "",
-    onset: datetime | None = None,
+    onset: datetime | None = None, previous_incident: str = "",
 ) -> list[dict[str, str]]:
     """최종 진단 지시문을 보존된 incident 데이터와 분리해 둔다."""
     wiki = [_WIKI_FINDINGS_SECTION_TITLE, wiki_findings] if wiki_findings else []
@@ -272,6 +275,7 @@ def build_incident_synthesis_messages(
         f"클러스터: {cluster[:200]}",
         f"사건 분석 범위: {analyzed_from.astimezone(KST).isoformat()} ~ {analyzed_to.astimezone(KST).isoformat()}",
         *_onset_lines(onset),
+        *([_PREVIOUS_INCIDENT_SECTION_TITLE, previous_incident] if previous_incident else []),
         "--- 구간별 분석 범위 JSON ---", previous_windows_json,
         "--- 누적 관측값과 선별 근거 JSON ---", analysis_context,
         *wiki,
