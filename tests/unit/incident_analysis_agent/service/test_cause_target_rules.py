@@ -49,6 +49,14 @@ def test_cause_target_rules_cover_each_requirement():
     assert "반복하지 않는다" in rules
 
 
+def test_recommendation_names_user_first_and_stored_keywords():
+    rules = prompts._CAUSE_TARGET_RULES
+    assert "사용자(user)를 먼저" in rules and "요청 호스트(IP)" in rules
+    assert "키워드" in rules and "만들지 않고" in rules
+    analysis = prompts._ANALYSIS_RULES
+    assert "사용자(user)를 먼저" in analysis and "키워드를 최대 3개" in analysis
+
+
 def test_concentration_counts_slow_requests_by_requester_and_host():
     block = cross_links_payload(build_cross_links(_observations()), {})["slow_concentration"]
     assert len(block) == 1

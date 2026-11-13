@@ -22,8 +22,8 @@ def test_kept_phrase_in_orchestrator():
 
 
 def test_new_phrases_present():
-    assert "60자 내외" in p._ANALYSIS_RULES
-    assert "60자 내외" in p._INCIDENT_SYNTHESIS_INSTRUCTIONS
+    assert "60자" not in p._ANALYSIS_RULES
+    assert "60자" not in p._INCIDENT_SYNTHESIS_INSTRUCTIONS
     assert "verdict가 cluster_wide가 아니면" in p._INCIDENT_REVIEW_INSTRUCTIONS
     assert "node_metric_thresholds" in p._ANALYSIS_RULES
     assert "slow_threshold_seconds" in p._ANALYSIS_RULES

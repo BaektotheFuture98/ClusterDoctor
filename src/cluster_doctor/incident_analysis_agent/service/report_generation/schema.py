@@ -189,7 +189,7 @@ class DraftWindowSuggestion(BaseModel):
 
 class DraftRecommendation(BaseModel):
     cause_index: int | None = Field(default=None, ge=0, description="대응하는 root_causes의 0부터 시작하는 인덱스. 공통 조사는 null.")
-    text: str = Field(default="", description="대상이 들어간 한 줄 조치(60자 내외).")
+    text: str = Field(default="", description="대상이 들어간 한 줄 조치.")
     wiki_ref: str = Field(
         default="",
         description="사건 종합에서만 쓴다. 위키 조사 결과가 주어졌을 때 그 패턴 id를 그대로 기재하고, 그 밖에는 빈 문자열.",
