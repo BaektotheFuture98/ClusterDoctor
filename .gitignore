@@ -56,3 +56,6 @@ docs/
 
 # Understand-Anything 지식 그래프. 도구가 재생성하므로 추적하지 않는다.
 .ua/
+
+.claude/settings.local.json
+.claude/worktrees/
