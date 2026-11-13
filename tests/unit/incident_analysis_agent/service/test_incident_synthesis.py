@@ -373,6 +373,84 @@ def test_analyzer_passes_first_observed_time_as_onset(monkeypatch):
     assert seen['onset']==ONSET
 
 
+def _adapter_run(monkeypatch, request):
+    """그래프와 종합만 가짜로 바꿔 MainAgent.analyze가 넘기는 값을 기록한다."""
+    from types import SimpleNamespace
+    from cluster_doctor.incident_analysis_agent.agent.runtime.pseudonym import PSEUDONYMS
+    from cluster_doctor.incident_orchestrator_agent.agent.adapter import MainAgent
+    from cluster_doctor.incident_orchestrator_agent.model.incident import IncidentStatus
+    from cluster_doctor.incident_orchestrator_agent.model.window_result import WindowResult
+    from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
+    first=LogAnalysisReport(incident_id='I',analyzed_from=START,analyzed_to=START+timedelta(minutes=1),summary='구간')
+    seen={'compile':[], 'messages':[]}
+    analyzer=object.__new__(MainAgent)
+    analyzer._seams=SimpleNamespace()
+    analyzer._recursion_limit=40
+    def compile_graph(incident, previous_report=None):
+        seen['compile'].append(previous_report)
+        def stream(state,*a,**k):
+            seen['messages'].append(state['messages'][0].content)
+            PSEUDONYMS.register('company','AcmeCorp')
+            yield {**state,'window_results':(WindowResult(window=TimeRange(START,first.analyzed_to),report=first),),
+                   'status':IncidentStatus.COMPLETED,'closing_reason':'완료'}
+        return SimpleNamespace(stream=stream)
+    analyzer._compile=compile_graph
+    def synthesis(**kwargs):
+        seen['synthesis']=kwargs
+        seen['alias_in_synthesis']=PSEUDONYMS.mask('AcmeCorp')
+        return first.model_copy(update={'verification_status':VerificationStatus.PASSED})
+    monkeypatch.setattr('cluster_doctor.incident_analysis_agent.service.report_generation.incident_synthesis.synthesize_incident',synthesis)
+    analyzer.analyze(request)
+    return seen
+
+
+def test_analyzer_hands_session_context_to_synthesis_pseudonyms_and_delegation(monkeypatch):
+    from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
+    from cluster_doctor.incident_analysis_agent.model.kst import KST, format_kst
+    from cluster_doctor.incident_orchestrator_agent.model.incident import Incident
+    from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
+        IncidentAnalysisRequest, IncidentClose, SessionContext,
+    )
+    first_onset=datetime(2026,11,13,9,40,tzinfo=KST)
+    start=datetime(2026,11,13,10,0,tzinfo=KST)
+    end=start+timedelta(minutes=20)
+    previous=LogAnalysisReport(incident_id='i1',analyzed_from=first_onset,analyzed_to=start,summary='이전 결론')
+    red=HealthPoint(at=start,until=start,status='red')
+    session=SessionContext(session_id='s1',sequence=2,last_allowed=False,onset=first_onset,
+                           previous_incident_id='i1',previous_report=previous)
+    incident=Incident(incident_id='i2',cluster='C',trigger_time=start,kafka_receive_time=start)
+    request=IncidentAnalysisRequest(incident,start,start,0,incident_end=end,close=IncidentClose.SPAN_LIMIT,
+                                    health_history=(red,),session=session)
+    seen=_adapter_run(monkeypatch,request)
+    synthesis=seen['synthesis']
+    assert synthesis['onset']==first_onset and synthesis['onset']!=start
+    assert synthesis['previous_incident_report'] is previous
+    assert synthesis['observations'].health==(red,)
+    assert synthesis['observations'].incident_span==(start,end)
+    assert len(seen['compile'])==1 and seen['compile'][0] is previous
+    message=seen['messages'][0]
+    assert f'최초 관측 시각: {format_kst(first_onset)}' in message
+    assert f'incident 범위: {format_kst(start)} ~ {format_kst(end)}' in message
+    # 그래프·종합이 쓴 대응표가 세션의 것이다.
+    alias=session.pseudonyms.mask('AcmeCorp')
+    assert alias!='AcmeCorp' and seen['alias_in_synthesis']==alias
+
+
+def test_analyzer_manual_request_keeps_observations_and_uses_observed_start_as_onset(monkeypatch):
+    from cluster_doctor.incident_analysis_agent.model.observations import Observations
+    from cluster_doctor.incident_orchestrator_agent.model.incident import Incident
+    from cluster_doctor.incident_orchestrator_agent.model.lifecycle import IncidentAnalysisRequest
+    incident=Incident(incident_id='I',cluster='C',trigger_time=START,kafka_receive_time=START)
+    seen=_adapter_run(monkeypatch,IncidentAnalysisRequest(incident,ONSET,START+timedelta(minutes=1),0))
+    synthesis=seen['synthesis']
+    assert synthesis['onset']==ONSET
+    assert synthesis['previous_incident_report'] is None
+    assert synthesis['observations']==Observations()
+    assert synthesis['observations'].incident_span is None
+    assert seen['compile']==[None]
+    assert 'incident 범위' not in seen['messages'][0]
+
+
 def test_draft_schema_asks_for_summary_and_title_after_details():
     from cluster_doctor.incident_analysis_agent.service.report_generation.schema import DraftReport, IncidentDraftReport
     for model in (DraftReport, IncidentDraftReport):
