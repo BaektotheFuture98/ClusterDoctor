@@ -52,7 +52,8 @@ uv run python -m cluster_doctor.main
 ```mermaid
 flowchart TD
     K["Kafka<br/>문제성 로그 신호"] --> S["유입 정착 대기<br/>ProblemLogProcessor"]
-    S --> M
+    S --> C["incident 구성<br/>30초마다 큐 확인 → 없으면 _cluster/health<br/>green이면 마감, 아니면 최대 20분까지"]
+    C -->|"incident 범위·마감 사유·health 이력<br/>+ 이전 incident 보고서"| M
     subgraph G["Main Agent 그래프"]
         M["Main Agent<br/>분석 구간 선택·종료 판단"] -->|"구간 하나 위임"| A["Analysis SubAgent<br/>근거 수집·분석·검증"]
         A -->|"구간 리포트"| M
@@ -64,15 +65,23 @@ flowchart TD
         Y3 --> Y4["검증·재수정<br/>검증 최대 3회"]
     end
     Y4 --> R["HTML 보고서<br/>로컬 저장 → SFTP"]
+    R -.->|"큐에 신호가 있거나 green이 아니면<br/>다음 incident (세션당 최대 3개)"| C
 ```
 
 1. **신호 수신**: Kafka 메시지에서 발생 시각을 읽어 `ProblemLogSignal`을 만듭니다. 로그 종류는 거르지 않습니다. 발생 시각이 수신 시각보다 30분 넘게 앞서거나 미래이면 수신 시각을 대신 씁니다.
-2. **유입 정착 대기**: 30초마다 새 신호가 있는지 보고, 연속 두 번 없으면 사건을 엽니다. 누적 대기는 최대 5분입니다.
-3. **구간 분석**: Main Agent가 분석할 시간 구간을 고르고 Analysis SubAgent에 하나씩 맡깁니다. 결과를 보고 더 볼 구간이 있는지 판단하거나 종료합니다.
-4. **사건 종합**: Main Agent 그래프가 끝나면 코드가 (위키가 연결돼 있으면) 위키 조사 에이전트를 사건당 한 번 돌리고, 그 결과와 구간 리포트·누적 근거로 사건 전체 리포트를 합성·검증합니다. 둘 다 Main Agent의 도구가 아니라 그래프 밖에서 코드가 호출하며, 장애 패턴은 이 단계에서만 참고합니다.
-5. **보고서 발행**: HTML을 로컬에 먼저 저장하고, 설정돼 있으면 SFTP로 올립니다.
+2. **유입 정착 대기**: 30초마다 새 신호가 있는지 보고, 연속 두 번 없으면 정착으로 봅니다. 누적 대기는 최대 5분입니다.
+3. **incident 구성**: 정착 뒤에도 30초마다 큐를 확인합니다. 새 신호가 있으면 가져와 이 incident에 합칩니다. 없으면 ES `_cluster/health`를 확인해 green이면 incident를 마감합니다. red·yellow이면 계속 기다립니다. incident 범위는 시작부터 **최대 20분**이고, 20분에 닿으면 상태와 상관없이 마감합니다. health 조회가 실패하면 그 시점에 마감하고 gap으로 남깁니다. 조회한 health는 이력으로 남겨 보고서 타임라인에 씁니다.
+4. **구간 분석**: Main Agent가 incident 범위 안에서 분석할 시간 구간을 고르고 Analysis SubAgent에 하나씩 맡깁니다. 결과를 보고 더 볼 구간이 있는지 판단하거나 종료합니다.
+5. **사건 종합**: Main Agent 그래프가 끝나면 코드가 (위키가 연결돼 있으면) 위키 조사 에이전트를 사건당 한 번 돌리고, 그 결과와 구간 리포트·누적 근거로 사건 전체 리포트를 합성·검증합니다. 둘 다 Main Agent의 도구가 아니라 그래프 밖에서 코드가 호출하며, 장애 패턴은 이 단계에서만 참고합니다.
+6. **보고서 발행**: HTML을 로컬에 먼저 저장하고, 설정돼 있으면 SFTP로 올립니다.
+7. **다음 incident 판단**: 발행 뒤 코드가 큐와 health를 다시 확인합니다. 큐가 비었고 green이면 세션을 끝냅니다. 아니면 이전 incident가 끝난 시각부터 다음 incident를 3번 단계로 구성합니다.
 
-정착 대기와 분석은 하나의 루프입니다. 한 사건의 분석이 끝나야 다음 신호의 정착 판단을 시작하고, 그 사이 들어온 신호는 큐에 쌓입니다. 진행 중인 사건에 새 신호를 합치거나 끝난 사건을 다시 실행하지 않습니다.
+한 번 열린 세션의 incident들은 순서대로 처리합니다. 대기·확인과 분석을 동시에 돌리지 않고, 분석 중에 들어온 신호는 큐에 쌓였다가 다음 incident에 합쳐집니다. 분석 중에는 health를 조회하지 않으므로 그 시간의 이력은 비어 있습니다.
+
+- **20분 단위로 나눕니다.** 예를 들어 클러스터가 60분 동안 green이 아니면 incident 3개가 됩니다. 분석이 길어져 이전 incident 끝에서 이미 20분이 지났으면, 다음 incident는 바로 20분 범위로 마감합니다.
+- **이전 보고서를 넘깁니다.** 두 번째 incident부터는 이전 incident의 보고서(요약·원인·권장 조치)를 Main Agent, Analysis SubAgent, 사건 종합에 참고로 넘겨 이어서 쓰게 합니다. 이전 보고서는 이번 incident의 관측이 아니므로 근거로 인용하지 않고, 숫자는 이번 incident의 관측값에서 읽습니다. 가명화 스코프는 세션 단위라 이전 보고서의 회사·사용자 이름도 같은 별칭으로 가려집니다.
+- **세션당 incident는 최대 3개**입니다. 세 번째 incident가 green 확인 없이 마감되면 그 보고서에 "장시간 미복구, 자동 추적 중단"을 표시하고, 발행 뒤 세션을 끝냅니다. 그 뒤 큐에 남은 신호는 새 세션을 엽니다.
+- 수동 분석(`run_analysis.py`)은 세션을 만들지 않고 health도 기다리지 않습니다.
 
 분석에 쓰는 원본 로그와 지표는 외부 수집기가 ClickHouse에 적재해 두어야 합니다. Kafka 신호는 사건을 여는 계기로만 씁니다.
 
@@ -80,7 +89,7 @@ flowchart TD
 
 ### Main Agent: 어느 구간을 볼지 정한다
 
-Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리거 시각과 최초·마지막 관측 시각(KST)을 받고, 다음 네 도구로 일합니다.
+Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리거 시각, 최초·마지막 관측 시각(KST), incident 범위와 마감 사유(green 확인·범위 상한·health 확인 불가), 세션 안의 순번을 받고, 다음 네 도구로 일합니다. 두 번째 incident부터는 이전 incident의 보고서와 분석한 구간도 받습니다. 이때도 최초 관측 시각은 이번 범위의 시작이 아니라 세션 첫 incident의 최초 관측이고, 사건 종합의 `before`·`onset`·`after` 표시도 그 시각 기준입니다.
 
 | 도구 | 역할 |
 |---|---|
@@ -89,7 +98,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 | `task` | 승인된 구간 하나를 Analysis SubAgent에 맡긴다 |
 | `finish_incident` | `COMPLETED` / `FAILED` / `CANCELLED`로 사건을 닫는다 |
 
-- **첫 구간**: 최초 관측 분의 5분 전부터 그 분의 끝까지입니다. 예를 들어 최초 14:00:37이면 마지막 관측이 언제든 13:55~14:01입니다. 원인은 증상보다 앞에 있으므로 발생 이후는 첫 구간에 넣지 않고, 유입이 이어진 뒤쪽을 볼지는 Main Agent가 판단합니다. 코드가 만드는 첫 후보와 프롬프트의 안내가 같은 구간입니다.
+- **첫 구간**: 최초 관측 분의 5분 전부터 그 분의 끝까지입니다. 예를 들어 최초 14:00:37이면 마지막 관측이 언제든 13:55~14:01입니다. 원인은 증상보다 앞에 있으므로 발생 이후는 첫 구간에 넣지 않고, 유입이 이어진 뒤쪽을 볼지는 Main Agent가 판단합니다. 코드가 만드는 첫 후보와 프롬프트의 안내가 같은 구간입니다. 두 번째 incident부터는 incident 시작 시각부터 구간 길이 상한까지가 첫 후보이고, 이전 incident가 분석한 구간은 다시 분석하지 않습니다.
 - **추가 구간**: 다른 시간대를 봐야 답할 수 있는 구체적인 질문이 있고 예산이 남았을 때만 분석합니다. 원인이 미확정이라는 이유만으로 범위를 넓히지 않습니다.
 - **강제 규칙**: 구간 길이, 분 예산, 호출 수, 중복 분석은 프롬프트가 아니라 코드(guardrail)가 막습니다. 수치는 [고정 한도](#고정-한도)를 참고하세요.
 - `COMPLETED`로 닫으려면 구간 리포트가 하나 이상 있어야 합니다.
@@ -108,7 +117,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 
 소스별 처리는 다음과 같습니다.
 
-- **slowlog·query log**: 위의 1분 단위 LLM 선별을 거칩니다.
+- **slowlog·query log·master node 로그·data node 로그**: 위의 1분 단위 LLM 선별을 거칩니다. 선별 프롬프트는 네 소스가 함께 쓰고, 소스별 기준만 다릅니다.
 - **노드 지표**: LLM을 쓰지 않습니다. heap·queue·rejected가 임계값을 넘은 최고점을 코드가 근거로 만듭니다. 노드가 둘 이상일 때, 다른 노드보다 지표가 2분 이상 일찍 끊기거나 늦게 시작된 노드는 `node_metric_gaps`(보고서의 "지표 공백")로 싣습니다. 이탈·재시작의 가능성으로만 다루고 확정하지 않습니다.
 - **master node 로그**: 매 구간 ClickHouse에서 읽습니다.
 - **data node 로그**: master 로그에 노드 ID가 나올 때만 `NodeResolver`로 주소를 찾아 SSH로 읽습니다.
@@ -145,7 +154,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 
 | 순서 | 섹션 | 내용 |
 |---|---|---|
-| 1 | 개요 | 발생·인지 일시(최초 관측 시각), 분석 종료 일시, 분석 대상 시간, 보고서 생성 시각 |
+| 1 | 개요 | 발생·인지 일시(이번 incident 범위의 시작), 분석 종료 일시, 분석 대상 시간, incident 범위와 마감 사유, 세션 안의 순번과 이전 incident, 장애 최초 관측 시각(두 번째 incident부터), 추적 중단 표시(세 번째가 green 확인 없이 마감되면 "장시간 미복구, 자동 추적 중단"), 보고서 생성 시각 |
 | 2 | 현상 및 원인 | 코드가 판정한 지연 범위·노드 응답 지연·클러스터 이벤트, 요약, 직접적·근본적 원인(위키 패턴을 반영했으면 위키 배지) |
 | 3 | 권장 조치 | 조치 목록, 위키 패턴과 일치하면 위키 배지 |
 | 4 | 쿼리 실행 추이 | 요청 기록 수와 분별 최대 실행시간 SVG 차트 |
@@ -155,7 +164,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 - **값의 출처를 나눕니다.** 건수·최대값 같은 숫자와 쿼리 후보는 코드가 센 `observations`에서 읽고, 모델이 옮겨 적지 않습니다. 모델은 해석(`narrative`)만 쓰고, 그 주장에는 근거 참조가 붙습니다.
 - **표시 상한**: 마스터 로그 120건, slowlog·SSH 로그 각 10건입니다.
 - **수집 상태를 구분합니다.** 조회 실패는 0건으로 그리지 않고 안내 문구로 표시합니다. 정상 조회 0건과 미수집도 구분하며, 마스터 로그·slowlog는 평소 0건이 정상입니다.
-- **해석 주의**: `rejected`는 누적값이라 이번 구간의 실패나 회복으로 해석하지 않습니다. 조회 시점의 cluster health는 과거 사고 상태로 싣지 않습니다.
+- **해석 주의**: `rejected`는 누적값이라 이번 구간의 실패나 회복으로 해석하지 않습니다. cluster health는 두 종류입니다. incident 구성 중에 30초마다 조회한 이력은 사건 당시 값이라 타임라인에 incident 범위 안의 변화로 싣습니다. 분석 구간마다 따로 조회하는 값은 분석 시점의 상태라 과거 사고 상태로 싣지 않습니다.
 - **검증 결과에 따라 AI 해석의 표시가 달라집니다.** `MISMATCH`·`UNCHECKED`이거나 해석을 만들지 못했으면 AI 해석을 빼고 관측값만 보여 줍니다. `NOT_VERIFIED`이거나 일부 단계가 실패했으면 해석과 함께 주의 문구를 붙입니다. 검증 상태 값과 근거 ID 자체는 본문에 나오지 않고 로그에 남습니다.
 - 인쇄하면 접힌 영역이 펼쳐집니다. 외부 웹폰트·CDN은 쓰지 않습니다.
 - HTML 파일을 쓸 수 없으면 개인정보를 지운 평문을 로그로 남깁니다.
@@ -241,8 +250,10 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 | 분석 구간 길이 | 최대 10분 | `incident_analysis_agent/model/time_range.py` |
 | 사건당 분석 예산 | 60분, 12회 | `incident_orchestrator_agent/service/analysis_window/guardrails.py` |
 | Main Agent 사이클 / 연속 거절 | 16회 / 3회 | 〃 |
-| 사건 처리 시간 | 30분 | 〃 |
+| 사건 처리 시간 | incident당 30분 (정착·incident 구성 대기 제외) | 〃 |
 | 유입 정착 대기 | 30초 간격, 최대 300초 | `kafka_consumer/trigger_settling/service/problem_log_processor.py` |
+| incident 범위 | 30초 간격 확인, 최대 20분 | `kafka_consumer/trigger_settling/service/incident_session.py` |
+| 세션당 incident | 3개 | 〃 |
 | 대기 큐 | 10,000건 | `main.py` |
 | 근거 수 | 소스당 25, 전체 80 | `incident_analysis_agent/service/evidence_collection/limits.py` |
 | 프롬프트 원문 | 60,000자 | 〃 |
@@ -314,7 +325,7 @@ uv run python scripts/evaluate_report_prompts.py --mode offline --output reports
 src/cluster_doctor/
 ├── main.py                        # 조립(Composition Root): 실행 객체를 직접 만들어 주입
 ├── bootstrap/                     # 설정(settings.py), 공유 client 수명(resources.py)
-├── kafka_consumer/                # Kafka 수신, 유입 정착 대기
+├── kafka_consumer/                # Kafka 수신, 유입 정착, incident 세션
 ├── incident_orchestrator_agent/   # Main Agent: 분석 범위·수명 관리, 보고서 발행
 ├── incident_analysis_agent/       # Analysis SubAgent: 근거 수집·분석·검증·사건 종합
 └── wiki_investigation_agent/      # 사건 종합 전에 장애 패턴 위키(MCP)를 조사하는 에이전트
@@ -333,7 +344,8 @@ src/cluster_doctor/
 |---|---|
 | 프로세스 시작·조립 | [main.py](src/cluster_doctor/main.py) (`compose_analysis_service`, `build_runtime_resources`, `build_report_publisher`) |
 | Kafka 수신 | [kafka_consumer/consumer/kafka/consumer.py](src/cluster_doctor/kafka_consumer/consumer/kafka/consumer.py) |
-| 유입 정착·순차 분석 루프 | [kafka_consumer/trigger_settling/service/problem_log_processor.py](src/cluster_doctor/kafka_consumer/trigger_settling/service/problem_log_processor.py) |
+| 유입 정착·incident 세션 루프 | [kafka_consumer/trigger_settling/service/problem_log_processor.py](src/cluster_doctor/kafka_consumer/trigger_settling/service/problem_log_processor.py) |
+| incident 마감·다음 incident 규칙 | [kafka_consumer/trigger_settling/service/incident_session.py](src/cluster_doctor/kafka_consumer/trigger_settling/service/incident_session.py) |
 | 사건 수명(timeout·발행) | [incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py](src/cluster_doctor/incident_orchestrator_agent/service/incident_lifecycle/analyze_incident.py) |
 | Main Agent | [incident_orchestrator_agent/agent/adapter.py](src/cluster_doctor/incident_orchestrator_agent/agent/adapter.py) |
 | 구간 후보·승인 규칙 | [incident_orchestrator_agent/service/analysis_window/](src/cluster_doctor/incident_orchestrator_agent/service/analysis_window/) |

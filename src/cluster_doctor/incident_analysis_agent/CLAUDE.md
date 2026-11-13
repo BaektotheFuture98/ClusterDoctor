@@ -26,10 +26,10 @@ project_result → WindowAnalysisResult
 ## 근거 수집 (`service/evidence_collection/collector.py`)
 
 - ClickHouse 조회는 분 단위로 쪼개 병렬로(최대 5분) 부른다. 분마다 slowlog·query log·node metric 세 쿼리가 따로 나간다.
-- slowlog·query log는 `workflow/minute_analysis/`의 Map-Reduce LLM 선별(분 버킷 map → 전체 reduce → Evidence[])을 거친다. 선별은 원인을 추정하지 않는다. 노드 지표는 임계 규칙(LLM 없음)이고 `node_metric_gaps`로 지표가 구간 중간에 끊기거나 늦게 시작한 노드를 드러낸다.
+- slowlog·query log·마스터 로그(`collector.py`)와 데이터 노드 SSH 로그(`node_investigation.py`)는 `workflow/minute_analysis/`의 Map-Reduce LLM 선별(분 버킷 map → 전체 reduce → Evidence[])을 거친다. 선별은 원인을 추정하지 않는다. 프롬프트는 네 소스 공용이고 소스별 기준은 각 `datasource`의 `AnalysisSpec`에 있다. map은 1분만 보므로 구간 비교가 필요한 기준(급변, 몰림, 구간 내내 반복)은 `what_stands_out_in_window`에 두어 reduce에만 싣는다. node_log의 `event_type`은 타임라인 묶음 키이고 그 "N건"은 선별된 근거 수다. 노드 지표는 임계 규칙(LLM 없음)이고 `node_metric_gaps`로 지표가 구간 중간에 끊기거나 늦게 시작한 노드를 드러낸다.
 - 마스터 로그는 구간당 쿼리 하나다(`node_role='master'`이고 WARN/ERROR이거나 `MASTER_EVENT_LOGGERS`의 logger, 시간 오름차순 300건 상한). 같은 줄이 LLM 분 선별과 코드 집계(`cluster_events.py`, `node_mentions.py`)에 모두 쓰인다. 보고서에는 `builder.py`의 `MASTER_LOG_REPORT_MAX = 120`건으로 줄여 싣는다.
 - 데이터 노드 SSH 로그는 마스터 로그에 언급된 노드 ID에 대해서만 `NodeResolver`로 찾아 수집한다. 시간대(`NODE_LOG_TIMEZONE`) 분 접두와 심각도·이탈·GC 패턴으로 먼저 거른다.
-- ES 클러스터 health는 구간마다 현재 값을 조회한다(사건 시점의 상태가 아니다). yellow/red일 때만 근거로 남긴다.
+- ES 클러스터 health는 구간마다 현재 값을 조회한다(사건 시점의 상태가 아니다). yellow/red일 때만 `explain_allocation`과 함께 근거로 남긴다. 할당 실패 이유는 여기서만 나오므로 유지한다. 사건 당시의 health 이력은 kafka_consumer가 incident 구성 중에 조회해 넘기고 Main adapter가 observations에 합친다. 두 값을 섞어 쓰지 않는다. 이력을 접는 함수(`model/health_point.py`의 `fold_health`)는 양쪽이 같이 쓴다.
 - 소스 하나가 실패해도 나머지는 유지하고 gap으로 남긴다.
 - 상한 값은 README 고정 한도 표를 본다. `MAX_EVIDENCE_PER_SOURCE`·`MAX_EVIDENCE_TOTAL`은 구간마다 수집이 끝날 때 `preserve_required_evidence`(`analysis_context.py`)가 근거를 자르는 상한이다. 상위 쿼리 실행 근거(`required_query_evidence`)를 먼저 확보한 뒤 나머지를 채운다. `MAX_EVIDENCE_PER_SOURCE`는 Map-Reduce 선별의 소스당 상한(`minute_analysis/spec.py`)으로도 쓴다. `MAX_RAW_LOG_CHARS`는 `build_analysis_context`가 LLM에 싣는 분석 컨텍스트(리포트 작성·수정, 근거 대조, 사건 종합, 위키 조사)의 기본 상한이고 노드 조사 원문에도 쓴다.
 - 수집 출처는 코드가 채운다(`EvidenceProvenance`). Evidence ID는 호출 local allocator가 발급한다.
@@ -41,6 +41,7 @@ project_result → WindowAnalysisResult
 - 검증 권고(advisory)는 재수정에만 쓰고 최종 판정과 `verification_issues`에는 넣지 않는다. 대조한 주장이 0건인데 주장이 있으면 `UNCHECKED`다.
 - 재수정 응답은 위키 조사 결과를 보지 않고 `wiki_ref`를 다시 쓸 수 있어 최종 리포트도 에이전트가 연 패턴 id로 한 번 더 제한한다.
 - 사건 종합 실패를 마지막 구간 리포트로 대체하지 않는다.
+- 세션의 두 번째 incident부터 이전 incident 보고서(요약·원인·권장 조치)를 구간 분석과 종합 프롬프트에 참고로 싣는다. 이어서 쓰는 맥락일 뿐 이번 관측이 아니므로 근거 대조(`GroundingValidator`)의 대상 근거에 넣지 않는다. 이전 보고서만으로 뒷받침되는 주장은 근거 없음으로 걸러져야 한다.
 
 ## 알아둘 점
 
