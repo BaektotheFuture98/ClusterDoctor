@@ -11,7 +11,10 @@ import logging
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from cluster_doctor.incident_analysis_agent.model.health_point import HealthPoint
+from cluster_doctor.incident_analysis_agent.model.health_point import (
+    HealthPoint,
+    fold_health,
+)
 from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.log_entries import (
     LogEntry,
@@ -232,31 +235,8 @@ class ObservationBuilder:
             self.timeline[minute] = timeline_row(minute, bucket, failed=failed)
 
     def record_health(self, payload: dict, now: datetime) -> None:
-        """클러스터 상태를 이력에 접어 넣는다.
-
-        직전과 같으면 ``until``만 늘린다. 호출마다 한 줄을 쌓으면 같은 green이
-        열 줄 늘어서고, 그 목록은 "상태 변화를 시간순으로"라는 리포트의 요구를
-        오히려 가린다.
-        """
-        status = str(payload.get("status", ""))
-        unassigned = int(payload.get("unassigned_shards", 0) or 0)
-        if (
-            self.health
-            and self.health[-1].status == status
-            and self.health[-1].unassigned_shards == unassigned
-        ):
-            self.health[-1] = replace(self.health[-1], until=now)
-            return
-        self.health.append(
-            HealthPoint(
-                at=now,
-                until=now,
-                status=status,
-                unassigned_shards=unassigned,
-                active_shards=int(payload.get("active_shards", 0) or 0),
-                number_of_nodes=int(payload.get("number_of_nodes", 0) or 0),
-            )
-        )
+        """클러스터 상태를 이력에 접어 넣는다. 규칙은 ``fold_health``에 있다."""
+        self.health = list(fold_health(tuple(self.health), payload, now))
 
     def to_observations(self) -> Observations:
         """누적된 관측값을 도메인 객체로 굳힌다.
