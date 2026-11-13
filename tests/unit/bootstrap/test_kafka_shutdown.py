@@ -26,7 +26,8 @@ def test_kafka_failure_exits_process_even_with_running_analysis_thread(tmp_path)
                 raise KafkaUnavailableError("Kafka connection failed continuously")
 
         app.get_settings = lambda: SimpleNamespace(cluster_name="c", kafka_bootstrap_servers="k", kafka_topic="t", kafka_group_id="g", kafka_failure_timeout_seconds=1)
-        app.build_runtime_resources = lambda settings: nullcontext()
+        # main()이 es_client로 클러스터 어댑터를 만들므로 빈 자원 대신 es_client를 가진 객체를 준다.
+        app.build_runtime_resources = lambda settings: nullcontext(SimpleNamespace(es_client=object()))
         app.compose_analysis_service = lambda settings, resources: object()
         app.ProblemLogProcessor = lambda **kwargs: FakeProblemLogProcessor()
         app.KafkaConsumerAdapter = lambda **kwargs: Consumer()
