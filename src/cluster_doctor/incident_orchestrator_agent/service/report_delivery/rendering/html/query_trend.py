@@ -7,6 +7,8 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.renderin
 
 _NAMES = {'ok': '성공', 'failed': '실패', 'limited': '부분', 'unknown': '미확인'}
 _LEFT, _RIGHT, _TOP, _BASE = 55, 875, 30, 190
+# 분당 요청 기록 수가 이 값을 넘으면 막대를 강조한다.
+_HIGH_COUNT = 600
 
 
 def _axis_max(value: float, *, counts: bool) -> float:
@@ -57,7 +59,10 @@ def _render_chart(points: tuple[QueryTrendPoint, ...], *, counts: bool) -> str:
         else:
             y = _BASE - (_BASE - _TOP) * float(value) / maximum
             if counts:
-                color = '#b6cbd4' if partial else '#2f6c87'
+                if value > _HIGH_COUNT:
+                    color = '#e3a899' if partial else '#c8553d'
+                else:
+                    color = '#b6cbd4' if partial else '#2f6c87'
                 out.append(f'<rect x="{x-step*.3:.2f}" y="{y:.2f}" width="{step*.6:.2f}" height="{_BASE-y:.2f}" fill="{color}"><title>{esc(_label(point))}</title></rect>')
             else:
                 current.append(f'{x:.2f},{y:.2f}')
@@ -82,6 +87,8 @@ def render_query_trend(points: tuple[QueryTrendPoint, ...], links=None) -> str:
            _render_chart(points, counts=True), _render_chart(points, counts=False)]
     if any(p.status == 'limited' or (p.end-p.start).total_seconds() < 60 for p in points):
         out.append('<p class="hint">연한 막대: 부분 수집 구간</p>')
+    if any(p.count is not None and p.count > _HIGH_COUNT for p in points):
+        out.append(f'<p class="hint">붉은 막대: 요청 기록 {_HIGH_COUNT}건 초과</p>')
     minutes = {m.minute: m for m in links.minutes} if links else {}
     extra_head = f'<th>≥{_number(links.slow_threshold)}s</th><th>마스터 대기 경고</th>' if links else ''
     out.append('<table class="trend-values"><thead><tr><th>관측 구간</th><th>실행 로그</th><th>최대(s)</th>'
