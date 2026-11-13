@@ -119,6 +119,17 @@ def _value(state: Mapping[str, object], key: str, default):
     return state.get(key, default)
 
 
+def covered_windows(state: Mapping[str, object]) -> tuple[TimeRange, ...]:
+    """이미 덮인 구간. 이번 incident가 분석한 것과 세션의 이전 incident가 분석한 것.
+
+    State에서 둘을 섞지 않는다. ``analyzed_windows``는 이번 incident의 기록이고,
+    이전 incident의 구간(``prior_windows``)은 분 예산을 쓰지 않는다.
+    """
+    return tuple(_value(state, "analyzed_windows", ())) + tuple(
+        _value(state, "prior_windows", ())
+    )
+
+
 def remaining_minutes(state: Mapping[str, object]) -> int:
     return max(0, MAX_ANALYZED_MINUTES - int(_value(state, "analyzed_minutes", 0)))
 
@@ -165,7 +176,7 @@ def admit_window(window: TimeRange, state: Mapping[str, object]) -> TimeRange:
 
     from cluster_doctor.incident_analysis_agent.model.time_range import subtract_spans
 
-    remaining = subtract_spans(window, tuple(_value(state, "analyzed_windows", ())))
+    remaining = subtract_spans(window, covered_windows(state))
     if not remaining:
         raise GuardrailViolation(
             f"{window.start:%H:%M}~{window.end:%H:%M} 구간은 이미 전부 분석했다"
@@ -185,7 +196,7 @@ def check_not_duplicate(window: TimeRange, state: Mapping[str, object]) -> None:
     14:02~14:05를 요청하면 새로 얻는 것이 없는데, 같은지만 보면 통과한다.
     덮였는지로 판정하는 이유가 그것이다.
     """
-    if is_covered(window, tuple(_value(state, "analyzed_windows", ()))):
+    if is_covered(window, covered_windows(state)):
         raise GuardrailViolation(
             f"{window.start:%H:%M}~{window.end:%H:%M} 구간은 이미 분석했다"
         )
