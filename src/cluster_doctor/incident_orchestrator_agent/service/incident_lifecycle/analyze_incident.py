@@ -12,7 +12,6 @@ from cluster_doctor.incident_orchestrator_agent.model.incident import (
 )
 from cluster_doctor.incident_orchestrator_agent.model.lifecycle import (
     IncidentAnalysisDetails,
-    IncidentAnalysisRequest,
     IncidentAnalysisResult,
     IncidentOutcome,
     StartIncident,
@@ -66,11 +65,9 @@ class AnalyzeIncident:
         self, command: StartIncident, token: CancellationToken
     ) -> IncidentOutcome:
         incident = command.incident
-        remaining_seconds = max(
-            0.0,
-            self._incident_timeout_seconds - command.settling_wait_seconds,
-        )
-        deadline = Deadline(remaining_seconds)
+        # 상한은 incident 하나의 분석·발행 시간이다. 정착·incident 구성 대기는 빼지
+        # 않는다 — 대기가 최대 범위 상한(20분)까지 늘어 빼면 분석할 시간이 남지 않는다.
+        deadline = Deadline(self._incident_timeout_seconds)
         analysis_failed = False
         result = IncidentAnalysisResult(status=IncidentStatus.ANALYZING)
         forced: tuple[IncidentStatus, str] | None = None
@@ -85,7 +82,7 @@ class AnalyzeIncident:
             )
         if forced is not None:
             result = replace(result, status=forced[0], reason=forced[1], failed=True)
-        gaps = result.gaps
+        gaps = tuple(dict.fromkeys((*command.health_gaps, *result.gaps)))
         diagnostics = await self._deliver(
             result, analysis_failed or result.failed, gaps, cluster=incident.cluster,
             onset=command.observed_start,
@@ -105,15 +102,7 @@ class AnalyzeIncident:
         self, command: StartIncident, deadline: Deadline
     ) -> tuple[IncidentAnalysisResult, bool, tuple[IncidentStatus, str] | None]:
         analyzer_task = asyncio.create_task(
-            asyncio.to_thread(
-                self._analyzer.analyze,
-                IncidentAnalysisRequest(
-                    incident=command.incident,
-                    observed_start=command.observed_start,
-                    observed_end=command.observed_end,
-                    settling_wait_seconds=command.settling_wait_seconds,
-                ),
-            )
+            asyncio.to_thread(self._analyzer.analyze, command.to_request())
         )
         try:
             result = await asyncio.wait_for(
