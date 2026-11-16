@@ -4,7 +4,7 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 
 ## 구조
 
-`src/cluster_doctor/` 아래 패키지와 문서다. 패키지 문서는 그 폴더의 파일을 읽을 때 자동으로 로드되며 목표·흐름·불변식·후속 작업을 담는다. 이 파일에는 여러 패키지에 걸치는 규칙만 둔다.
+`src/cluster_doctor/` 아래 패키지와 문서다. 패키지 문서는 그 폴더의 파일을 읽을 때 자동으로 로드되며 목표·흐름·불변식을 담는다. 할 일은 CLAUDE.md가 아니라 이슈로 관리한다. 이 파일에는 여러 패키지에 걸치는 규칙만 둔다.
 
 | 패키지 | 역할 | 문서 |
 |---|---|---|
@@ -18,7 +18,7 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 - 폴더는 구현 기술이 아니라 **역할과 owner**를 따른다. `model/`은 owner 안의 여러 component가 공유하는 데이터, State는 실행 owner 가까이(`agent/state.py`), LLM 응답 schema는 그 service/workflow 가까이에 둔다.
 - 저장소 관례: 도구 루프 에이전트는 `agent/`, 고정 그래프는 `workflow/`, 직접 호출은 `service/`.
 - Orchestrator가 Analysis를 호출하고 Analysis는 Orchestrator에 의존하지 않는다. `aiokafka`는 `kafka_consumer/consumer/kafka`에만 둔다.
-- 프로세스 공용 LLM 인프라가 두 패키지에 흩어져 있다. `incident_analysis_agent/agent/runtime/`(litellm 클라이언트, 재시도, 가명화, 호출 로그, harness, tool_batch)은 orchestrator·위키 에이전트가 거꾸로 참조하고, `incident_orchestrator_agent/agent/chat_model.py`(Main·Analysis·위키 에이전트가 함께 쓰는 chat model)는 orchestrator 안에 있다. 위키 에이전트와 분석 쪽도 서로 참조하는 순환이 있다. 최상위 `cluster_doctor/llm/`로 분리하는 것이 후속 과제다.
+- 프로세스 공용 LLM 인프라가 두 패키지에 흩어져 있다. `incident_analysis_agent/agent/runtime/`(litellm 클라이언트, 재시도, 가명화, 호출 로그, harness, tool_batch)은 orchestrator·위키 에이전트가 거꾸로 참조하고, `incident_orchestrator_agent/agent/chat_model.py`(Main·Analysis·위키 에이전트가 함께 쓰는 chat model)는 orchestrator 안에 있다. 위키 에이전트와 분석 쪽도 서로 참조하는 순환이 있다. 새 LLM 공용 코드를 어느 쪽 패키지 전용으로 만들지 않는다.
 - `chat_model.py`는 `litellm_client`와 자체 재시도 0회(429 증폭 방지, 재시도는 `RateLimitRetryMiddleware`), 요청 타임아웃, 샘플링 인자 미전송을 같게 유지한다. 값을 옮겨 적지 않고 import해서 쓴다.
 
 ## 설계 원칙
@@ -49,7 +49,7 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 
 - 테스트: `uv run pytest`. collection I/O와 LLM 호출은 테스트에서 대체한다. 실제 외부 연결이나 사고 원인의 정확성을 보장하지 않는다. `uv run python -m compileall -q src`도 쓴다. 테스트는 `tests/unit/<패키지>/` 아래에 소스 패키지 구조를 따라 둔다.
 - 서버 venv는 **Python 3.11**이고 pyproject·로컬은 3.13이다. asyncio·타입 등 버전에 민감한 변경은 3.11에서도 확인한다(`uv venv --python 3.11`).
-- **로컬에서 실제 분석 경로를 실행하지 않는다**(`scripts/run_analysis.py` 등, `--dry-run` 제외). 로컬 `.env`가 운영 ClickHouse·ES·Gemini를 가리키고, `cluster_doctor.main`이 import하는 litellm이 import 시점에 repo 루트 `.env`를 환경변수로 올린다(cwd와 무관). "설정이 없어 실패할 것"이라고 가정하지 않는다. 일부만 확인할 때는 해당 함수만 import하거나 단위 테스트로 한다.
+- **로컬에서 실제 분석 경로를 실행하지 않는다**(`scripts/run_analysis.py` 등, `--dry-run` 제외). 로컬 `.env`가 운영 ClickHouse·ES·Gemini를 가리키고, `cluster_doctor.main`이 import하는 litellm이 import 시점에 repo 루트 `.env`를 환경변수로 올린다(cwd와 무관). "설정이 없어 실패할 것"이라고 가정하지 않는다. 일부만 확인할 때는 해당 함수만 import하거나 단위 테스트로 한다. 이 규칙과 아래 `.env` 출력 금지는 `.claude/hooks/guard_production.py`(PreToolUse)와 `.claude/settings.json`의 `Read` deny가 막는다. 새 진입점을 만들면 hook의 목록에도 넣는다.
 - `reports/report-*.html`은 외부 서버에서 같은 코드로 돌린 결과를 옮겨 온 것이다. 로컬 `logs/app.log`에 그 실행의 로그가 없다. 리포트가 이상하면 HTML 렌더 결과와 코드 경로로 추적하고, 서버 로그가 필요하면 grep할 문자열을 지정해 사용자에게 요청한다. 로컬 재현은 LLM 없이 스키마·함수 단위로 한다.
 - 로그 디렉터리 변수는 `CLUSTER_DOCTOR_LOG_DIR`다. 서버 셸에 Kafka용 `LOG_DIR`이 export돼 있고 OS 환경변수가 `.env`보다 우선하므로, 같은 방식으로 셸 환경변수가 `.env`를 덮어쓰는 다른 설정이 있을 수 있다.
 - `.env`의 값(특히 `MONITORING_WIKI_URL`)은 출력하지 않는다.
