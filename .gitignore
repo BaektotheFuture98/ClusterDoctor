@@ -11,6 +11,8 @@ dist/
 
 # Virtual environments
 .venv/
+# 서버 버전(Python 3.11) 확인용. verify-change 스킬이 쓴다.
+.venv311/
 venv/
 env/
 
