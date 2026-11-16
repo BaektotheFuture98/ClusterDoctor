@@ -36,7 +36,6 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 - **원문 = DTO다.** 흐름은 "테이블 → DTO → 보고서 → DTO 대조 검증"이다. DTO를 다시 직렬화한 `raw` 사본이나 `SELECT *`·`url` 전체 같은 원본 덩어리를 따로 저장·전달하지 않는다. 필요한 컬럼만 조회해 DTO 필드로 파싱하고, 검증·식별에 원문이 필요하면 DTO 필드나 `record_key`로 해결한다. (키워드 5개 제한 같은 축소 정책이 raw 사본으로 무력화되고 토큰만 불어나기 때문이다.)
 - 수집 출처(`EvidenceProvenance`: 호스트, 파일, DB·테이블, 조회 구간, 수집 시각)는 코드가 채운다. LLM이 쓰지 않는다.
 - 보고서의 건수·최대값·쿼리 후보는 코드가 센 `observations`에서 읽는다. 모델은 해석 문장(`summary`, `findings`, `root_causes`, `recommendations` 등)만 쓰고 그 주장에는 근거 참조(`evidence_refs`)가 붙는다.
-- LLM 선별 단계(map/reduce)는 원인을 추정하지 않는다. 원인 판단은 모든 소스의 근거가 모인 뒤 구간 리포트 단계에서 한다.
 - 검증 결과 해석: `PASSED`는 사실이 입증됐다는 뜻이 아니라 명확한 모순을 찾지 못했다는 뜻이다. `NOT_VERIFIED`는 `PASSED`가 아니다. 검증은 최대 3회, 표현 수정 최대 2회, 재분석 최대 1회다. 재분석이 실패하면 기존 산출물을 유지하고 사건 종합이 실패하면 마지막 구간 리포트로 대체하지 않는다.
 - 위키는 지식 근거이지 이번 사건의 관측이 아니다. 증상이 같다는 이유만으로 원인을 확정하지 않는다("~로 보인다" 후보). 위키로는 색인 조회와 패턴 id만 보내고 우리 관측 데이터는 보내지 않는다.
 
@@ -49,7 +48,7 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 
 - 테스트: `uv run pytest`. collection I/O와 LLM 호출은 테스트에서 대체한다. 실제 외부 연결이나 사고 원인의 정확성을 보장하지 않는다. `uv run python -m compileall -q src`도 쓴다. 테스트는 `tests/unit/<패키지>/` 아래에 소스 패키지 구조를 따라 둔다.
 - 서버 venv는 **Python 3.11**이고 pyproject·로컬은 3.13이다. asyncio·타입 등 버전에 민감한 변경은 3.11에서도 확인한다(`uv venv --python 3.11`).
-- **로컬에서 실제 분석 경로를 실행하지 않는다**(`scripts/run_analysis.py` 등, `--dry-run` 제외). 로컬 `.env`가 운영 ClickHouse·ES·Gemini를 가리키고, `cluster_doctor.main`이 import하는 litellm이 import 시점에 repo 루트 `.env`를 환경변수로 올린다(cwd와 무관). "설정이 없어 실패할 것"이라고 가정하지 않는다. 일부만 확인할 때는 해당 함수만 import하거나 단위 테스트로 한다. 이 규칙과 아래 `.env` 출력 금지는 `.claude/hooks/guard_production.py`(PreToolUse)와 `.claude/settings.json`의 `Read` deny가 막는다. 새 진입점을 만들면 hook의 목록에도 넣는다.
+- **로컬에서 실제 분석 경로를 실행하지 않는다**(`scripts/run_analysis.py` 등, `--dry-run` 제외). 로컬 `.env`가 운영 ClickHouse·ES·Gemini를 가리키고, `cluster_doctor.main`이 import하는 litellm이 import 시점에 repo 루트 `.env`를 환경변수로 올린다(cwd와 무관). "설정이 없어 실패할 것"이라고 가정하지 않는다. 일부만 확인할 때는 해당 함수만 import하거나 단위 테스트로 한다. `scripts/upload_report_sftp.py`도 실제 SFTP 서버에 올리므로 로컬에서 실행하지 않는다. 이 규칙들과 아래 `.env` 출력 금지는 `.claude/hooks/guard_production.py`(PreToolUse)와 `.claude/settings.json`의 `Read` deny가 막는다. 새 진입점을 만들면 hook의 목록에도 넣는다.
 - `reports/report-*.html`은 외부 서버에서 같은 코드로 돌린 결과를 옮겨 온 것이다. 로컬 `logs/app.log`에 그 실행의 로그가 없다. 리포트가 이상하면 HTML 렌더 결과와 코드 경로로 추적하고, 서버 로그가 필요하면 grep할 문자열을 지정해 사용자에게 요청한다. 로컬 재현은 LLM 없이 스키마·함수 단위로 한다.
 - 로그 디렉터리 변수는 `CLUSTER_DOCTOR_LOG_DIR`다. 서버 셸에 Kafka용 `LOG_DIR`이 export돼 있고 OS 환경변수가 `.env`보다 우선하므로, 같은 방식으로 셸 환경변수가 `.env`를 덮어쓰는 다른 설정이 있을 수 있다.
 - `.env`의 값(특히 `MONITORING_WIKI_URL`)은 출력하지 않는다.
