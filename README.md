@@ -157,7 +157,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 | 1 | 개요 | 발생·인지 일시(이번 incident 범위의 시작), 분석 종료 일시, 분석 대상 시간, incident 범위와 마감 사유, 세션 안의 순번과 이전 incident, 장애 최초 관측 시각(두 번째 incident부터), 추적 중단 표시(세 번째가 green 확인 없이 마감되면 "장시간 미복구, 자동 추적 중단"), 보고서 생성 시각 |
 | 2 | 현상 및 원인 | 코드가 판정한 지연 범위·노드 응답 지연·클러스터 이벤트, 요약, 직접적·근본적 원인(위키 패턴을 반영했으면 위키 배지) |
 | 3 | 권장 조치 | 조치 목록, 위키 패턴과 일치하면 위키 배지 |
-| 4 | 쿼리 실행 추이 | 요청 기록 수와 분별 최대 실행시간 SVG 차트 |
+| 4 | 쿼리 실행 추이 | 요청 기록 수와 분별 최대 실행시간 SVG 차트. 분당 요청 기록이 600건을 넘는 막대는 붉게 강조하고, 부분 수집 구간(소스 조회 행 수 상한에 걸렸거나 1분이 안 되는 구간이라 건수가 실제보다 적을 수 있음)은 연한 색으로 그림 |
 | 5 | 주요 타임라인 | 사건 흐름 카드와 인용 원문 |
 | 6 | 수집 데이터 보기 (접힘) | 느린 쿼리 순위, slowlog·마스터 노드 로그 원문, SSH 노드 로그, 시스템 지표 |
 
@@ -263,6 +263,7 @@ Main Agent는 원본 로그를 보지 않습니다. 시작 메시지로 트리�
 | SSH node 로그 | 기본 300줄 | `incident_analysis_agent/datasource/ssh/node_log.py` |
 | SSH timeout | 접속 10초, 명령 30초 | 〃 |
 | 보고서 마스터 로그 | 120건 | `incident_analysis_agent/service/observation/builder.py` |
+| 쿼리 실행 추이 강조 | 분당 요청 기록 600건 초과 | `incident_orchestrator_agent/service/report_delivery/rendering/html/query_trend.py` |
 | LLM 요청 timeout | 1,200초 | `incident_analysis_agent/agent/runtime/litellm_client.py` |
 | ClickHouse / ES 요청 timeout | 30초 / 10초 | `main.py` |
 
