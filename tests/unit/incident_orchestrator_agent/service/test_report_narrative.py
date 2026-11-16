@@ -114,7 +114,7 @@ def test_failed_verification_keeps_sections_and_collection_notices(status, cause
     html = render_report(result, gaps=('리포트 검증 불일치: internal reason',))
     assert ('가능성: 처리 대기' in section(html, 'incident-analysis')) is cause_shown
     assert 'internal reason' not in html
-    assert 'SSH 수집 실패: ssh refused' in section(html, 'ssh-logs')
+    assert 'SSH 수집 실패' in section(html, 'ssh-logs')
     assert '<td>12</td>' in section(html, 'query-trend')
     for name in ('overview', 'incident-analysis', 'query-trend', 'timeline', 'es-query-log', 'master-logs', 'slowlogs', 'ssh-logs'):
         assert f'id="{name}"' in html

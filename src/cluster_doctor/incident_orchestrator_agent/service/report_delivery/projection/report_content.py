@@ -225,3 +225,8 @@ def verification_gap(issue: str) -> str:
 
 def is_validation_diagnostic(text):
     return text.startswith(('리포트 검증 불일치:', '리포트 검증 미완료:', '리포트 검증이 실패했다:'))
+
+
+def visible_gaps(gaps) -> tuple[str, ...]:
+    """보고서에 싣는 gap. 검증 내부 사유는 발행기가 서버 로그로만 남긴다."""
+    return tuple(gap for gap in dict.fromkeys(gaps) if not is_validation_diagnostic(gap))

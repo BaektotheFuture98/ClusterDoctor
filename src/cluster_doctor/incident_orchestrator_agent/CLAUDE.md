@@ -51,6 +51,7 @@ Kafka 신호 → 정착 → incident 구성(kafka_consumer)
 
 - 건수·최대값은 analysis의 `service/observation/`이 센 `observations`를 그대로 옮긴다. projection에서 새로 세거나 모델 문장에서 읽지 않는다. 문장 생성은 `cross_links_text.py`처럼 HTML과 평문 renderer가 공유하는 함수에 둔다.
 - 평문 폴백(`rendering/text/report_text.py`)은 HTML과 섹션 구성을 따로 구현하므로 섹션을 바꾸면 둘 다 고친다.
+- 수집 실패는 소스 섹션에 상태("수집 실패")만 쓰고 사유는 맨 아래 "수집·분석 누락"(gap)에만 쓴다. 수집기가 실패마다 `SourceWindowStatus`와 gap을 함께 남기므로 섹션에 사유를 적으면 두 번 보인다. 검증 내부 사유는 `visible_gaps`가 빼고 서버 로그로만 남긴다.
 - 타임라인의 health 신호(`incident_timeline._health_signals`)는 분석 구간이 아니라 incident 범위 안의 점만 쓴다. 분석 구간마다 조회한 분석 시점 health는 마감 뒤라 여기에 섞이지 않는다.
 - 보고서 개요의 incident 범위·마감 사유·세션 순번·이전 incident·장애 최초 관측 줄은 `projection/incident_scope_rows.py`의 `scope_rows`가 만들고 HTML과 평문이 같이 쓴다(`IncidentAnalysisReport.scope_rows`). "장시간 미복구, 자동 추적 중단"은 발행 전에 알 수 있는 조건(`tracking_stopped`: 세션의 마지막 순번이 green 확인 없이 마감)으로 표시한다. 발행 뒤 health를 다시 보는 것은 세션을 끝낼지만 정하고 이미 나간 보고서를 고치지 않는다.
 
