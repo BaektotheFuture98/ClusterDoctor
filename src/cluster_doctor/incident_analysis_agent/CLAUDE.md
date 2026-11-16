@@ -48,19 +48,12 @@ project_result → WindowAnalysisResult
 - `agent/runtime/`은 프로세스 공용 LLM 인프라다(루트 `CLAUDE.md` 구조 절 참고). 분리 전까지 분석 전용 코드를 넣지 않는다. 프로세스 전체 LLM 동시 호출은 `litellm_client.MAX_LLM_CONCURRENCY`로 묶인다.
 - 권장 조치가 문제 쿼리를 가리킬 때는 요청자를 사용자(user) 우선, 특정할 수 없을 때만 요청 호스트(IP)로 쓰고 저장된 키워드를 최대 3개 인용한다. 이 표기는 코드가 강제하지 못한다. `_check_recommendation_targets`는 관측된 대상을 언급했는지만 보므로 프롬프트로만 통제한다. 같은 규칙이 `_CAUSE_TARGET_RULES`(종합·검토)와 `_ANALYSIS_RULES`(구간 분석)에 따로 있어 둘을 함께 고친다. 키워드는 수집 시 앞 5개만 남고(`MAX_STORED_KEYWORDS`) 모델은 `slow_executions` 상위 10건으로만 보며 컨텍스트가 넘치면 이것부터 압축되므로, 생략된 키워드를 추정하거나 없는 키워드를 만들지 않게 한다.
 - 보고서의 숫자·건수는 `service/observation/`이 코드로 센 값이고 모델은 해석만 쓴다. `observations`를 구간끼리 합칠 때(`merge_observations`)는 (timestamp, node, line)으로 중복을 제거하고 상한을 다시 적용하지 않는다.
-- 후속 점검: 마스터 로그 보고서 상한 120건이 노드 이탈 집계 입력까지(`correlation.py`가 잘린 `master_events`로 `cluster_events.py`의 `parse_cluster_events`를 부른다) 자른다. 집계는 자르기 전 `master_logs` 기준이어야 하는지 확인한다. 보고서에 노드 이탈이 안 나올 때의 의심 순서: 120건 절단 → 이탈 줄이 분석 구간 밖 → logger 표기가 `MASTER_EVENT_LOGGERS`와 정확히 일치하지 않음 → `node_role` 값 → 300건 조회 상한. 운영 ClickHouse에서 확인하며 로컬에서 실제 분석을 돌리지 않는다.
-- 미룬 과제: `analysis_context.py`의 `slow_executions` 상위 10개가 발생 이후의 후행 쿼리로 차는 문제.
 
 ## 핵심 파일
 
+이름만으로 알기 어려운 것만 둔다.
+
 | 파일 | 역할 |
 |---|---|
-| `agent/subagent.py` | `AnalysisAgent`, 검증 `finalize_update`, `project_result` |
-| `agent/tools.py` | 도구 3개와 `collect_update`·`report_update` |
-| `agent/state.py` | `AnalysisAgentState` |
-| `agent/dependencies.py` | `AnalysisSeams`(수집·LLM·위키 등 주입 묶음) |
-| `service/evidence_collection/collector.py` | 소스별 수집 |
-| `service/observation/` | 코드가 세는 관측값(`builder`, `cluster_events`, `correlation`) |
-| `service/report_generation/` | 리포트 작성·사건 종합·프롬프트 |
-| `service/validation/` | 구조 검사(`consistency`)와 근거 대조(`grounding`) |
-| `workflow/minute_analysis/` | 분 단위 Map-Reduce 선별 그래프 |
+| `agent/subagent.py` | 검증 루프(`finalize_update`)와 결과 투영(`project_result`)이 도구가 아니라 여기 있다 |
+| `agent/dependencies.py` | `AnalysisSeams`: 수집·LLM·위키 등 주입 묶음. Main adapter와 사건 종합도 이것을 받는다 |

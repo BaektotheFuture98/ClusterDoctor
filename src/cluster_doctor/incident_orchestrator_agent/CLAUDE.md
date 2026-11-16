@@ -55,17 +55,12 @@ Kafka 신호 → 정착 → incident 구성(kafka_consumer)
 - 평문 폴백(`rendering/text/report_text.py`)은 HTML과 섹션 구성을 따로 구현하므로 섹션을 바꾸면 둘 다 고친다.
 - 타임라인의 health 신호(`incident_timeline._health_signals`)는 분석 구간이 아니라 incident 범위 안의 점만 쓴다. 분석 구간마다 조회한 분석 시점 health는 마감 뒤라 여기에 섞이지 않는다.
 - 보고서 개요의 incident 범위·마감 사유·세션 순번·이전 incident·장애 최초 관측 줄은 `projection/incident_scope_rows.py`의 `scope_rows`가 만들고 HTML과 평문이 같이 쓴다(`IncidentAnalysisReport.scope_rows`). "장시간 미복구, 자동 추적 중단"은 발행 전에 알 수 있는 조건(`tracking_stopped`: 세션의 마지막 순번이 green 확인 없이 마감)으로 표시한다. 발행 뒤 health를 다시 보는 것은 세션을 끝낼지만 정하고 이미 나간 보고서를 고치지 않는다.
-- 리포트 UI 후속 점검: 쿼리 로그 근거를 `Evidence.record_key`로 찾은 `QueryLogEntry` DTO로 인용하는 작업은 `report_content.py`에 일부 들어가 있다. HTML과 평문 폴백이 같은 인용 함수(`projection/evidence_citation.py`의 `cite`·`citations`)를 쓰는지 확인한다. 평문 폴백에는 HTML에 있는 클러스터 이벤트 줄(`cluster_event_line`)과 지표 공백 줄(`metric_gap_line`)이 없다. 마스터 로그 실패가 요약 배너와 gap 줄에 중복 표시된다. 코드로 다시 확인한 뒤 착수한다.
-- 미룬 과제: 발생 이후 구간(밀려서 생긴 증상)을 Main Agent가 덜 고르게 억제하는 것.
 
 ## 핵심 파일
 
+이름만으로 알기 어려운 것만 둔다.
+
 | 파일 | 역할 |
 |---|---|
-| `agent/adapter.py` | `IncidentAnalyzer` 포트 구현. 그래프 조립·실행, 결과 투영, 사건 종합 호출 |
-| `agent/incident_scope.py` | incident 범위·세션 맥락을 kickoff·첫 후보·관측값으로 바꿈 |
-| `agent/state.py` | `MainAgentState`(이 에이전트의 유일한 mutable State) |
+| `agent/adapter.py` | `IncidentAnalyzer` 포트 구현. 그래프 실행 뒤 State에서 결과를 투영하고, 사건 종합도 그래프 밖에서 여기서 부른다 |
 | `model/lifecycle.py` | `StartIncident`·`IncidentAnalysisRequest`·`SessionContext`·`IncidentClose` 경계 계약 |
-| `agent/tools.py`, `agent/middleware.py` | 도구와 위임 guardrail |
-| `service/analysis_window/` | 예산·승인·구간 계산 |
-| `service/incident_lifecycle/analyze_incident.py` | 타임아웃·취소·발행 |

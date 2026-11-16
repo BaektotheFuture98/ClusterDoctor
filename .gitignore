@@ -51,8 +51,10 @@ Thumbs.db
 .superpowers/
 .worktrees/
 
-# 설계·계획 문서는 로컬에만 둔다
+# 설계 문서(왜 이렇게 했는지)는 .claude/plans/*-design.md로 남긴다.
+# 구현 계획처럼 작업이 끝나면 쓸모가 없는 산출물은 로컬에만 둔다.
 docs/
+.claude/plans/*-plan.md
 
 # Understand-Anything 지식 그래프. 도구가 재생성하므로 추적하지 않는다.
 .ua/
