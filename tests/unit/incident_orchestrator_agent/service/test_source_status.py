@@ -14,13 +14,13 @@ def status(source, state, rows=None, error=""):
 
 
 def test_no_status_for_source_is_unknown():
-    assert summarize_source((status("slowlog", "ok", 1),), "node_log") == SourceSummary("unknown", None, "")
-    assert summarize_source((), "slowlog") == SourceSummary("unknown", None, "")
+    assert summarize_source((status("slowlog", "ok", 1),), "node_log") == SourceSummary("unknown", None)
+    assert summarize_source((), "slowlog") == SourceSummary("unknown", None)
 
 
 def test_ok_and_limited_count_as_ok_and_rows_are_summed():
     result = summarize_source((status("slowlog", "ok", 2), status("slowlog", "limited", 3)), "slowlog")
-    assert result == SourceSummary("ok", 5, "")
+    assert result == SourceSummary("ok", 5)
 
 
 def test_rows_ignore_missing_counts_and_none_when_no_counts():
@@ -29,19 +29,19 @@ def test_rows_ignore_missing_counts_and_none_when_no_counts():
     assert summarize_source((status("slowlog", "ok", None), status("slowlog", "ok", 4)), "slowlog").rows == 4
 
 
-def test_any_failed_wins_with_first_non_empty_error():
+def test_any_failed_wins():
     result = summarize_source((
         status("es_query_log", "ok", 3),
         status("es_query_log", "failed", None, ""),
         status("es_query_log", "failed", None, "first"),
         status("es_query_log", "failed", None, "second"),
     ), "es_query_log")
-    assert (result.state, result.reason, result.rows) == ("failed", "first", 3)
+    assert result == SourceSummary("failed", 3)
 
 
-def test_all_skipped_is_skipped_with_reason():
+def test_all_skipped_is_skipped():
     result = summarize_source((status("node_log", "skipped", None, "no nodes"),), "node_log")
-    assert result == SourceSummary("skipped", None, "no nodes")
+    assert result == SourceSummary("skipped", None)
 
 
 def test_skipped_mixed_with_ok_is_ok():

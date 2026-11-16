@@ -85,14 +85,14 @@ class HtmlFileReportPublisher(ReportPublisher):
         # 파일 쓰기는 짧지만 이벤트 루프에서 하지 않는다. 같은 루프가 Kafka를
         # 계속 소비하고 있고, 리포트는 수십 KB까지 자란다.
         try:
-            text_length = len(render_text(report, analysis_failed=analysis_failed))
+            text_length = len(render_text(report, gaps=gaps, analysis_failed=analysis_failed))
             path = await asyncio.to_thread(self._write, report, gaps, analysis_failed)
         except Exception as exc:  # noqa: BLE001
             # 파일·렌더링·인코딩 오류가 publication 밖으로 새어 나가지 않게 하고
             # 확보한 진단을 잃지 않도록 평문 로그로 대체한다.
             _logger.error("리포트 HTML 저장 실패(%s) — 전문을 로그로 남긴다", exc)
             try:
-                _logger.info("\n%s", scrub(render_text(report, analysis_failed=analysis_failed)))
+                _logger.info("\n%s", scrub(render_text(report, gaps=gaps, analysis_failed=analysis_failed)))
             except Exception:
                 # 렌더링 자체가 실패한 경우다. 그때도 이 폴백이 죽으면 안 된다.
                 _logger.exception("리포트 평문 렌더링도 실패했다")

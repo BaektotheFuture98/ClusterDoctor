@@ -21,9 +21,10 @@ def render_report(
 
     ``generated_at``은 테스트가 시각을 고정할 수 있게 열어 뒀다.
 
-    ``gaps``와 ``analysis_failed``는 별도 안내 영역으로 그린다. 모델이 쓴 본문에 섞지
-    않는 이유는 두 가지다 — 본문과 시스템이 덧붙인 사실이 구별되어야 하고,
-    모델이 프롬프트를 어겨 누락을 밝히지 않았더라도 이 안내는 반드시 남는다.
+    ``gaps``는 "수집 데이터 보기" 맨 아래 "수집·분석 누락"에, ``analysis_failed``는
+    사건 분석 안내로 그린다. 모델이 쓴 본문에 섞지 않는 이유는 두 가지다 — 본문과
+    시스템이 덧붙인 사실이 구별되어야 하고, 모델이 프롬프트를 어겨 누락을 밝히지
+    않았더라도 이 안내는 반드시 남는다. 검증 내부 사유는 싣지 않는다.
     """
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.report_layout import (
         render_layout,

@@ -58,7 +58,7 @@ def check(r, name, message):
 
 def test_master_messages():
     check(make([st('master_log', 'ok', 0)], evidence=()), 'master-logs', '특이사항 없음')
-    check(make([st('master_log', 'failed', None, 'ch down')]), 'master-logs', '수집 실패: ch down')
+    check(make([st('master_log', 'failed', None, 'ch down')]), 'master-logs', '수집 실패')
     check(make(), 'master-logs', '수집 상태 미확인')
 
 
@@ -71,7 +71,7 @@ def test_master_note_absent_when_events_exist():
 def test_slowlog_messages():
     check(make([st('slowlog', 'ok', 0)]), 'slowlogs', '특이사항 없음')
     check(make([st('slowlog', 'ok', 7)]), 'slowlogs', '수집 7건 중 선별된 항목 없음')
-    check(make([st('slowlog', 'failed', None, 'boom')]), 'slowlogs', '수집 실패: boom')
+    check(make([st('slowlog', 'failed', None, 'boom')]), 'slowlogs', '수집 실패')
     check(make(), 'slowlogs', '수집 상태 미확인')
 
 
@@ -90,8 +90,8 @@ def test_ssh_messages():
     check(ssh_empty([skipped]), 'ssh-logs', '마스터 로그에서 조사 대상 노드가 없어 수집하지 않음')
     check(ssh_empty([skipped, st('master_log', 'failed', None, 'x')]), 'ssh-logs', '마스터 로그 수집 실패로 조사하지 않음')
     window2 = SourceWindowStatus('node_log', END, END + timedelta(minutes=1), 'failed', None, T0, 'no node reachable')
-    check(ssh_empty([skipped, window2]), 'ssh-logs', 'SSH 수집 실패: no node reachable')
-    check(ssh_empty([st('node_log', 'failed', None, 'ssh refused')]), 'ssh-logs', 'SSH 수집 실패: ssh refused')
+    check(ssh_empty([skipped, window2]), 'ssh-logs', 'SSH 수집 실패')
+    check(ssh_empty([st('node_log', 'failed', None, 'ssh refused')]), 'ssh-logs', 'SSH 수집 실패')
     check(ssh_empty([st('node_log', 'ok', 0)]), 'ssh-logs', '해당 구간 로그 없음')
     check(ssh_empty([st('node_log', 'limited', 42)]), 'ssh-logs', '수집 42줄 중 선별된 항목 없음')
     check(ssh_empty([]), 'ssh-logs', '수집 상태 미확인')
@@ -104,7 +104,7 @@ def test_ssh_note_absent_when_evidence_exists():
 
 def test_empty_query_table_messages():
     failed = make([st('es_query_log', 'failed', None, 'ch timeout')], queries=())
-    check(failed, 'es-query-log', '수집 실패: ch timeout')
+    check(failed, 'es-query-log', '수집 실패')
     for statuses in ([], [st('es_query_log', 'ok', 0)]):
         check(make(statuses, queries=()), 'es-query-log', '쿼리 실행 로그가 수집되지 않았습니다. 수집 상태를 확인하세요')
     assert '수집된 실행 로그 없음' not in render_report(make([], queries=()))
