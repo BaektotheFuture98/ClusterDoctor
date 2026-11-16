@@ -23,7 +23,7 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 
 ## 설계 원칙
 
-- **State**: 실행 owner마다 mutable source of truth 하나(`MainAgentState`, `AnalysisAgentState`, `MinuteAnalysisState`). Agent State 안에 다른 mutable State를 넣지 않는다. 도구는 `ToolRuntime.state`를 읽고 `Command(update=...)`로 값 교체와 matching `ToolMessage`를 반환한다. tuple/frozen snapshot을 쓰고 in-place 변경하지 않는다.
+- **State**: 실행 owner마다 mutable source of truth 하나(`MainAgentState`, `AnalysisAgentState`, `MinuteAnalysisState`). Agent State 안에 다른 mutable State를 넣지 않는다. 도구는 `ToolRuntime.state`를 읽고 `Command(update=...)`로 값 교체와 matching `ToolMessage`를 반환한다. tuple/frozen snapshot을 쓰고 in-place 변경하지 않는다. 예외는 위키 조사 에이전트다. 읽기 전용 조회라 Agent State를 두지 않고 실행마다 새로 만드는 `WikiToolbox`가 source of truth다([CLAUDE.md](src/cluster_doctor/wiki_investigation_agent/CLAUDE.md)).
 - 한 AI turn에서는 첫 상태 변경 도구만 실행하고 나머지는 오류 `ToolMessage`로 응답한다. Main의 readonly 조회만 병렬 가능하다.
 - 실행 객체·model·seams·공유 client는 기동 시 한 번 만든다. Main graph·State는 사건마다, Analysis graph·State는 구간마다 새로 만든다. 공유 어댑터는 사건·State를 보관하지 않는다.
 - lifecycle은 Agent State를 공유하지 않는다. 경계는 `StartIncident → IncidentAnalysisRequest → MainAgentState → IncidentAnalysisResult → IncidentOutcome/publication`이다. timeout이어도 이미 확보한 결과는 버리지 않고 실패 상태와 함께 전달한다.
