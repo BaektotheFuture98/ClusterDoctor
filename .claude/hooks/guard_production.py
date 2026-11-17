@@ -46,7 +46,10 @@ def check(command: str) -> str | None:
     if _SFTP_UPLOAD.search(command):
         return "로컬에서 리포트를 실제 SFTP 서버에 올리지 않는다(CLAUDE.md). 업로드 확인이 필요하면 사용자에게 실행을 요청한다."
     if _touches_env_file(command):
-        return ".env 값을 출력하지 않는다(CLAUDE.md). 셸 명령에 .env를 쓰지 않고, 변수 이름은 .env.example에서 확인한다."
+        # 문자열 안의 언급도 막는다. 따옴표 안을 빼고 판정하면 python -c "open('.env')"가, git commit을 빼면
+        # git commit -F .env가 통과한다. 오탐은 아래 안내대로 피한다.
+        return (".env 값을 출력하지 않는다(CLAUDE.md). 셸 명령에 .env를 쓰지 않고, 변수 이름은 .env.example에서 확인한다. "
+                "커밋 메시지에 .env를 써야 하면 파일로 써서 git commit -F <파일>로 넘기고, 코드 검색은 Grep 도구를 쓴다.")
     return None
 
 

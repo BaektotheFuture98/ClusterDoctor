@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### 변경
-- 개발 도구: 로컬 Claude Code hook(`guard_production.py`)이 `--dry-run` 뒤에 이어 붙인 실제 실행, `from cluster_doctor import main`, 출력 명령 종류와 상관없는 `.env` 접근을 막는다. 서버 동작과 무관하다.
+- 개발 도구: 로컬 Claude Code hook(`guard_production.py`)이 `--dry-run` 뒤에 이어 붙인 실제 실행, `from cluster_doctor import main`, 출력 명령 종류와 상관없는 `.env` 접근을 막는다. 막혔을 때 피하는 방법(커밋 메시지는 `git commit -F`, 검색은 Grep 도구)을 차단 메시지에 안내한다. 서버 동작과 무관하다.
 
 ## [0.2.1] - 2026-11-17
 
