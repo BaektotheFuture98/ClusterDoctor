@@ -35,19 +35,27 @@ SPEC = AnalysisSpec(
     label="slowlog (느린 쿼리 로그)",
     what_matters=(
         "이 소스에는 임계 초과 쿼리만 들어오므로 느리다는 사실만으로는 고르지 않는다.\n"
+        "- query의 날짜 range 조건이 2년을 넘는 기간을 검색한 쿼리. 내규상 검색 기간은\n"
+        "  최대 2년이라, took이 평범해도 시도한 사실 자체를 남긴다. range의 gte/gt/from과\n"
+        "  lte/lt/to를 읽는다. 값은 YYYYMMDD 숫자, 날짜 문자열, epoch 밀리초, now-3y 같은\n"
+        "  date math일 수 있다. 끝 조건 없이 시작 조건만 있으면 끝을 이 줄의 시각으로 본다.\n"
+        "  reason에 읽은 시작~끝 날짜와 index를 적는다. 남길 수 있는 개수가 모자라면\n"
+        "  이것을 먼저 남긴다.\n"
         "- 함께 있는 줄보다 took이 한 자릿수 이상 큰 쿼리.\n"
         "- shards가 유독 큰 광역 검색."
     ),
     what_is_noise=(
         "- 내용이 같고 시각만 다른 반복 쿼리 (대표 한 줄만 남긴다).\n"
+        "  단, 검색 기간이 2년을 넘는 쿼리는 첫 발생과 마지막 발생을 남긴다.\n"
         "  건수와 최대 took은 코드가 slowlog 전체에서 따로 센다."
     ),
     what_stands_out_in_window=(
         "- 같은 형태의 쿼리가 갑자기 느려진 시점.\n"
         "- 특정 인덱스나 노드에 몰린 쿼리.\n"
-        "- 임계치를 조금 넘긴 정도로 구간 내내 비슷하게 나오는 쿼리는 버린다."
+        "- 임계치를 조금 넘긴 정도로 구간 내내 비슷하게 나오는 쿼리는 버린다.\n"
+        "  검색 기간이 2년을 넘는 쿼리는 여기에 해당해도 버리지 않는다."
     ),
-    event_type_examples="slow_query, wide_search",
+    event_type_examples="slow_query, wide_search, over_2y_range_search",
 )
 
 
