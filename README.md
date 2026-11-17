@@ -28,7 +28,7 @@ HTTP 서비스가 아니라 계속 실행되는 Kafka consumer입니다. 분석�
 
 ### 요구 사항
 
-- Python 3.13 이상, [uv](https://docs.astral.sh/uv/)
+- Python 3.11 이상, [uv](https://docs.astral.sh/uv/)
 - 문제성 로그를 `KAFKA_TOPIC`으로 보내는 Kafka
 - slowlog·query log·node metric·node log 테이블이 있는 ClickHouse
 - cluster health·노드 정보 조회용 Elasticsearch
