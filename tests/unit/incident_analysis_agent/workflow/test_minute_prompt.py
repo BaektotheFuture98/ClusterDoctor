@@ -61,6 +61,19 @@ def test_query_log_keyword_rule_reaches_query_log():
     assert "앞 5개" in _reduce(query_log.SPEC)
 
 
+@pytest.mark.parametrize("spec", (slowlog.SPEC, query_log.SPEC), ids=lambda spec: spec.source.value)
+def test_over_two_year_search_rule_reaches_map_and_reduce(spec):
+    # 응답 실패·평범한 실행 시간과 무관하게 시도 자체를 남겨야 하므로 Map에서 버려지면 안 된다.
+    assert "2년을 넘는" in _map(spec)
+    assert "2년을 넘는" in _reduce(spec)
+
+
+@pytest.mark.parametrize("spec", (master_log.SPEC, node_log.SPEC), ids=lambda spec: spec.source.value)
+def test_over_two_year_search_rule_is_not_shared(spec):
+    assert "2년을 넘는" not in _map(spec)
+    assert "2년을 넘는" not in _reduce(spec)
+
+
 def test_node_log_does_not_claim_code_counts():
     # node_log 타임라인의 "N건"은 선별된 근거 수라 코드가 원본 전체를 세지 않는다.
     assert "따로 센다" not in node_log.SPEC.what_is_noise

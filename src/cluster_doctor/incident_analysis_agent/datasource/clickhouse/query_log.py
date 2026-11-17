@@ -37,20 +37,27 @@ SPEC = AnalysisSpec(
     source=EvidenceSource.QUERY_LOG,
     label="es_query_log (쿼리 실행 기록)",
     what_matters=(
+        "- 검색 기간이 2년을 넘는 요청. 내규상 검색 기간은 최대 2년이라, 응답이 실패했든\n"
+        "  run_time이 평범하든 시도한 사실 자체를 남긴다. s_date·e_date는 YYYYMMDD이고\n"
+        "  s_date가 e_date에서 연도만 2 뺀 날짜보다 앞서면 해당한다(e_date=20251231이면\n"
+        "  s_date<20231231). date_range는 양 끝을 포함한 일수라 윤년이 끼면 딱 2년도 731이\n"
+        "  되므로 일수로 판단하지 않는다. reason에 s_date~e_date와 company/user를 적는다.\n"
+        "  남길 수 있는 개수가 모자라면 이것을 다른 기준보다 먼저 남긴다.\n"
         "- success=False인 요청. 사용자가 실제로 오류를 받은 것이다.\n"
         "- 함께 있는 요청보다 run_time이 뚜렷하게 큰 것."
     ),
     what_is_noise=(
-        "- success=True이고 run_time이 평범한 요청.\n"
+        "- success=True이고 run_time이 평범한 요청. 단, 검색 기간이 2년을 넘는 요청은 버리지 않는다.\n"
         "건수와 최대 run_time은 코드가 query log 전체에서 따로 센다.\n"
         "키워드는 앞 5개만 보존되므로 키워드나 cmd가 같다는 것만으로 같은 실행으로\n"
         "보고 합치지 않는다."
     ),
     what_stands_out_in_window=(
         "- 특정 company/user/project에 몰린 요청.\n"
-        "- 구간 안에서 드문 형태의 cmd."
+        "- 구간 안에서 드문 형태의 cmd.\n"
+        "- 검색 기간 2년 초과 요청은 반복되어도 company/user마다 첫 발생과 마지막 발생을 남긴다."
     ),
-    event_type_examples="query_failed, slow_request",
+    event_type_examples="query_failed, slow_request, over_2y_range_search",
 )
 
 
