@@ -29,7 +29,7 @@ def scrub(text: str) -> str:
 def render_text(report: IncidentAnalysisReport, *, gaps: tuple[str, ...] = (), analysis_failed: bool = False) -> str:
     """HTML과 같은 실행 사실과 검증 gate를 갖는 평문 fallback."""
     from cluster_doctor.incident_analysis_agent.service.observation.query_requests import rank_query_requests
-    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, source_log_sections, source_log_notes, metric_nodes, visible_gaps
+    from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, evidence_text, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, source_log_sections, source_log_notes, metric_nodes, visible_gaps, REPORT_VERSION
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note, ssh_note
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
     from cluster_doctor.incident_orchestrator_agent.service.report_delivery.rendering.html.ssh_log_view import ssh_evidence
@@ -42,7 +42,7 @@ def render_text(report: IncidentAnalysisReport, *, gaps: tuple[str, ...] = (), a
     narrative=display_narrative(report)
     links=build_cross_links(obs)
     verdict=verdict_line(links)
-    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, *(f'{label}: {value}' for label, value in report.scope_rows), '결론', verdict.headline]
+    out=['Elasticsearch 쿼리·노드 로그 분석', report.cluster, f'ClusterDoctor v{REPORT_VERSION}',*(f'{label}: {value}' for label, value in report.scope_rows), '결론', verdict.headline]
     if verdict.detail:out.append(verdict.detail)
     if line:=node_line(links):out.append(line)
     withheld=withheld_reason(report)
