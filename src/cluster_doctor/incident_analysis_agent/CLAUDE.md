@@ -26,7 +26,7 @@ project_result → WindowAnalysisResult
 ## 근거 수집 (`service/evidence_collection/collector.py`)
 
 - ClickHouse 조회는 분 단위로 쪼개 병렬로(최대 5분) 부른다. 분마다 slowlog·query log·node metric 세 쿼리가 따로 나간다.
-- slowlog·query log·마스터 로그(`collector.py`)와 데이터 노드 SSH 로그(`node_investigation.py`)는 `workflow/minute_analysis/`의 Map-Reduce LLM 선별(분 버킷 map → 전체 reduce → Evidence[])을 거친다. 선별은 원인을 추정하지 않는다. 원인 판단은 모든 소스의 근거가 모인 뒤 구간 리포트 단계에서 한다. 프롬프트는 네 소스 공용이고 소스별 기준은 각 `datasource`의 `AnalysisSpec`에 있다. map은 1분만 보므로 구간 비교가 필요한 기준(급변, 몰림, 구간 내내 반복)은 `what_stands_out_in_window`에 두어 reduce에만 싣는다. 회사 내규상 검색 기간은 최대 2년이라 2년을 넘는 검색 요청(query log `s_date~e_date`, slowlog range 조건)은 응답 실패·실행 시간과 관계없이 선별한다(시도한 사실 자체가 근거다). noise 기준을 정리할 때 이 예외를 지우지 않는다. node_log의 `event_type`은 타임라인 묶음 키이고 그 "N건"은 선별된 근거 수다. 노드 지표는 임계 규칙(LLM 없음)이고 `node_metric_gaps`로 지표가 구간 중간에 끊기거나 늦게 시작한 노드를 드러낸다.
+- slowlog·query log·마스터 로그(`collector.py`)와 데이터 노드 SSH 로그(`node_investigation.py`)는 `workflow/minute_analysis/`의 Map-Reduce LLM 선별(분 버킷 map → 전체 reduce → Evidence[])을 거친다. 선별은 원인을 추정하지 않는다. 원인 판단은 모든 소스의 근거가 모인 뒤 구간 리포트 단계에서 한다. 프롬프트는 네 소스 공용이고 소스별 기준은 각 `datasource`의 `AnalysisSpec`에 있다. map은 1분만 보므로 구간 비교가 필요한 기준(급변, 몰림, 구간 내내 반복)은 `what_stands_out_in_window`에 두어 reduce에만 싣는다. 회사 내규상 검색 기간은 최대 2년이라 2년을 넘는 검색 요청(query log `s_date~e_date`, slowlog range 조건)은 응답 실패·실행 시간과 관계없이 선별한다(시도한 사실 자체가 근거다). noise 기준을 정리할 때 이 예외를 지우지 않는다. 검색 기간이 어느 티어에 걸리는지는 선별이 판단하지 않는다. 선별된 근거의 검색 날짜를 위키 조사 에이전트가 구성 문서와 대조해 재구성한다. node_log의 `event_type`은 타임라인 묶음 키이고 그 "N건"은 선별된 근거 수다. 노드 지표는 임계 규칙(LLM 없음)이고 `node_metric_gaps`로 지표가 구간 중간에 끊기거나 늦게 시작한 노드를 드러낸다.
 - 마스터 로그는 구간당 쿼리 하나다(`node_role='master'`이고 WARN/ERROR이거나 `MASTER_EVENT_LOGGERS`의 logger, 시간 오름차순 300건 상한). 같은 줄이 LLM 분 선별과 코드 집계(`cluster_events.py`, `node_mentions.py`)에 모두 쓰인다. 보고서에는 `builder.py`의 `MASTER_LOG_REPORT_MAX = 120`건으로 줄여 싣는다.
 - 데이터 노드 SSH 로그는 마스터 로그에 언급된 노드 ID에 대해서만 `NodeResolver`로 찾아 수집한다. 시간대(`NODE_LOG_TIMEZONE`) 분 접두와 심각도·이탈·GC 패턴으로 먼저 거른다.
 - ES 클러스터 health는 구간마다 현재 값을 조회한다(사건 시점의 상태가 아니다). yellow/red일 때만 `explain_allocation`과 함께 근거로 남긴다. 할당 실패 이유는 여기서만 나오므로 유지한다. 사건 당시의 health 이력은 kafka_consumer가 incident 구성 중에 조회해 넘기고 Main adapter가 observations에 합친다. 두 값을 섞어 쓰지 않는다. 이력을 접는 함수(`model/health_point.py`의 `fold_health`)는 양쪽이 같이 쓴다.
@@ -37,6 +37,7 @@ project_result → WindowAnalysisResult
 ## 사건 종합 (`service/report_generation/incident_synthesis.py`)
 
 - 순서: 위키 조사 → `draft_incident` → 검증·수정 최대 3라운드(`incident_final=True`, 사건 수준 수정 프롬프트와 `IncidentDraftReport` schema) → `keep_known_wiki_refs`.
+- 위키 조사 에이전트의 재구성 사슬은 원인 서술의 뼈대다. 사슬 하나가 원인 하나이고 고리를 관측과 대조해 어긋난 고리만 뺀다. 재구성은 위키 에이전트가 하고 종합은 보고서 형식으로 옮기며 검증한다.
 - 위키 조사 실패·미설정이면 빈 결과로 위키 없이 종합한다. 위키 조사 에이전트는 `wiki_investigation_agent` 소관이다.
 - 검증 권고(advisory)는 재수정에만 쓰고 최종 판정과 `verification_issues`에는 넣지 않는다. 대조한 주장이 0건인데 주장이 있으면 `UNCHECKED`다.
 - 재수정 응답은 위키 조사 결과를 보지 않고 `wiki_ref`를 다시 쓸 수 있어 최종 리포트도 에이전트가 연 패턴 id로 한 번 더 제한한다.

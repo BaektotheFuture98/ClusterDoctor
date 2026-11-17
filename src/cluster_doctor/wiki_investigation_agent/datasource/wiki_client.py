@@ -43,7 +43,7 @@ class MonitoringWikiClient:
         return self._call_tool("get_pattern", arguments)
 
     def get_infra(self) -> str:
-        """클러스터 구성 문서(infra.md: 티어 기준·노드 그룹)를 반환한다.
+        """클러스터 구성 문서(infra.md: 티어 기준·티어별 랙)를 반환한다.
 
         실패하거나 상한을 넘기면 예외를 던진다. 호출자가 처리한다.
         """

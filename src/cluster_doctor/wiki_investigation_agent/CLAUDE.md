@@ -2,12 +2,12 @@
 
 ## 목표
 
-사건 종합 직전에, 누적 관측과 같은 **장애 패턴**(원인 → 증상 → 해결방법)이 monitoring-wiki에 있는지 찾고, 관측·구간 리포트·클러스터 구성 문서(infra.md)·패턴을 이어 **원인 후보의 인과 사슬을 재구성**한다(예: 특정 기간 검색 집중 → WARM 티어·RC17 → RC17 노드 이탈). 보고서는 쓰지 않는다. 결과(`WikiFindings`: 패턴·구성 문서·재구성)는 사건 종합 프롬프트에 실리고, 재구성은 종합이 검토하는 초안이지 결론이 아니다.
+사건 종합 직전에, 누적 관측과 같은 **장애 패턴**(원인 → 증상 → 해결방법)이 monitoring-wiki에 있는지 찾고, 관측·구간 리포트·클러스터 구성 문서(infra.md)·패턴을 이어 **원인 후보의 인과 사슬을 재구성**한다(예: 특정 기간 검색 집중 → WARM 티어·RC17 → RC17 노드 이탈). 보고서는 쓰지 않는다. 결과(`WikiFindings`: 패턴·구성 문서·재구성)는 사건 종합 프롬프트에 실리고, 종합은 재구성 사슬을 원인 서술의 뼈대로 써서 고리를 관측과 대조한다.
 
 ## 흐름
 
 - 호출: `incident_analysis_agent/service/report_generation/incident_synthesis.py`가 사건당 한 번 `WikiInvestigator.investigate(context, windows=, base_date=, evidence_ids=)`를 부른다. `context`는 상한 24,000자의 관측 JSON, `windows`는 구간 리포트 요약(`window_digest.py`), `base_date`는 티어 기준일(사건 발생일, 없으면 첫 구간 시작일)이다.
-- 구성 문서는 모델이 고르는 도구가 아니라 `investigate` 시작 시 코드가 `get_infra`로 한 번 가져와 사용자 메시지에 싣는다. 재구성에 항상 필요하고 고를 이유가 없어서다. 실패하거나 비어 있으면 구성 없이 조사한다(형식: `infra_template.md`).
+- 구성 문서는 모델이 고르는 도구가 아니라 `investigate` 시작 시 코드가 `get_infra`로 한 번 가져와 사용자 메시지에 싣는다. 재구성에 항상 필요하고 고를 이유가 없어서다. 실패하거나 비어 있으면 구성 없이 조사한다. 문서 내용(노드 구성, 티어별 랙, 티어 기준)은 위키가 관리하고 코드는 형식을 가정하지 않는다. 노드 이름의 앞부분이 랙이라는 대응(`RC17-04` → `RC17`)만 프롬프트에 둔다.
 - 도구는 `get_index`, `get_pattern(id)` 둘뿐이다(`agent/tools.py`, `WikiToolbox`). 모델에게는 id만 받고 `sections`는 `증상·원인·해결방법`으로 고정한다. 색인에 없는 id는 위키로 보내지 않는다. 패턴은 최대 3개까지 열 수 있다.
 - 최종 답은 JSON `{"patterns": [{"id", "reason"}], "reconstruction": [{"statement", "chain": [{"step", "basis", "refs"}], "wiki_ref"}]}`이다. 형식이 어긋나면 빈 목록이다. `reason`은 로그용이고 프롬프트에 싣지 않는다.
 - 연 적이 없는 id는 결과에서 버린다(`pattern_id in toolbox.pages`).
