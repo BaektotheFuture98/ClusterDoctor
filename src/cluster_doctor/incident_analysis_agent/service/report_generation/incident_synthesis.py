@@ -1,11 +1,13 @@
 """누적된 사실로 최종 incident 서술을 만든다. 수집과 위임은 하지 않는다."""
 import logging
 
+from cluster_doctor.incident_analysis_agent.model.kst import KST
 from cluster_doctor.incident_analysis_agent.model.report import VerificationStatus, WikiPatternRef
 from cluster_doctor.incident_analysis_agent.model.validation import VerificationIssueType
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import concrete_targets
 from cluster_doctor.incident_analysis_agent.service.report_generation.analysis_context import build_analysis_context
 from cluster_doctor.incident_analysis_agent.service.report_generation.wiki_refs import keep_known_wiki_refs
+from cluster_doctor.incident_analysis_agent.service.report_generation.window_digest import window_digest
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_analysis_agent.service.validation.grounding.grounding_validator import GroundingValidator
 from cluster_doctor.wiki_investigation_agent.agent.findings import WikiFindings
@@ -17,7 +19,13 @@ _logger = logging.getLogger(__name__)
 _WIKI_CONTEXT_MAX_CHARS = 24000
 
 
-def _investigate_wiki(seams, observations, evidence, onset) -> WikiFindings:
+def _base_date(onset, window_reports) -> str:
+    """티어 기준일. 최초 관측 시각이 없으면 첫 분석 구간의 시작일이다."""
+    moment = onset or min((r.analyzed_from for r in window_reports), default=None)
+    return moment.astimezone(KST).date().isoformat() if moment else ""
+
+
+def _investigate_wiki(seams, observations, evidence, onset, window_reports) -> WikiFindings:
     """위키 조사 에이전트를 사건당 한 번 돌린다. 위키가 없거나 조사가 실패하면 빈 결과라 종합은 위키 없이 이어 간다."""
     investigator = seams.wiki_investigator
     if investigator is None:
@@ -26,7 +34,9 @@ def _investigate_wiki(seams, observations, evidence, onset) -> WikiFindings:
         context = build_analysis_context(
             observations, evidence, max_chars=_WIKI_CONTEXT_MAX_CHARS,
             thresholds=seams.metric_thresholds, onset=onset)
-        return investigator.investigate(context)
+        return investigator.investigate(
+            context, windows=window_digest(window_reports), base_date=_base_date(onset, window_reports),
+            evidence_ids=tuple(e.evidence_id for e in evidence))
     except Exception as exc:
         _logger.warning("위키 조사가 실패해 위키 없이 종합한다: %s", type(exc).__name__)
         return WikiFindings()
@@ -38,7 +48,7 @@ def synthesize_incident(*, seams, incident, window_reports, observations, eviden
 
     ``previous_incident_report``는 세션의 이전 incident 리포트다. 초안 입력에만 참고로 싣고 근거 대조에는 넣지 않는다.
     """
-    wiki = _investigate_wiki(seams, observations, evidence, onset)
+    wiki = _investigate_wiki(seams, observations, evidence, onset, window_reports)
     report = seams.report_writer.draft_incident(
         incident_id=incident.incident_id, cluster=incident.cluster,
         window_reports=window_reports, observations=observations, evidence=evidence,

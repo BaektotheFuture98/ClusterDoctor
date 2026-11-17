@@ -80,7 +80,7 @@ def _seams(report, findings):
                             "affected_evidence_refs": []} for i in ids], ensure_ascii=False)
 
     return SimpleNamespace(
-        wiki_investigator=SimpleNamespace(investigate=lambda context: findings),
+        wiki_investigator=SimpleNamespace(investigate=lambda context, **inputs: findings),
         report_writer=Writer(), call_llm=call_llm, metric_thresholds=DEFAULT_THRESHOLDS)
 
 

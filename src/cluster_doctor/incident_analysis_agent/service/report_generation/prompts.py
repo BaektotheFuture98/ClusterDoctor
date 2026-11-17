@@ -163,6 +163,10 @@ _INCIDENT_SYNTHESIS_INSTRUCTIONS = """너는 Elasticsearch 클러스터 장애 �
   원인: 패턴의 증상이 관측과 일치하면 그 패턴의 원인을 원인 후보로 쓸 수 있다. 증상 일치만으로는 원인을 확정하지 않으므로 '~로 보인다'로 쓴다. 증상과 맞는 관측을 그 원인의 supporting_evidence_refs에 달고 root_causes의 wiki_ref에 패턴 id를 쓴다. 패턴 페이지가 추정·미검증이라고 적은 원인은 후보로만 쓴다. 패턴이 말하는 원인 중 관측으로 확인되지 않은 부분은 mechanism에서 확인된 것과 구분하고 unresolved_questions에 남긴다. 최초 관측 시각 규칙은 그대로 적용한다.
   조치: 패턴의 해결방법은 그 패턴의 증상이 관측과 맞는 범위에서만 쓰고, 대상은 관측에서 가져와 구체화한다. 반영한 조치의 recommendations wiki_ref에 그 패턴 id를 쓴다.
   wiki_ref에는 조사 결과의 패턴 id를 적힌 그대로 쓴다. 조사 결과에 없는 id를 쓰지 않으며, 일치하는 패턴이 없으면 빈 문자열이다. 위키 내용은 관측이 아니므로 evidence_refs·findings·timeline·summary의 근거로 쓰지 않는다.
+- 위키 조사 결과의 [인프라 구성]은 우리 클러스터의 구성 사실(티어 기준, 노드 그룹)이다. 관측을 구성에 대응시키는 데 쓴다(예: 어떤 노드가 어느 티어·그룹인지, 검색 기간이 어느 티어에 걸리는지). 그 대응을 쓸 때는 '인프라 구성 기준'이라고 밝히고 evidence_refs로 인용하지 않는다. 구성 사실만으로 원인을 확정하지 않는다.
+- 위키 조사 결과의 [재구성 초안]은 위키 조사 에이전트가 관측·구간 해석·구성·패턴을 이어 세운 원인 후보다. 결론이 아니라 검토할 초안이다.
+  각 고리를 관측 JSON과 대조해 맞는 사슬은 root_causes의 statement·mechanism에 인과 흐름으로 녹이고, 근거 고리의 Evidence id를 supporting_evidence_refs에 단다. 사슬에 패턴이 있으면 위 패턴 규칙대로 wiki_ref를 쓴다.
+  관측과 어긋나는 고리는 버리고, 확인되지 않는 고리는 '~로 보인다'로 낮추거나 unresolved_questions로 옮긴다. 초안을 그대로 옮겨 적지 않고 이번 관측에 맞게 다시 쓴다.
 
 응답 계약:
 JSON 객체 하나만 반환한다. 한국어로 간결하게 쓰며 원문 식별자·필드명은 유지한다.
@@ -193,7 +197,8 @@ _WIKI_REVIEW_RULE = """위키 조사 결과는 지식 근거이고 이번 사건
    - 증상 일치만으로 원인을 확정한 문장은 '~로 보인다'로 낮춘다. 패턴 페이지가 추정·미검증이라고 적은 원인은 후보로만 둔다.
    - 위키의 원인 설명이 관측과 어긋나면 그 서술과 wiki_ref를 뺀다. 위키에서 가져온 내용을 이번 사건의 관측 사실처럼 쓴 문장은 고친다.
    - 조치의 wiki_ref는 그 패턴의 증상이 관측과 맞고 조치 대상이 관측에서 온 경우에만 둔다. 맞지 않으면 빈 문자열로 바꾼다.
-   - 위키 내용은 evidence_refs로 인용하지 않는다."""
+   - 위키 내용은 evidence_refs로 인용하지 않는다.
+   - [재구성 초안]이나 [인프라 구성]에서 온 서술은 관측 근거가 받치는 고리만 사실처럼 쓴다. 구성 대응은 '인프라 구성 기준'으로 밝히고, 관측과 어긋나는 고리는 뺀다."""
 
 # 재수정 호출 입력에는 위키 페이지가 없으므로 대조할 수 없다. 이미 정해진 wiki_ref를 보존한다.
 _WIKI_REVISION_RULE = """이 호출에는 위키 조사 결과가 없어 위키 대조는 하지 않는다. 초안의 wiki_ref는 그대로 둔다. 원인이나 조치를 빼거나 대상을 바꾸면 그 항목의 wiki_ref도 함께 뺀다. 새 wiki_ref를 만들지 않는다."""
@@ -236,7 +241,7 @@ _INCIDENT_REVIEW_INSTRUCTIONS = _REVIEW_TEMPLATE.replace(_WIKI_RULE_TOKEN, _WIKI
 _INCIDENT_REVISION_INSTRUCTIONS = _REVIEW_TEMPLATE.replace(_WIKI_RULE_TOKEN, _WIKI_REVISION_RULE)
 
 
-_WIKI_FINDINGS_SECTION_TITLE = "--- 장애 패턴 위키 조사 결과 (지식 근거, 이번 사건의 관측이 아니다) ---"
+_WIKI_FINDINGS_SECTION_TITLE = "--- 위키 조사 결과 (구성 사실·재구성 초안·지식 근거, 이번 사건의 관측이 아니다) ---"
 _PREVIOUS_INCIDENT_SECTION_TITLE = (
     "--- 이전 incident 보고서 요약 (참고용, 이번 사건의 관측이 아니다) ---"
 )

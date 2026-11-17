@@ -42,6 +42,13 @@ class MonitoringWikiClient:
             arguments["sections"] = list(sections)
         return self._call_tool("get_pattern", arguments)
 
+    def get_infra(self) -> str:
+        """클러스터 구성 문서(infra.md: 티어 기준·노드 그룹)를 반환한다.
+
+        실패하거나 상한을 넘기면 예외를 던진다. 호출자가 처리한다.
+        """
+        return self._call_tool("get_infra", {})
+
     def _call_tool(self, name: str, arguments: dict) -> str:
         """MCP tool 하나를 동기로 호출한다.
 
