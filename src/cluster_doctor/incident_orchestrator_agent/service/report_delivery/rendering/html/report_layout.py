@@ -6,7 +6,7 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations, visible_gaps
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, metric_gap_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
@@ -176,6 +176,12 @@ def _metrics(report) -> str:
     return out+'</section>'
 
 
+def _gaps(gaps) -> str:
+    shown=visible_gaps(gaps)
+    if not shown:return ''
+    return '<section id="gaps"><h2>수집·분석 누락</h2>'+''.join(f'<p class="hint">{esc(gap)}</p>' for gap in shown)+'</section>'
+
+
 def _citation_groups(narrative):
     """(지지, 반증) 인용. 지지와 반증에 모두 걸린 근거는 반증 쪽에만 둔다."""
     contradicting=unique_citations(*(cause.contradicting for cause in narrative.causes))
@@ -208,7 +214,7 @@ def render_layout(report: IncidentAnalysisReport, now: datetime, *, gaps: tuple[
     notes=source_log_notes(report)
     originals=''.join(f'<section id="{name}"><h2>{title}</h2>'+(f'<p class="hint">{esc(notes[name])}</p>' if name in notes else '')+''.join(f'<pre class="quote">{esc(line)}</pre>' for line in lines)+'</section>' for name,title,lines in source_log_sections(report,_slowlog_marks(report,narrative)))
     evidence=('<details id="evidence"><summary>수집 데이터 보기</summary>'
-              +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+'</details>')
+              +ranking+originals+render_ssh_logs(report.evidence,observations=obs)+_metrics(report)+_gaps(gaps)+'</details>')
     body=(_overview(report, now=now)
           +_incident_analysis(report, narrative, links, withheld, caveats)
           +_recommendations_section(narrative, report)
