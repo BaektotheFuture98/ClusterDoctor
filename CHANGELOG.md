@@ -1,6 +1,11 @@
 # Changelog
 
-이 프로젝트는 [SemVer](https://semver.org/lang/ko/)를 따른다. 운영에 영향을 주는 비호환 변경은 major, 기능 추가·동작 변경은 minor, 버그 수정과 문서·테스트 변경은 patch로 올린다.
+이 프로젝트는 [SemVer](https://semver.org/lang/ko/)를 따른다. 운영에 영향을 주는 비호환 변경은 major, 기능 추가·동작 변경은 minor, 버그 수정과 문서·테스트 변경은 patch로 올린다. 개발 도구(`.claude/`, `tests/`)만 바뀌면 버전을 올리지 않고 아래 Unreleased에 적어 다음 릴리스에 싣는다.
+
+## [Unreleased]
+
+### 변경
+- 개발 도구: 로컬 Claude Code hook(`guard_production.py`)이 `--dry-run` 뒤에 이어 붙인 실제 실행, `from cluster_doctor import main`, 출력 명령 종류와 상관없는 `.env` 접근을 막는다. 서버 동작과 무관하다.
 
 ## [0.2.1] - 2026-11-17
 
