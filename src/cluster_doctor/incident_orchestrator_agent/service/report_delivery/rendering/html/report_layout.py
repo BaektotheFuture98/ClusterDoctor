@@ -6,7 +6,7 @@
 from datetime import datetime
 from cluster_doctor.incident_analysis_agent.service.observation.correlation import build_cross_links
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import IncidentAnalysisReport
-from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations, visible_gaps
+from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.report_content import stamp, minute_stamp, report_timeline, visible_citations, system_maxima, timeline_sources, display_narrative, withheld_reason, result_caveats, analysis_span, source_log_sections, source_log_notes, shown_slowlog_evidence, metric_nodes, unique_citations, visible_gaps, REPORT_VERSION
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.query_trend import project_query_trend
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.cross_links_text import cluster_event_line, metric_gap_line, node_line, verdict_line
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.source_status import query_log_note
@@ -60,7 +60,7 @@ def _overview(report: IncidentAnalysisReport, *, now: datetime | None = None) ->
         '<p class="hint">AI 분석 구간이 없어 수집 요청 구간 기준으로 표시했습니다.</p>'
         if span_from and not (report.analyzed_from and report.analyzed_to) else ''
     )
-    generated = f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))}</td></tr>' if now else ''
+    generated = f'<tr><th>보고서 생성</th><td class="hint">{esc(stamp(now))} · ClusterDoctor v{REPORT_VERSION}</td></tr>' if now else ''
     scope = ''.join(
         f'<tr><th>{esc(label)}</th><td>{esc(value)}</td></tr>' for label, value in report.scope_rows
     )

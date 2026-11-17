@@ -12,6 +12,9 @@ from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projecti
 from cluster_doctor.incident_orchestrator_agent.model.evidence_citation import EvidenceCitation
 from cluster_doctor.incident_orchestrator_agent.model.incident_report import CauseAssessment, IncidentAnalysisReport, Narrative
 
+# 보고서를 만든 코드의 버전. /release가 pyproject.toml version과 함께 올리고 테스트가 둘이 같은지 확인한다.
+REPORT_VERSION = "0.1.0"
+
 
 def stamp(moment):
     return moment.astimezone(KST).isoformat(sep=' ') + ' KST'
