@@ -48,7 +48,9 @@ disable-model-invocation: true
 - 먼저 `uv version --bump <major|minor|patch> --dry-run`으로 결과를 확인한다.
 - 이상이 없으면 `uv version --bump <major|minor|patch>`를 실행한다.
 - 이 명령이 지원되지 않으면 `pyproject.toml`의 `version`을 직접 고치고 `uv lock`을 실행한다.
-- `git diff --stat`으로 `pyproject.toml`(과 `uv.lock`)만 바뀌었는지 확인한다.
+- 보고서에 찍히는 버전도 같은 값으로 고친다: `src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/projection/report_content.py`의 `REPORT_VERSION`.
+- `uv run pytest -q tests/unit/incident_orchestrator_agent/service/test_report_version.py`로 두 값이 같은지 확인한다.
+- `git diff --stat`으로 `pyproject.toml`·`report_content.py`(와 `uv.lock`)만 바뀌었는지 확인한다.
 
 ## 6. CHANGELOG
 
@@ -69,7 +71,7 @@ disable-model-invocation: true
 
 ## 7. 커밋과 태그
 
-- `git add pyproject.toml uv.lock CHANGELOG.md`
+- `git add pyproject.toml uv.lock CHANGELOG.md src/cluster_doctor/incident_orchestrator_agent/service/report_delivery/projection/report_content.py`
 - `git commit -m "chore: vX.Y.Z 릴리스"`
 - `git tag -a vX.Y.Z -m "vX.Y.Z"` (주석 태그. 메시지 본문에 CHANGELOG 단락을 넣어도 된다.)
 
