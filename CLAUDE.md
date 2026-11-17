@@ -47,11 +47,17 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 ## 실행과 검증
 
 - 테스트: `uv run pytest`. collection I/O와 LLM 호출은 테스트에서 대체한다. 실제 외부 연결이나 사고 원인의 정확성을 보장하지 않는다. `uv run python -m compileall -q src`도 쓴다. 테스트는 `tests/unit/<패키지>/` 아래에 소스 패키지 구조를 따라 둔다.
-- 서버 venv는 **Python 3.11**이고 pyproject·로컬은 3.13이다. asyncio·타입 등 버전에 민감한 변경은 3.11에서도 확인한다(`uv venv --python 3.11`).
+- 서버 venv는 **Python 3.11**이라 `requires-python`은 `>=3.11`이고, 로컬 기본(`.python-version`)은 3.13이다. 3.12 이상 전용 문법·API(PEP 695 `type`·제네릭 문법, 따옴표를 중첩한 f-string, `typing.override`, `itertools.batched` 등)를 쓰지 않는다. 버전에 민감한 변경은 `verify-change` 스킬의 3.11 단계로 확인한다.
 - **로컬에서 실제 분석 경로를 실행하지 않는다**(`scripts/run_analysis.py` 등, `--dry-run` 제외). 로컬 `.env`가 운영 ClickHouse·ES·Gemini를 가리키고, `cluster_doctor.main`이 import하는 litellm이 import 시점에 repo 루트 `.env`를 환경변수로 올린다(cwd와 무관). "설정이 없어 실패할 것"이라고 가정하지 않는다. 일부만 확인할 때는 해당 함수만 import하거나 단위 테스트로 한다. `scripts/upload_report_sftp.py`도 실제 SFTP 서버에 올리므로 로컬에서 실행하지 않는다. 이 규칙들과 아래 `.env` 출력 금지는 `.claude/hooks/guard_production.py`(PreToolUse)와 `.claude/settings.json`의 `Read` deny가 막는다. 새 진입점을 만들면 hook의 목록에도 넣는다.
 - `reports/report-*.html`은 외부 서버에서 같은 코드로 돌린 결과를 옮겨 온 것이다. 로컬 `logs/app.log`에 그 실행의 로그가 없다. 리포트가 이상하면 HTML 렌더 결과와 코드 경로로 추적하고, 서버 로그가 필요하면 grep할 문자열을 지정해 사용자에게 요청한다. 로컬 재현은 LLM 없이 스키마·함수 단위로 한다.
 - 로그 디렉터리 변수는 `CLUSTER_DOCTOR_LOG_DIR`다. 서버 셸에 Kafka용 `LOG_DIR`이 export돼 있고 OS 환경변수가 `.env`보다 우선하므로, 같은 방식으로 셸 환경변수가 `.env`를 덮어쓰는 다른 설정이 있을 수 있다.
 - `.env`의 값(특히 `MONITORING_WIKI_URL`)은 출력하지 않는다.
+
+## 작업 흐름
+
+- 기능마다 `feat/…`·`fix/…`·`docs/…` 브랜치에서 작업한다. task마다 `uv run pytest`가 통과한 상태로 커밋하고, 메시지에 왜 바꿨는지 적는다. 사용자가 요청하지 않으면 커밋하지 않는다.
+- 완료를 말하기 전에 `verify-change` 스킬로 검증한다.
+- main 병합·버전·CHANGELOG·태그는 사용자가 `/release`로 부를 때만 한다. 병합은 `--no-ff`(기능 단위로 되돌리기 위해), 버전은 SemVer다.
 
 ## 문서 작성 규칙
 
