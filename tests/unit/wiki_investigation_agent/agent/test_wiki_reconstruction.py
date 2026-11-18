@@ -90,6 +90,15 @@ def test_infra_failure_is_logged_and_the_investigation_goes_on_without_it(caplog
     assert "구성 문서를 가져오지 못해" in caplog.text
 
 
+def test_agent_failure_keeps_the_infra_document():
+    def fail(toolbox, message):
+        raise TimeoutError
+
+    findings = WikiInvestigator(client=InfraClient(), run_agent=fail).investigate("{}")
+
+    assert findings == WikiFindings(infra=INFRA)
+
+
 def test_infra_is_cut_at_its_cap():
     findings, _ = _investigate(InfraClient(infra=("가" * 99 + "\n") * 100), _answer())
 

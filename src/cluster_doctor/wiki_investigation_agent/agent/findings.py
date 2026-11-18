@@ -7,7 +7,7 @@ _logger = logging.getLogger(__name__)
 
 # 고른 패턴 페이지를 프롬프트에 싣는 합계 상한. 구간 범위와 누적 관측값이 쓰는 예산을 침범하지 않는다.
 PAGES_MAX_CHARS = 12000
-# 재구성 초안을 프롬프트에 싣는 상한. 패턴·구성 문서와 합쳐도 사건 종합 관측 예산의 절반을 넘지 않게 둔다.
+# 재구성 초안을 프롬프트에 싣는 상한. 위키 블록이 길어진 만큼 사건 종합의 관측 JSON 몫이 줄어든다.
 RECONSTRUCTIONS_MAX_CHARS = 4000
 
 INFRA_SECTION_TITLE = "[인프라 구성]"

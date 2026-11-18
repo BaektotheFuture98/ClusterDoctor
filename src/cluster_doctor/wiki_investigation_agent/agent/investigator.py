@@ -251,10 +251,11 @@ class WikiInvestigator:
         try:
             answer = self._run_agent(toolbox, message)
         except Exception as exc:
+            # 구성 문서는 패턴·재구성과 별개인 구성 사실이라 조사가 실패해도 종합에 넘긴다.
             _logger.warning(
-                "[wiki_agent] 조사가 실패해 위키 없이 종합한다: %s (%.1f초)",
-                type(exc).__name__, self._clock() - started)
-            return WikiFindings()
+                "[wiki_agent] 조사가 실패해 위키 패턴 없이 종합한다(구성 문서 %s): %s (%.1f초)",
+                "있음" if infra else "없음", type(exc).__name__, self._clock() - started)
+            return WikiFindings(infra=infra)
         patterns = tuple(
             WikiPattern(pattern_id=pattern_id, reason=reason, page=toolbox.pages[pattern_id])
             for pattern_id, reason in parse_picks(answer)
