@@ -173,8 +173,8 @@ def test_log_line_names_opened_and_chosen_patterns_with_reasons(caplog):
 
 @pytest.mark.parametrize(
     ("options", "start", "deadline"),
-    [({}, 1000, 1180), ({"time_budget_seconds": 30}, 5, 35)],
-    ids=["default-three-minutes", "overridden"],
+    [({}, 1000, 1240), ({"time_budget_seconds": 30}, 5, 35)],
+    ids=["default-four-minutes", "overridden"],
 )
 def test_toolbox_deadline_is_the_start_time_plus_the_time_budget(options, start, deadline):
     seen = {}
