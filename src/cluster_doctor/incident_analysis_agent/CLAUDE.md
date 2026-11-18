@@ -47,7 +47,7 @@ project_result → WindowAnalysisResult
 ## 알아둘 점
 
 - `agent/runtime/`은 프로세스 공용 LLM 인프라다(루트 `CLAUDE.md` 구조 절 참고). 분석 전용 코드를 넣지 않는다. 프로세스 전체 LLM 동시 호출은 `litellm_client.MAX_LLM_CONCURRENCY`로 묶인다.
-- 권장 조치가 문제 쿼리를 가리킬 때는 요청자를 사용자(user) 우선, 특정할 수 없을 때만 요청 호스트(IP)로 쓰고 저장된 키워드를 최대 3개 인용한다. 이 표기는 코드가 강제하지 못한다. `_check_recommendation_targets`는 관측된 대상을 언급했는지만 보므로 프롬프트로만 통제한다. 같은 규칙이 `_CAUSE_TARGET_RULES`(종합·검토)와 `_ANALYSIS_RULES`(구간 분석)에 따로 있어 둘을 함께 고친다. 키워드는 수집 시 앞 5개만 남고(`MAX_STORED_KEYWORDS`) 모델은 `slow_executions` 상위 10건으로만 보며 컨텍스트가 넘치면 이것부터 압축되므로, 생략된 키워드를 추정하거나 없는 키워드를 만들지 않게 한다.
+- 쿼리 부하를 원인으로 본 원인과 그 쿼리를 가리키는 권장 조치에는 요청자를 사용자(user) 우선, 특정할 수 없을 때만 요청 호스트(IP)로 쓰고 저장된 키워드를 최대 3개 인용한다. 이 표기는 코드가 강제하지 못한다. `_check_recommendation_targets`는 관측된 대상을 언급했는지만 보므로 프롬프트로만 통제한다. 같은 규칙이 `_CAUSE_TARGET_RULES`(종합·검토), `_ANALYSIS_RULES`(구간 분석), 위키 에이전트 프롬프트(재구성 고리)에 따로 있어 함께 고친다. 종합은 재구성 사슬을 뼈대로 옮기므로 사슬에 요청자·키워드가 빠지면 보고서에서도 빠지기 쉽다. 그래서 종합·검토 규칙에 "사슬을 옮길 때도 이 규칙이 우선한다"를 둔다. 키워드는 수집 시 앞 5개만 남고(`MAX_STORED_KEYWORDS`) 모델은 `slow_executions` 상위 10건으로만 보며 컨텍스트가 넘치면 이것부터 압축되므로, 생략된 키워드를 추정하거나 없는 키워드를 만들지 않게 한다.
 - 보고서의 숫자·건수는 `service/observation/`이 코드로 센 값이고 모델은 해석만 쓴다. `observations`를 구간끼리 합칠 때(`merge_observations`)는 (timestamp, node, line)으로 중복을 제거하고 상한을 다시 적용하지 않는다.
 
 ## 핵심 파일
