@@ -45,10 +45,12 @@ class RecordingInvestigator:
         self.error = error
         self.events = events if events is not None else []
         self.contexts = []
+        self.inputs = []
 
-    def investigate(self, analysis_context):
+    def investigate(self, analysis_context, **inputs):
         self.events.append("investigate")
         self.contexts.append(analysis_context)
+        self.inputs.append(inputs)
         if self.error:
             raise self.error
         return self.findings
@@ -125,6 +127,19 @@ def test_findings_and_onset_reach_the_draft_as_they_are():
 
     assert kwargs["wiki"] is wanted
     assert kwargs["onset"] == ONSET
+
+
+@pytest.mark.parametrize(("onset", "base_date"), [(ONSET, "2026-01-01"), (None, "2026-10-23")],
+                         ids=["onset-day", "first-window-day"])
+def test_the_investigator_gets_windows_base_date_and_evidence_ids(onset, base_date):
+    investigator = RecordingInvestigator()
+
+    _run(investigator, FakeWriter(), evidence=EVIDENCE, onset=onset)
+
+    (inputs,) = investigator.inputs
+    assert inputs["base_date"] == base_date
+    assert inputs["evidence_ids"] == ("E-1",)
+    assert json.loads(inputs["windows"])["windows"][0]["from"] == START.isoformat()
 
 
 def test_the_investigation_runs_once_and_before_the_draft():
