@@ -74,6 +74,20 @@ def _wiki_ref_text(value: object) -> str:
     return ""
 
 
+def _cause_type_label(value: object) -> str:
+    """원인 분류는 보조 라벨이라, 정해지지 않은 값 하나가 사건 종합 전체를 버리게 하지 않는다.
+
+    느슨한 response_format이라 교정 응답이 ``observed_correlation`` 같은 값을 만들어 낸 실측이 있다.
+    ``direct``·``root``가 아니면 프롬프트의 "구분이 불명확하면 root" 규칙대로 ``root``로 둔다.
+    """
+    text = str(value or "").strip().lower()
+    if text in ("direct", "root"):
+        return text
+    if text:
+        _logger.warning("원인 분류 %r는 direct/root가 아니라 root로 둔다", text[:40])
+    return "root"
+
+
 class DraftTimelineEntry(BaseModel):
     """모델 응답의 타임라인 초안 한 항목.
 
@@ -148,6 +162,7 @@ class DraftCause(BaseModel):
         "counter_evidence_refs",
         mode="before",
     )(_as_string_list)
+    _cause_type = field_validator("cause_type", mode="before")(_cause_type_label)
 
 
 class IncidentDraftCause(DraftCause):

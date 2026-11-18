@@ -2,7 +2,8 @@ from datetime import UTC, datetime, timedelta
 from cluster_doctor.incident_analysis_agent.model.evidence import Evidence, EvidenceSource
 from cluster_doctor.incident_analysis_agent.model.observations import Observations
 from cluster_doctor.incident_analysis_agent.model.time_range import TimeRange
-from cluster_doctor.incident_analysis_agent.service.report_generation.schema import parse_draft
+import pytest
+from cluster_doctor.incident_analysis_agent.service.report_generation.schema import IncidentDraftReport, parse_draft
 from cluster_doctor.incident_analysis_agent.service.validation.consistency.report_validation import validate_report
 from cluster_doctor.incident_orchestrator_agent.service.report_delivery.projection.output_mapping import to_incident_analysis_report
 
@@ -38,6 +39,13 @@ def test_legacy_string_recommendation_is_sent_to_model_without_ref_requirement()
     assert report.recommendations[0].text=='기존 권고'
     assert report.recommendations[0].evidence_refs==()
     assert not validate_report(report,[E]).issues
+
+
+@pytest.mark.parametrize(('given','kept'),[('direct','direct'),('ROOT','root'),('observed_correlation','root'),(None,'root')])
+def test_cause_type_outside_direct_or_root_does_not_drop_the_incident_draft(given,kept):
+    draft=IncidentDraftReport.model_validate({'title':'제목','summary':'요약','findings':[],'recommendations':[],
+        'unresolved_questions':[],'root_causes':[{'statement':'원인','cause_type':given}]})
+    assert draft.root_causes[0].cause_type==kept
 
 
 def test_unknown_summary_ref_is_preserved_for_validation():
