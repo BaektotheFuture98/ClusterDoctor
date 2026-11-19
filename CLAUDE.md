@@ -58,7 +58,7 @@ Elasticsearch 클러스터의 문제성 로그 신호(Kafka)를 받아 ClickHous
 
 - 기능마다 `feat/…`·`fix/…`·`docs/…` 브랜치에서 작업한다. task마다 `uv run pytest`가 통과한 상태로 커밋하고, 메시지에 왜 바꿨는지 적는다.
 - 완료를 말하기 전에 `verify-change` 스킬로 검증한다. 검증이 통과하면 기능 브랜치에 묻지 않고 커밋한다. `main`에는 직접 커밋하지 않는다.
-- main 병합·버전·CHANGELOG·태그는 사용자가 `/release`로 부를 때만 한다. 병합은 `--no-ff`(기능 단위로 되돌리기 위해), 버전은 SemVer다.
+- main 병합·버전·CHANGELOG·태그·push는 사용자가 `/release`로 부를 때만 한다. 병합은 `--no-ff`(기능 단위로 되돌리기 위해), 버전은 SemVer다. push는 `git push origin main --follow-tags`로 태그까지 함께 올린다.
 - 보고서 개요에 찍히는 버전(`REPORT_VERSION`, `report_delivery/projection/report_content.py`)은 `pyproject.toml`의 `version`과 같아야 하고 테스트가 이를 확인한다. 버전은 `/release`가 둘 다 올린다.
 
 ## 문서 작성 규칙
