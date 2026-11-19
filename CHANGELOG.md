@@ -6,6 +6,7 @@
 
 ### 변경
 - 개발 절차: `verify-change` 검증이 통과하면 기능 브랜치에 묻지 않고 커밋한다. main 병합·버전·태그·push는 그대로 `/release`에서만 한다. 서버 동작과 무관하다.
+- 개발 절차: `/release`가 `git push origin main --follow-tags`로 main과 태그를 함께 올린다. 서버 동작과 무관하다.
 
 ## [0.3.1] - 2026-11-18
 
