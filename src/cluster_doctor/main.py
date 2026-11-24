@@ -120,9 +120,9 @@ _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
 _CLICKHOUSE_SEND_RECEIVE_TIMEOUT_SECONDS = 30
 _ES_REQUEST_TIMEOUT_SECONDS = 10
-# 검색 클라이언트의 x-opaque-id와 같은 key=value 형식이라 ES tasks·로그에서
-# service 키로 ClusterGuard 요청을 다른 서비스와 구분할 수 있다.
-_ES_OPAQUE_ID = "service=cluster-guard"
+# 검색 클라이언트의 x-opaque-id와 같은 key=value 형식이라 query log가 각 키를
+# 같은 컬럼으로 파싱한다. project=auto_rca로 ClusterGuard 요청을 구분한다.
+_ES_OPAQUE_ID = "service=app,env=prod,project=auto_rca,company=newenai,user=seonmin"
 
 
 def _parse_clickhouse_url(jdbc_url: str) -> tuple[str, int, str]:
