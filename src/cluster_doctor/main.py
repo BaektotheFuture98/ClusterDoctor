@@ -120,6 +120,9 @@ _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
 _CLICKHOUSE_SEND_RECEIVE_TIMEOUT_SECONDS = 30
 _ES_REQUEST_TIMEOUT_SECONDS = 10
+# 검색 클라이언트의 x-opaque-id와 같은 key=value 형식이라 ES tasks·로그에서
+# service 키로 ClusterGuard 요청을 다른 서비스와 구분할 수 있다.
+_ES_OPAQUE_ID = "service=cluster-guard"
 
 
 def _parse_clickhouse_url(jdbc_url: str) -> tuple[str, int, str]:
@@ -153,6 +156,7 @@ def _build_es_client(settings: Settings) -> Elasticsearch:
         hosts=hosts,
         basic_auth=(settings.es_user, settings.es_password) if settings.es_user else None,
         request_timeout=_ES_REQUEST_TIMEOUT_SECONDS,
+        opaque_id=_ES_OPAQUE_ID,
     )
 
 
