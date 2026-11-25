@@ -103,6 +103,7 @@ def fetch(client, table: str, tr: TimeRange) -> list[LogEntry]:
             query=row[7],
         )
         for row in query_segment(client, sql, tr, "slowlog")
+        if "project=auto_rca" not in (row[6] or "")
     ]
     for entry in entries:
         PSEUDONYMS.register("req", entry.opaque_id)
