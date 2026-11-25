@@ -2,11 +2,16 @@
 
 이 프로젝트는 [SemVer](https://semver.org/lang/ko/)를 따른다. 운영에 영향을 주는 비호환 변경은 major, 기능 추가·동작 변경은 minor, 버그 수정과 문서·테스트 변경은 patch로 올린다. 개발 도구(`.claude/`, `tests/`)만 바뀌면 버전을 올리지 않고 아래 Unreleased에 적어 다음 릴리스에 싣는다.
 
-## [Unreleased]
+## [0.4.0] - 2026-11-25
 
-### 변경
-- 개발 절차: `verify-change` 검증이 통과하면 기능 브랜치에 묻지 않고 커밋한다. main 병합·버전·태그·push는 그대로 `/release`에서만 한다. 서버 동작과 무관하다.
-- 개발 절차: `/release`가 `git push origin main --follow-tags`로 main과 태그를 함께 올린다. 서버 동작과 무관하다.
+### 추가
+- ES 요청에 `x-opaque-id` 헤더(`service=cluster-guard,env=prod,project=auto_rca,company=newenai,user=agent`)를 붙인다. ES slowlog·query log에서 ClusterGuard의 진단 쿼리를 다른 애플리케이션 요청과 구분할 수 있다.
+
+### 수정
+- ClusterGuard 자신의 진단 쿼리(`project=auto_rca`)가 slowlog 근거로 수집되던 문제를 고쳤다. 자기 쿼리가 느릴 때 보고서에서 ClusterGuard가 "느린 쿼리 주범"으로 나타나거나 건수를 부풀릴 수 있었다.
+
+### 운영 영향
+- 없음. `.env` 변수, 보고서 형식·파일명, SFTP 경로는 바뀌지 않는다. ES에 나가는 요청 헤더가 추가되므로 ES 버전이 `x-opaque-id`를 지원하지 않는 경우 헤더가 무시된다.
 
 ## [0.3.1] - 2026-11-18
 
