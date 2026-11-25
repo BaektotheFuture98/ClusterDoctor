@@ -68,6 +68,7 @@ def test_resource_factory_uses_explicit_settings(settings, clients, monkeypatch)
             hosts=[dict(host="es-one", port=9300, scheme="http"),
                    dict(host="es-two", port=9300, scheme="http")],
             basic_auth=("es-reader", "es-password"), request_timeout=10,
+            opaque_id=app._ES_OPAQUE_ID,
         )
     resources.close()
     assert events == ["es", "ch"]
