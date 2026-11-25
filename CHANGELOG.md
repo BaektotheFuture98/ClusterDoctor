@@ -2,6 +2,14 @@
 
 이 프로젝트는 [SemVer](https://semver.org/lang/ko/)를 따른다. 운영에 영향을 주는 비호환 변경은 major, 기능 추가·동작 변경은 minor, 버그 수정과 문서·테스트 변경은 patch로 올린다. 개발 도구(`.claude/`, `tests/`)만 바뀌면 버전을 올리지 않고 아래 Unreleased에 적어 다음 릴리스에 싣는다.
 
+## [0.4.1] - 2026-11-25
+
+### 수정
+- 0.4.0에서 추가한 slowlog의 `project=auto_rca` 제외 필터를 지웠다. ClusterGuard가 ES에 보내는 요청(cluster health·allocation explain·nodes info)은 검색을 실행하지 않아 slowlog에 남지 않으므로 이 필터는 아무 행도 거르지 않았다. 0.4.0 항목의 "자기 진단 쿼리가 slowlog 근거로 수집되던 문제"는 실제로 일어나지 않는 상황이었다. `x-opaque-id` 헤더는 그대로 붙는다.
+
+### 운영 영향
+- 없음. 보고서 내용·`.env`·SFTP 경로는 바뀌지 않는다.
+
 ## [0.4.0] - 2026-11-25
 
 ### 추가

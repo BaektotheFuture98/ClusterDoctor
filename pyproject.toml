@@ -1,6 +1,6 @@
 [project]
 name = "clusterdoctor"
-version = "0.4.0"
+version = "0.4.1"
 description = "ES 클러스터 진단 서비스"
 readme = "README.md"
 requires-python = ">=3.11"
