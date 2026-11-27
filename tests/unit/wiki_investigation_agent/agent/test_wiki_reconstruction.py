@@ -19,7 +19,7 @@ from cluster_doctor.wiki_investigation_agent.agent.investigator import (
 )
 from cluster_doctor.wiki_investigation_agent.agent.prompt import INFRA_SECTION_TITLE, WINDOWS_SECTION_TITLE
 
-INFRA = "# infra\n| 티어 | 데이터 날짜 | 노드 그룹 |\n| WARM | 13개월 ~ 36개월 | RC17 |"
+INFRA = "# infra\n| 티어 | 데이터 날짜 | 노드 그룹 |\n| WARM | 13개월 ~ 36개월 | RC97 |"
 
 
 class InfraClient(FakeClient):
@@ -46,9 +46,9 @@ def _answer(patterns=(), reconstruction=()):
 
 
 WARM_CHAIN = {
-    "statement": "장기간 검색이 WARM(RC17)에 몰려 노드 이탈을 일으킨 것으로 보인다",
+    "statement": "장기간 검색이 WARM(RC97)에 몰려 노드 이탈을 일으킨 것으로 보인다",
     "chain": _chain(("기간 검색 집중", "evidence", ["E-1"]), ("13개월 이전은 WARM", "infra", []),
-                    ("RC17-04 이탈", "evidence", ["E-2"])),
+                    ("RC97-04 이탈", "evidence", ["E-2"])),
     "wiki_ref": "heap-pressure",
 }
 
@@ -112,7 +112,7 @@ def test_a_grounded_chain_is_kept_with_its_pattern():
     assert findings.reconstructions == (Reconstruction(
         WARM_CHAIN["statement"],
         (ChainStep("기간 검색 집중", "evidence", ("E-1",)), ChainStep("13개월 이전은 WARM", "infra"),
-         ChainStep("RC17-04 이탈", "evidence", ("E-2",))),
+         ChainStep("RC97-04 이탈", "evidence", ("E-2",))),
         "heap-pressure"),)
 
 
