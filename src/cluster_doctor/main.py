@@ -122,7 +122,7 @@ _CLICKHOUSE_SEND_RECEIVE_TIMEOUT_SECONDS = 30
 _ES_REQUEST_TIMEOUT_SECONDS = 10
 # 검색 클라이언트의 x-opaque-id와 같은 key=value 형식이라 query log가 각 키를
 # 같은 컬럼으로 파싱한다. project=auto_rca로 ClusterGuard 요청을 구분한다.
-_ES_OPAQUE_ID = "service=cluster-guard,env=prod,project=auto_rca,company=newenai,user=agent"
+_ES_OPAQUE_ID = "service=app,env=prod,project=auto_rca,company=newenai,user=rca_auto_agent"
 
 
 def _parse_clickhouse_url(jdbc_url: str) -> tuple[str, int, str]:
